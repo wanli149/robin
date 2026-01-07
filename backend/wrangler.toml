@@ -1,0 +1,31 @@
+name = "robin-backend"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "robin-db"
+database_id = "local-db"  # For local development, will be updated for production
+
+# KV Namespace Binding
+[[kv_namespaces]]
+binding = "ROBIN_CACHE"
+id = "local-kv"  # For local development, will be updated for production
+preview_id = "local-kv"
+
+# Environment Variables (set via wrangler secret put or dashboard)
+# JWT_SECRET
+# DINGTALK_WEBHOOK
+# ADMIN_SECRET_KEY
+# TMDB_API_KEY
+# DOUBAN_API_KEY
+
+# Cron Triggers
+[triggers]
+crons = [
+  "0 */6 * * *",   # 增量采集：每6小时
+  "0 3 * * *",     # 全量采集：每天凌晨3点
+  "0 */2 * * *"    # URL检测：每2小时
+]

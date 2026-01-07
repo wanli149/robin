@@ -1,0 +1,30 @@
+# Cloudflare Workers 本地开发环境变量示例
+# 复制此文件为 .dev.vars 并填入真实的值
+
+# JWT 签名密钥（必需）
+# 用于用户登录认证
+JWT_SECRET=robin_jwt_secret_local_dev_change_me
+
+# 管理后台访问密钥（必需）
+# 用于管理后台登录验证
+ADMIN_SECRET_KEY=robin_admin_secret_local_dev_change_me
+
+# TMDB API 密钥（可选）
+# 用于获取高质量电影海报和元数据
+# 申请地址: https://www.themoviedb.org/settings/api
+TMDB_API_KEY=your_tmdb_api_key_here
+
+# 豆瓣 API 密钥（可选）
+# 用于获取豆瓣评分和元数据（备用方案）
+DOUBAN_API_KEY=your_douban_api_key_here
+
+# 钉钉机器人 Webhook（可选）
+# 用于接收系统告警和崩溃报告
+# 配置方法: 钉钉群 > 群设置 > 智能群助手 > 添加机器人 > 自定义
+DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxxxx
+
+# 注意事项:
+# 1. .dev.vars 文件仅用于本地开发，不会提交到 Git
+# 2. 生产环境请使用 wrangler secret put 命令配置
+# 3. JWT_SECRET 和 ADMIN_SECRET_KEY 必须配置，否则认证功能无法使用
+# 4. TMDB_API_KEY 可选，不配置则使用原始图片
