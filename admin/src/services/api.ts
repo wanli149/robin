@@ -5,6 +5,7 @@
 
 import axios, { AxiosError } from 'axios';
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import { logger } from '../utils/logger';
 
 // API基础URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
@@ -34,7 +35,7 @@ apiClient.interceptors.request.use(
     return config;
   },
   (error: AxiosError) => {
-    console.error('[API] Request error:', error);
+    logger.api.error('Request error:', error);
     return Promise.reject(error);
   }
 );
@@ -53,7 +54,7 @@ apiClient.interceptors.response.use(
       
       // 401 或 403 错误，清除密钥并跳转登录
       if (status === 401 || status === 403) {
-        console.warn('[API] Authentication failed, redirecting to login');
+        logger.api.warn('Authentication failed, redirecting to login');
         localStorage.removeItem('admin_key');
         
         // 跳转到登录页

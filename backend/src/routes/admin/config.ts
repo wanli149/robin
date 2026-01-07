@@ -19,7 +19,7 @@ config.post('/admin/config/welfare', async (c) => {
     await c.env.DB.prepare(`UPDATE system_config SET value = ? WHERE key = 'welfare_enabled'`).bind(enabled ? 'true' : 'false').run();
     return c.json({ code: 1, msg: 'Welfare switch updated' });
   } catch (error) {
-    console.error('[Admin] Welfare switch error:', error);
+    logger.admin.error('Welfare switch error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to update welfare switch' }, 500);
   }
 });
@@ -34,7 +34,7 @@ config.post('/admin/config/ads_global_switch', async (c) => {
     await c.env.DB.prepare(`UPDATE system_config SET value = ? WHERE key = 'ads_enabled'`).bind(enabled ? 'true' : 'false').run();
     return c.json({ code: 1, msg: 'Ads global switch updated' });
   } catch (error) {
-    console.error('[Admin] Ads switch error:', error);
+    logger.admin.error('Ads switch error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to update ads switch' }, 500);
   }
 });
@@ -57,7 +57,7 @@ config.post('/admin/config/marquee', async (c) => {
 
     return c.json({ code: 1, msg: 'Marquee updated' });
   } catch (error) {
-    console.error('[Admin] Marquee update error:', error);
+    logger.admin.error('Marquee update error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to update marquee' }, 500);
   }
 });
@@ -73,7 +73,7 @@ config.post('/admin/config/marquee_switch', async (c) => {
     await c.env.ROBIN_CACHE.delete('marquee_config');
     return c.json({ code: 1, msg: 'Marquee switch updated' });
   } catch (error) {
-    console.error('[Admin] Marquee switch error:', error);
+    logger.admin.error('Marquee switch error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to update marquee switch' }, 500);
   }
 });
@@ -89,7 +89,7 @@ config.post('/admin/config/hot_search_switch', async (c) => {
     await c.env.ROBIN_CACHE.delete('hot_search_keywords');
     return c.json({ code: 1, msg: 'Hot search switch updated' });
   } catch (error) {
-    console.error('[Admin] Hot search switch error:', error);
+    logger.admin.error('Hot search switch error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to update hot search switch' }, 500);
   }
 });
@@ -109,7 +109,7 @@ config.post('/admin/config/contact', async (c) => {
 
     return c.json({ code: 1, msg: 'Contact info updated' });
   } catch (error) {
-    console.error('[Admin] Contact update error:', error);
+    logger.admin.error('Contact update error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to update contact info' }, 500);
   }
 });
@@ -126,7 +126,7 @@ config.post('/admin/config/dingtalk', async (c) => {
     `).bind(webhook || '').run();
     return c.json({ code: 1, msg: 'DingTalk webhook updated' });
   } catch (error) {
-    console.error('[Admin] DingTalk update error:', error);
+    logger.admin.error('DingTalk update error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to update DingTalk webhook' }, 500);
   }
 });
@@ -158,7 +158,7 @@ config.post('/admin/config/dingtalk/test', async (c) => {
       return c.json({ code: 0, msg: 'Failed to send test notification' }, 500);
     }
   } catch (error) {
-    console.error('[Admin] DingTalk test error:', error);
+    logger.admin.error('DingTalk test error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to send test notification' }, 500);
   }
 });
@@ -172,7 +172,7 @@ config.get('/admin/config/permanent_urls', async (c) => {
     const urls = result?.value ? JSON.parse(result.value as string) : [];
     return c.json({ code: 1, msg: 'success', urls });
   } catch (error) {
-    console.error('[Admin] Get permanent urls error:', error);
+    logger.admin.error('Get permanent urls error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to get permanent urls' }, 500);
   }
 });
@@ -217,7 +217,7 @@ config.post('/admin/release', async (c) => {
 
     return c.json({ code: 1, msg: 'Release info updated' });
   } catch (error) {
-    console.error('[Admin] Release update error:', error);
+    logger.admin.error('Release update error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to update release info' }, 500);
   }
 });
@@ -253,13 +253,13 @@ config.post('/admin/cache/purge', async (c) => {
         await c.env.ROBIN_CACHE.delete(key);
       } catch (e) {
         // 单个缓存删除失败不影响整体清理
-        console.warn(`[Admin] Failed to delete cache key ${key}:`, e instanceof Error ? e.message : 'Unknown');
+        logger.admin.warn('Failed to delete cache key', { key, error: e instanceof Error ? e.message : 'Unknown' });
       }
     }
 
     return c.json({ code: 1, msg: `Cache purged: ${keysToDelete.length} keys` });
   } catch (error) {
-    console.error('[Admin] Cache purge error:', error);
+    logger.admin.error('Cache purge error', { error: error instanceof Error ? error.message : String(error) });
     return c.json({ code: 0, msg: 'Failed to purge cache' }, 500);
   }
 });

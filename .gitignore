@@ -45,6 +45,56 @@ coverage/
 *.bak
 *.backup
 
-# 项目特定的临时文件
+# 项目特定的临时文件和调试文件
 test_device_connection.ps1
 setup_adb.bat
+layout_debug.json
+
+# 开发文档（如果不想公开的话，可以取消注释）
+# API_REQUIREMENTS.md
+# DEPLOYMENT_CHECKLIST.md
+# DISTRIBUTED_DATABASE_ARCHITECTURE.md
+
+# Flutter 构建产物
+**/build/
+**/.dart_tool/
+**/.flutter-plugins-dependencies
+**/ios/Flutter/.last_build_id
+
+# Android 构建产物
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+
+# iOS 构建产物
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/ios/Runner/GeneratedPluginRegistrant.*
+
+# Windows 构建产物
+**/windows/flutter/ephemeral/
+
+# macOS 构建产物
+**/macos/Flutter/ephemeral/
+
+# Linux 构建产物
+**/linux/flutter/ephemeral/
+
+# Kiro IDE 文件
+.kiro/
+
+# 大文件和二进制文件
+*.bin
+*.map
+executionHistory.bin
+fileHashes.bin

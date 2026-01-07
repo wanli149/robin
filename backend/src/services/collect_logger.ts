@@ -3,6 +3,8 @@
  * 采集日志服务 - 记录详细的采集过程
  */
 
+import { logger as mainLogger } from '../utils/logger';
+
 interface Env {
   DB: D1Database;
 }
@@ -197,8 +199,7 @@ export async function cleanupOldLogs(env: Env): Promise<number> {
   `).bind(sevenDaysAgo).run();
   
   const deleted = result.meta.changes || 0;
-  // 日志服务本身使用 console.log 记录清理结果
-  console.log(`[CollectLogger] Cleaned up ${deleted} old logs`);
+  mainLogger.collectLogger.info('Cleaned up old logs', { deleted });
   
   return deleted;
 }

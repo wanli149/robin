@@ -4,6 +4,7 @@
  */
 
 import apiClient, { type ApiResponse } from './api';
+import { logger } from '../utils/logger';
 
 /**
  * Dashboard数据类型
@@ -771,9 +772,9 @@ export const testSource = async (id: number): Promise<{
   format?: string;
 }> => {
   try {
-    console.log('[API] Sending test request for source:', id);
+    logger.api.debug('Sending test request for source:', id);
     const response = await apiClient.post<ApiResponse & { details?: any }>(`/admin/sources/${id}/test`);
-    console.log('[API] Test response:', response.data);
+    logger.api.debug('Test response:', response.data);
     return {
       success: response.data.code === 1,
       message: response.data.msg || '',
@@ -783,7 +784,7 @@ export const testSource = async (id: number): Promise<{
       format: response.data.details?.format,
     };
   } catch (error: any) {
-    console.error('[API] Test request error:', error);
+    logger.api.error('Test request error:', error);
     // 处理网络错误或服务器错误
     if (error.response?.data) {
       const data = error.response.data;
