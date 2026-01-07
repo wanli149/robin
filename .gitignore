@@ -98,3 +98,12 @@ layout_debug.json
 *.map
 executionHistory.bin
 fileHashes.bin
+
+# 敏感文档（包含部署配置、商业策略、架构细节）
+API_REQUIREMENTS.md
+DEPLOYMENT_CHECKLIST.md
+DISTRIBUTED_DATABASE_ARCHITECTURE.md
+backend/CLOUDFLARE_DEPLOY.md
+backend/CLOUDFLARE_OPTIMIZATION.md
+backend/DEPLOYMENT.md
+app/android/BUILD_CONFIG.md
