@@ -34,43 +34,53 @@ export const DOUBAN_CONFIG = {
 /**
  * 缓存配置
  * 🚀 优化：分层缓存策略，减少 D1/KV 消耗
+ * 
+ * Cloudflare Workers 免费套餐限制：
+ * - KV 读取：100,000 次/天
+ * - KV 写入：1,000 次/天
+ * - D1 读取：5,000,000 行/天
+ * - D1 写入：100,000 行/天
+ * 
+ * 付费套餐（$5/月）：
+ * - KV 读取：10,000,000 次/月
+ * - KV 写入：1,000,000 次/月
  */
 export const CACHE_CONFIG = {
-  // 布局相关（变化不频繁）
-  layoutTTL: 300,       // 布局缓存 5 分钟
-  tabsTTL: 1800,        // 频道列表 30 分钟
-  marqueeTTL: 600,      // 跑马灯 10 分钟
+  // 布局相关（变化不频繁，延长缓存时间）
+  layoutTTL: 600,       // 布局缓存 10 分钟（原5分钟）
+  tabsTTL: 3600,        // 频道列表 1 小时（原30分钟）
+  marqueeTTL: 1800,     // 跑马灯 30 分钟（原10分钟）
   
   // 视频数据
-  vodListTTL: 180,      // 视频列表 3 分钟
-  vodDetailTTL: 3600,   // 视频详情 1 小时
+  vodListTTL: 300,      // 视频列表 5 分钟（原3分钟）
+  vodDetailTTL: 7200,   // 视频详情 2 小时（原1小时）
   metadataTTL: 86400,   // 元数据缓存 24 小时
   
   // 短剧专用
-  shortsTTL: 1800,      // 短剧缓存 30 分钟
-  shortsDetailTTL: 600, // 短剧详情缓存 10 分钟
-  shortsRandomTTL: 180, // 随机短剧缓存 3 分钟
+  shortsTTL: 3600,      // 短剧缓存 1 小时（原30分钟）
+  shortsDetailTTL: 1800,// 短剧详情缓存 30 分钟（原10分钟）
+  shortsRandomTTL: 300, // 随机短剧缓存 5 分钟（原3分钟）
   
   // 搜索相关
-  hotSearchTTL: 600,    // 热搜 10 分钟
-  searchResultTTL: 300, // 搜索结果 5 分钟
+  hotSearchTTL: 1800,   // 热搜 30 分钟（原10分钟）
+  searchResultTTL: 600, // 搜索结果 10 分钟（原5分钟）
   
   // 系统配置
-  configTTL: 1800,      // 系统配置 30 分钟
+  configTTL: 3600,      // 系统配置 1 小时（原30分钟）
   
   // 安全/统计相关
   securityConfigTTL: 3600,    // 安全配置 1 小时
-  securityEventTTL: 604800,   // 安全事件 7 天
-  statsRetentionTTL: 172800,  // 统计数据保留 2 天
+  securityEventTTL: 259200,   // 安全事件 3 天（原7天，减少存储）
+  statsRetentionTTL: 86400,   // 统计数据保留 1 天（原2天）
   hitsTrackerTTL: 86400,      // 点击统计 24 小时
-  rankingTTL: 600,            // 排行榜 10 分钟
+  rankingTTL: 1800,           // 排行榜 30 分钟（原10分钟）
   
-  // 性能监控
-  performanceDataTTL: 86400,  // 性能数据 24 小时
+  // 性能监控（减少存储时间）
+  performanceDataTTL: 43200,  // 性能数据 12 小时（原24小时）
   
   // 其他
-  domainsTTL: 300,            // 域名列表 5 分钟
-  announcementTTL: 120,       // 公告 2 分钟
+  domainsTTL: 600,            // 域名列表 10 分钟（原5分钟）
+  announcementTTL: 300,       // 公告 5 分钟（原2分钟）
 };
 
 /**

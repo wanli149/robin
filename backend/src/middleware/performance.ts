@@ -1,6 +1,8 @@
 /**
  * Performance Monitoring Middleware
  * 性能监控中间件
+ * 
+ * 🚀 优化：采样记录，减少 KV 写入配额消耗
  */
 
 import { Context, Next } from 'hono';
@@ -14,14 +16,33 @@ type Bindings = {
   ROBIN_CACHE: KVNamespace;
 };
 
+// 🚀 采样率配置（10% 的请求记录性能数据）
+const SAMPLE_RATE = 0.1;
+// 慢请求阈值（超过此值必定记录）
+const SLOW_REQUEST_THRESHOLD = 2000;
+// 错误请求必定记录
+const ALWAYS_LOG_ERRORS = true;
+
 /**
  * 性能监控中间件
  * 记录API响应时间和错误率
+ * 
+ * 🚀 优化策略：
+ * 1. 采样记录普通请求（减少 KV 写入）
+ * 2. 慢请求和错误请求必定记录
+ * 3. 排除健康检查等高频低价值路径
  */
 export async function performanceMonitor(c: Context<{ Bindings: Bindings }>, next: Next) {
   const startTime = Date.now();
   const path = c.req.path;
   const method = c.req.method;
+
+  // 🚀 排除高频低价值路径
+  const skipPaths = ['/', '/health', '/favicon.ico'];
+  if (skipPaths.includes(path)) {
+    await next();
+    return;
+  }
 
   try {
     await next();
@@ -29,25 +50,32 @@ export async function performanceMonitor(c: Context<{ Bindings: Bindings }>, nex
     const duration = Date.now() - startTime;
     const status = c.res.status;
 
-    // 异步记录性能数据（不阻塞响应）
-    c.executionCtx.waitUntil(
-      recordPerformance(c.env, {
-        path,
-        method,
-        status,
-        duration,
-        timestamp: Date.now(),
-      })
-    );
+    // 🚀 决定是否记录：慢请求必记录，其他采样记录
+    const shouldRecord = duration > SLOW_REQUEST_THRESHOLD || 
+                         status >= 400 ||
+                         Math.random() < SAMPLE_RATE;
+
+    if (shouldRecord) {
+      // 异步记录性能数据（不阻塞响应）
+      c.executionCtx.waitUntil(
+        recordPerformance(c.env, {
+          path,
+          method,
+          status,
+          duration,
+          timestamp: Date.now(),
+        })
+      );
+    }
 
     // 慢请求警告
-    if (duration > 3000) {
+    if (duration > SLOW_REQUEST_THRESHOLD) {
       logger.warn('Slow request', { method, path, duration });
     }
   } catch (error) {
     const duration = Date.now() - startTime;
     
-    // 记录错误
+    // 错误请求必定记录
     c.executionCtx.waitUntil(
       recordPerformance(c.env, {
         path,

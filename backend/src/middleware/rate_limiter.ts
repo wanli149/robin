@@ -1,6 +1,8 @@
 /**
  * Rate Limiter Middleware
  * 基于 KV 存储的速率限制中间件
+ * 
+ * 🚀 优化：使用滑动窗口计数器，减少 KV 读写次数
  */
 
 import { Context, Next } from 'hono';
@@ -22,8 +24,33 @@ interface RateLimitConfig {
   message?: string;     // 自定义错误消息
 }
 
+// 🚀 内存缓存：减少 KV 读取（每个 Worker 实例独立）
+const memoryCache = new Map<string, { count: number; resetAt: number }>();
+const MEMORY_CACHE_CLEANUP_INTERVAL = 60000; // 1分钟清理一次
+let lastCleanup = Date.now();
+
+/**
+ * 清理过期的内存缓存
+ */
+function cleanupMemoryCache() {
+  const now = Date.now();
+  if (now - lastCleanup < MEMORY_CACHE_CLEANUP_INTERVAL) return;
+  
+  lastCleanup = now;
+  for (const [key, value] of memoryCache.entries()) {
+    if (value.resetAt < now) {
+      memoryCache.delete(key);
+    }
+  }
+}
+
 /**
  * 创建速率限制中间件
+ * 
+ * 🚀 优化策略：
+ * 1. 优先使用内存缓存（同一 Worker 实例内）
+ * 2. 只在超过阈值时才写入 KV
+ * 3. 使用简单计数器代替时间戳数组
  */
 export function createRateLimiter(config: RateLimitConfig) {
   return async function rateLimiter(
@@ -31,68 +58,51 @@ export function createRateLimiter(config: RateLimitConfig) {
     next: Next
   ): Promise<Response | void> {
     try {
+      // 定期清理内存缓存
+      cleanupMemoryCache();
+      
       const key = config.keyGenerator 
         ? config.keyGenerator(c)
         : getDefaultKey(c);
       
       const now = Date.now();
-      const windowStart = now - config.windowMs;
+      const windowEnd = now + config.windowMs;
       
-      // 获取当前计数
-      const countKey = `rate_limit:${key}`;
-      const currentData = await c.env.ROBIN_CACHE.get(countKey);
-      
-      let requests: number[] = [];
-      if (currentData) {
-        try {
-          const parsed = JSON.parse(currentData);
-          requests = Array.isArray(parsed) ? parsed : [];
-        } catch {
-          requests = [];
+      // 🚀 优先检查内存缓存
+      let memEntry = memoryCache.get(key);
+      if (memEntry && memEntry.resetAt > now) {
+        // 内存缓存有效
+        if (memEntry.count >= config.maxRequests) {
+          logger.warn('Rate limit exceeded (memory)', { 
+            key, 
+            requests: memEntry.count, 
+            limit: config.maxRequests 
+          });
+          
+          return c.json({
+            code: 0,
+            msg: config.message || 'Too many requests, please try again later',
+            data: {
+              limit: config.maxRequests,
+              windowMs: config.windowMs,
+              retryAfter: Math.ceil((memEntry.resetAt - now) / 1000)
+            }
+          }, 429);
         }
-      }
-      
-      // 清理过期的请求记录
-      requests = requests.filter(timestamp => timestamp > windowStart);
-      
-      // 检查是否超过限制
-      if (requests.length >= config.maxRequests) {
-        logger.warn('Rate limit exceeded', { 
-          key, 
-          requests: requests.length, 
-          limit: config.maxRequests,
-          ip: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown'
-        });
-        
-        // 记录被阻止的请求统计
-        await recordBlockedRequest(c.env, key);
-        
-        return c.json({
-          code: 0,
-          msg: config.message || 'Too many requests, please try again later',
-          data: {
-            limit: config.maxRequests,
-            windowMs: config.windowMs,
-            retryAfter: Math.ceil(config.windowMs / 1000)
-          }
-        }, 429);
+        memEntry.count++;
+      } else {
+        // 内存缓存过期或不存在，创建新条目
+        memEntry = { count: 1, resetAt: windowEnd };
+        memoryCache.set(key, memEntry);
       }
       
       // 执行请求
       await next();
       
-      // 根据配置决定是否记录此次请求
-      const shouldRecord = shouldRecordRequest(c, config);
-      
-      if (shouldRecord) {
-        // 添加当前请求时间戳
-        requests.push(now);
-        
-        // 保存更新后的计数（设置过期时间为窗口大小）
-        await c.env.ROBIN_CACHE.put(
-          countKey,
-          JSON.stringify(requests),
-          { expirationTtl: Math.ceil(config.windowMs / 1000) + 60 } // 多加60秒缓冲
+      // 🚀 只在接近限制时才同步到 KV（减少写入）
+      if (memEntry.count >= config.maxRequests * 0.8) {
+        c.executionCtx.waitUntil(
+          syncToKV(c.env, key, memEntry, config.windowMs)
         );
       }
       
@@ -105,6 +115,29 @@ export function createRateLimiter(config: RateLimitConfig) {
       await next();
     }
   };
+}
+
+/**
+ * 同步计数到 KV（异步，不阻塞响应）
+ */
+async function syncToKV(
+  env: { ROBIN_CACHE: KVNamespace },
+  key: string,
+  entry: { count: number; resetAt: number },
+  windowMs: number
+): Promise<void> {
+  try {
+    const countKey = `rate_limit:${key}`;
+    await env.ROBIN_CACHE.put(
+      countKey,
+      JSON.stringify({ count: entry.count, resetAt: entry.resetAt }),
+      { expirationTtl: Math.ceil(windowMs / 1000) + 60 }
+    );
+  } catch (error) {
+    logger.error('Failed to sync rate limit to KV', { 
+      error: error instanceof Error ? error.message : 'Unknown' 
+    });
+  }
 }
 
 /**

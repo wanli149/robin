@@ -248,6 +248,7 @@ async function generateHmacSha256(data: string, secretKey: string): Promise<stri
 
 /**
  * 记录安全事件
+ * 🚀 优化：采样记录，减少 KV 写入
  */
 async function recordSecurityEvent(
   env: { ROBIN_CACHE: KVNamespace },
@@ -261,15 +262,18 @@ async function recordSecurityEvent(
   }
 ): Promise<void> {
   try {
-    const key = `security_event:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
-    
-    await env.ROBIN_CACHE.put(
-      key,
-      JSON.stringify(event),
-      { expirationTtl: CACHE_CONFIG.securityEventTTL }
-    );
+    // 🚀 只记录 20% 的安全事件详情（减少 KV 写入）
+    if (Math.random() < 0.2) {
+      const key = `security_event:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+      
+      await env.ROBIN_CACHE.put(
+        key,
+        JSON.stringify(event),
+        { expirationTtl: CACHE_CONFIG.securityEventTTL }
+      );
+    }
 
-    // 更新今日被阻止请求统计
+    // 更新今日被阻止请求统计（这个必须记录）
     const today = new Date().toISOString().split('T')[0];
     const statsKey = `security_blocked:${today}`;
     
@@ -290,14 +294,19 @@ async function recordSecurityEvent(
 
 /**
  * 记录有效请求统计
+ * 🚀 优化：采样记录，减少 KV 写入
  */
 async function recordValidRequest(env: { ROBIN_CACHE: KVNamespace }): Promise<void> {
+  // 🚀 只记录 5% 的有效请求统计（减少 KV 写入，有效请求量大）
+  if (Math.random() > 0.05) return;
+  
   try {
     const today = new Date().toISOString().split('T')[0];
     const statsKey = `security_valid:${today}`;
     
     const current = await env.ROBIN_CACHE.get(statsKey);
-    const count = current ? parseInt(current) + 1 : 1;
+    // 乘以 20 来估算实际数量（因为只采样了 5%）
+    const count = current ? parseInt(current) + 20 : 20;
     
     await env.ROBIN_CACHE.put(
       statsKey,
