@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../player_enums.dart';
 import '../player_state.dart';
 import '../../progress_sync_service.dart';
+import '../../logger.dart';
 
 /// 播放进度管理 Mixin
 /// 
@@ -129,7 +130,7 @@ mixin PlayerProgressMixin on GetxController {
       try {
         listener(position, duration);
       } catch (e) {
-        print('❌ [Progress] Listener error: $e');
+        Logger.error('Listener error: $e');
       }
     }
 
@@ -169,7 +170,7 @@ mixin PlayerProgressMixin on GetxController {
       try {
         listener(contentId, progress);
       } catch (e) {
-        print('❌ [Progress] Guidance listener error: $e');
+        Logger.error('Guidance listener error: $e');
       }
     }
   }
@@ -191,7 +192,7 @@ mixin PlayerProgressMixin on GetxController {
         positionSeconds: state.position.inSeconds,
         durationSeconds: state.duration.inSeconds,
       );
-      print('💾 [Progress] Saved: ${state.contentId} @ ${state.position.inSeconds}s');
+      Logger.debug('Saved: ${state.contentId} @ ${state.position.inSeconds}s');
     } catch (e) {
       // 降级到本地存储
       await _saveProgressLocally(state);
@@ -204,9 +205,9 @@ mixin PlayerProgressMixin on GetxController {
       final prefs = await SharedPreferences.getInstance();
       final key = _getProgressKey(state.contentType, state.contentId, state.episodeIndex);
       await prefs.setInt(key, state.position.inSeconds);
-      print('💾 [Progress] Saved locally (fallback): $key');
+      Logger.debug('Saved locally (fallback): $key');
     } catch (e) {
-      print('❌ [Progress] Failed to save locally: $e');
+      Logger.error('Failed to save locally: $e');
     }
   }
 
@@ -242,11 +243,11 @@ mixin PlayerProgressMixin on GetxController {
       final savedSeconds = prefs.getInt(key) ?? 0;
 
       if (savedSeconds > 0) {
-        print('📖 [Progress] Loaded locally: $key = ${savedSeconds}s');
+        Logger.debug('Loaded locally: $key = ${savedSeconds}s');
         return Duration(seconds: savedSeconds);
       }
     } catch (e) {
-      print('❌ [Progress] Failed to load locally: $e');
+      Logger.error('Failed to load locally: $e');
     }
 
     return Duration.zero;
@@ -264,9 +265,9 @@ mixin PlayerProgressMixin on GetxController {
         contentId,
         episodeIndex,
       );
-      print('🗑️ [Progress] Cleared: $contentId');
+      Logger.debug('Cleared: $contentId');
     } catch (e) {
-      print('❌ [Progress] Failed to clear: $e');
+      Logger.error('Failed to clear: $e');
     }
   }
 

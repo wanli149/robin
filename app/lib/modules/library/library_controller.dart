@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/http_client.dart';
+import '../../core/logger.dart';
 
 /// 片库控制器
 class LibraryController extends GetxController {
@@ -56,6 +57,9 @@ class LibraryController extends GetxController {
   final RxString selectedArea = ''.obs;
   final RxString selectedYear = ''.obs;
   final RxString selectedSort = 'time'.obs;
+
+  // 筛选器展开状态
+  final RxBool isFilterExpanded = false.obs;
 
   // 视频列表
   final RxList<Map<String, dynamic>> videoList = <Map<String, dynamic>>[].obs;
@@ -125,6 +129,47 @@ class LibraryController extends GetxController {
     refresh();
   }
 
+  /// 切换筛选器展开状态
+  void toggleFilterExpanded() {
+    isFilterExpanded.value = !isFilterExpanded.value;
+  }
+
+  /// 获取选中的类型名称
+  String getSelectedTypeName() {
+    final option = typeOptions.firstWhere(
+      (o) => o['value'] == selectedType.value,
+      orElse: () => {'name': '全部'},
+    );
+    return option['name']!;
+  }
+
+  /// 获取选中的地区名称
+  String getSelectedAreaName() {
+    final option = areaOptions.firstWhere(
+      (o) => o['value'] == selectedArea.value,
+      orElse: () => {'name': '全部'},
+    );
+    return option['name']!;
+  }
+
+  /// 获取选中的年份名称
+  String getSelectedYearName() {
+    final option = yearOptions.firstWhere(
+      (o) => o['value'] == selectedYear.value,
+      orElse: () => {'name': '全部'},
+    );
+    return option['name']!;
+  }
+
+  /// 获取选中的排序名称
+  String getSelectedSortName() {
+    final option = sortOptions.firstWhere(
+      (o) => o['value'] == selectedSort.value,
+      orElse: () => {'name': '最新'},
+    );
+    return option['name']!;
+  }
+
   /// 刷新
   @override
   Future<void> refresh() async {
@@ -134,26 +179,28 @@ class LibraryController extends GetxController {
     await loadVideos();
   }
 
-  /// 加载视频列表
+  /// 加载视频列表（使用去重后的片库API）
   Future<void> loadVideos() async {
     try {
       isLoading.value = true;
       error.value = '';
 
+      // 使用新的去重片库API
       final response = await _httpClient.get(
-        '/api/vod',
+        '/api/library',
         queryParameters: {
           't': selectedType.value,
           'area': selectedArea.value,
           'year': selectedYear.value,
           'sort': selectedSort.value,
           'pg': currentPage.value.toString(),
+          'limit': '20',
         },
       );
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        final list = (data['list'] as List?)
+        final list = (data['data'] as List?)
                 ?.map((e) => e as Map<String, dynamic>)
                 .toList() ??
             [];
@@ -164,10 +211,10 @@ class LibraryController extends GetxController {
           videoList.addAll(list);
         }
 
-        print('✅ Loaded ${list.length} videos, page: ${currentPage.value}');
+        Logger.success('Loaded ${list.length} videos (deduplicated), page: ${currentPage.value}');
       }
     } catch (e) {
-      print('❌ Failed to load videos: $e');
+      Logger.error('Failed to load videos: $e');
       error.value = '加载失败，请重试';
     } finally {
       isLoading.value = false;
@@ -182,20 +229,22 @@ class LibraryController extends GetxController {
       isLoadingMore.value = true;
       currentPage.value++;
 
+      // 使用新的去重片库API
       final response = await _httpClient.get(
-        '/api/vod',
+        '/api/library',
         queryParameters: {
           't': selectedType.value,
           'area': selectedArea.value,
           'year': selectedYear.value,
           'sort': selectedSort.value,
           'pg': currentPage.value.toString(),
+          'limit': '20',
         },
       );
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        final list = (data['list'] as List?)
+        final list = (data['data'] as List?)
                 ?.map((e) => e as Map<String, dynamic>)
                 .toList() ??
             [];
@@ -206,10 +255,10 @@ class LibraryController extends GetxController {
           videoList.addAll(list);
         }
 
-        print('✅ Loaded more ${list.length} videos, page: ${currentPage.value}');
+        Logger.success('Loaded more ${list.length} videos (deduplicated), page: ${currentPage.value}');
       }
     } catch (e) {
-      print('❌ Failed to load more videos: $e');
+      Logger.error('Failed to load more videos: $e');
       currentPage.value--; // 回退页码
     } finally {
       isLoadingMore.value = false;

@@ -5,10 +5,11 @@
 
 import { Hono } from 'hono';
 import { recordVisit } from '../utils/stats';
-import { CACHE_CONFIG } from '../config';
+import { CACHE_CONFIG, TIMEOUT_CONFIG } from '../config';
 import { aggregateVideos } from '../services/spider_aggregator';
 import { getRecommendationsV2, RecommendStrategy } from '../services/recommendation_engine_v2';
 import { logger } from '../utils/logger';
+import { extractVideoMeta } from '../services/language_merger';
 
 type Bindings = {
   DB: D1Database;
@@ -45,6 +46,17 @@ interface VideoItem {
   type_id?: number;
   type_name?: string;
 }
+
+// 专题项类型
+interface TopicItem {
+  id: string;
+  title: string;
+  cover: string;
+  video_count?: number;
+}
+
+// 模块数据类型（可以是视频列表、专题列表、时间线等）
+type ModuleData = VideoItem[] | TopicItem[] | Record<string, VideoItem[]> | { items: VideoItem[]; tabs?: any[] } | null;
 
 // API 参数类型
 interface ApiParams {
@@ -105,13 +117,33 @@ function shouldFetchData(moduleType: string): boolean {
 }
 
 /**
+ * 对视频列表进行去重（按基础名称+年份）
+ * 同一影片的不同语言/清晰度版本只保留一个
+ */
+function deduplicateVideos(videos: VideoItem[]): VideoItem[] {
+  const seen = new Map<string, VideoItem>();
+  
+  for (const video of videos) {
+    const { baseName } = extractVideoMeta(video.vod_name || '');
+    const groupKey = `${baseName}-${video.vod_year || ''}`;
+    
+    // 只保留每组的第一个
+    if (!seen.has(groupKey)) {
+      seen.set(groupKey, video);
+    }
+  }
+  
+  return Array.from(seen.values());
+}
+
+/**
  * 根据模块类型和参数获取数据
  */
 async function fetchModuleData(
   env: Bindings,
   moduleType: string,
   apiParams: ApiParams
-): Promise<VideoItem[] | Record<string, VideoItem[]> | { items: VideoItem[] } | null> {
+): Promise<ModuleData> {
   try {
     // 金刚区不需要获取视频数据（数据在 api_params.items 中）
     if (moduleType === 'grid_icons') {
@@ -134,15 +166,20 @@ async function fetchModuleData(
     // 处理搜索关键词（例如：{"wd": "短剧"}）
     if (apiParams.wd) {
       logger.admin.debug(`Search keyword: ${apiParams.wd}`);
-      // 使用搜索接口
+      // 首页模块不应该使用搜索，使用缓存数据
+      // 如果需要按关键词筛选，应该在缓存中搜索
       const searchResult = await aggregateVideos(env, '', { wd: apiParams.wd }, {
-        timeout: 5000,
+        timeout: TIMEOUT_CONFIG.aggregatorSearch,
         includeWelfare: false,
+        cacheOnly: true,  // 首页只使用缓存数据
       });
       
       const limit = apiParams.limit || 20;
       logger.admin.debug(`Got ${searchResult.list.length} items for search: ${apiParams.wd}`);
-      return searchResult.list.slice(0, limit) as VideoItem[];
+      
+      // 对搜索结果进行去重
+      const deduplicatedList = deduplicateVideos(searchResult.list as VideoItem[]);
+      return deduplicatedList.slice(0, limit) as VideoItem[];
     }
     
     // 处理分类参数（例如：{"category": "hot_drama"}）
@@ -181,26 +218,50 @@ async function fetchModuleData(
     if (apiParams.sort) params.sort = apiParams.sort;
 
     // 根据模块类型确定数量
-    let limit = apiParams.limit || 10;
+    let limit = apiParams.limit;
+    
+    // 如果没有指定 limit，根据模块类型设置默认值
+    if (!limit) {
+      if (moduleType === 'grid_3x3' || moduleType === 'grid_3x3_ad') {
+        limit = 9; // 3x3 网格默认 9 个
+      } else if (moduleType === 'grid_3x2' || moduleType === 'grid_3x2_ad') {
+        limit = 6; // 3x2 网格默认 6 个
+      } else if (moduleType === 'carousel') {
+        limit = 6; // 轮播图默认 6 个
+      } else if (moduleType === 'horizontal_scroll') {
+        limit = 10; // 横向滚动默认 10 个
+      } else if (moduleType === 'waterfall' || moduleType.startsWith('waterfall_')) {
+        limit = 20; // 瀑布流默认 20 个
+      } else {
+        limit = 10; // 其他模块默认 10 个
+      }
+    }
+    
+    // 设置最大限制
     if (moduleType === 'carousel') {
       limit = Math.min(limit, 10); // 轮播图最多10个
     } else if (moduleType.startsWith('grid_')) {
       limit = Math.min(limit, 20); // 网格最多20个
     } else if (moduleType === 'waterfall' || moduleType.startsWith('waterfall_')) {
-      limit = Math.min(limit || 20, 30); // 瀑布流最多30个
+      limit = Math.min(limit, 30); // 瀑布流最多30个
     }
 
     logger.admin.debug(`Fetching data for ${moduleType}, type=${videoType}, limit=${limit}, class=${params.class || 'all'}`);
 
-    // 调用聚合器获取数据
+    // 调用聚合器获取数据（首页只使用缓存）
     const result = await aggregateVideos(env, '', params, {
-      timeout: 5000,
+      timeout: TIMEOUT_CONFIG.defaultRequest,
       includeWelfare: false,
+      cacheOnly: true,  // 首页只使用缓存数据，不实时获取
     });
 
     logger.admin.debug(`Got ${result.list.length} items for ${moduleType}`);
 
-    const videos = result.list.slice(0, limit) as VideoItem[];
+    // 对视频列表进行去重（同一影片的不同语言/清晰度版本只保留一个）
+    const deduplicatedList = deduplicateVideos(result.list as VideoItem[]);
+    logger.admin.debug(`After deduplication: ${deduplicatedList.length} items`);
+    
+    const videos = deduplicatedList.slice(0, limit) as VideoItem[];
 
     // 特殊处理：carousel 需要格式化字段
     if (moduleType === 'carousel') {
@@ -276,13 +337,13 @@ async function fetchModuleData(
     if (moduleType === 'topic_list') {
       // 从 api_params.topics 获取专题配置，或返回默认专题
       if (apiParams.topics && Array.isArray(apiParams.topics)) {
-        return apiParams.topics;
+        return apiParams.topics as TopicItem[];
       }
       // 返回基于视频分类的默认专题
       return [
         { id: 'hot', title: '热门推荐', cover: '', video_count: videos.length },
         { id: 'new', title: '最新上映', cover: '', video_count: videos.length },
-      ];
+      ] as TopicItem[];
     }
 
     return videos;
@@ -318,7 +379,8 @@ async function fetchRecommendData(
       strategy = 'trending';
     }
 
-    const limit = apiParams.limit || 10;
+    // 推荐模块通常使用 3x3 网格，默认 9 个
+    const limit = apiParams.limit || 9;
     const typeId = apiParams.t || apiParams.type_id;
     const vodId = apiParams.vod_id;
     const userId = apiParams.user_id;
@@ -411,7 +473,7 @@ layout.get('/home_layout', async (c) => {
         const adConfig = module.ad_config ? JSON.parse(module.ad_config) : null;
         
         // 根据模块类型和 API 参数获取数据
-        let data = null;
+        let data: any = null;
         if (apiParams && shouldFetchData(module.module_type)) {
           data = await fetchModuleData(c.env, module.module_type, apiParams);
           
@@ -430,7 +492,7 @@ layout.get('/home_layout', async (c) => {
               ORDER BY sort_order ASC
             `).bind(apiParams.t).all();
             
-            const tabs = (subCatsResult.results as SubCategoryRow[]).map(sub => ({
+            const tabs = (subCatsResult.results as unknown as SubCategoryRow[]).map(sub => ({
               id: sub.id,
               name: sub.name,
               name_en: sub.name_en,
@@ -487,19 +549,19 @@ layout.get('/home_layout', async (c) => {
       `).all();
       
       const configMap = new Map(
-        (marqueeConfigs.results as SystemConfigRow[]).map(r => [r.key, r.value])
+        (marqueeConfigs.results as unknown as SystemConfigRow[]).map(r => [r.key, r.value])
       );
       
       const marqueeEnabled = configMap.get('marquee_enabled') === 'true';
       marqueeText = marqueeEnabled ? (configMap.get('marquee_text') || '') : '';
       marqueeLink = marqueeEnabled ? (configMap.get('marquee_link') || '') : '';
       
-      // 缓存跑马灯配置 10 分钟
+      // 缓存跑马灯配置
       await c.env.ROBIN_CACHE.put(marqueeCacheKey, JSON.stringify({
         enabled: marqueeEnabled,
         text: configMap.get('marquee_text') || '',
         link: configMap.get('marquee_link') || '',
-      }), { expirationTtl: 600 });
+      }), { expirationTtl: CACHE_CONFIG.marqueeTTL });
     }
 
     // 5. 构造响应
@@ -563,11 +625,11 @@ layout.get('/home_tabs', async (c) => {
       timestamp: Date.now(),
     };
 
-    // 缓存 30 分钟（tabs 配置变化不频繁）
+    // 缓存（tabs 配置变化不频繁）
     await c.env.ROBIN_CACHE.put(
       cacheKey,
       JSON.stringify(response),
-      { expirationTtl: 1800 }
+      { expirationTtl: CACHE_CONFIG.tabsTTL }
     );
 
     return c.json(response);
@@ -580,6 +642,171 @@ layout.get('/home_tabs', async (c) => {
       },
       500
     );
+  }
+});
+
+// ============================================
+// 频道管理 API（管理端使用）
+// ============================================
+
+/**
+ * GET /admin/tabs
+ * 获取所有频道（包括隐藏的）
+ */
+layout.get('/admin/tabs', async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT id, title, sort_order, is_visible, is_locked
+      FROM home_tabs
+      ORDER BY sort_order ASC
+    `).all();
+    
+    return c.json({
+      code: 1,
+      msg: 'success',
+      data: result.results,
+    });
+  } catch (error) {
+    return c.json({ code: 0, msg: 'Failed to get tabs' }, 500);
+  }
+});
+
+/**
+ * POST /admin/tabs
+ * 创建新频道
+ */
+layout.post('/admin/tabs', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { id, title } = body;
+    
+    if (!id || !title) {
+      return c.json({ code: 0, msg: 'ID和名称不能为空' }, 400);
+    }
+    
+    // 获取最大排序值
+    const maxOrder = await c.env.DB.prepare(`
+      SELECT MAX(sort_order) as max_order FROM home_tabs
+    `).first();
+    const newOrder = ((maxOrder?.max_order as number) || 0) + 1;
+    
+    await c.env.DB.prepare(`
+      INSERT INTO home_tabs (id, title, sort_order, is_visible, is_locked)
+      VALUES (?, ?, ?, 1, 0)
+    `).bind(id, title, newOrder).run();
+    
+    // 清除缓存
+    await c.env.ROBIN_CACHE.delete('home_tabs');
+    
+    return c.json({ code: 1, msg: '创建成功' });
+  } catch (error: any) {
+    if (error.message?.includes('UNIQUE constraint')) {
+      return c.json({ code: 0, msg: '频道ID已存在' }, 400);
+    }
+    return c.json({ code: 0, msg: '创建失败' }, 500);
+  }
+});
+
+/**
+ * PUT /admin/tabs/:id
+ * 更新频道
+ */
+layout.put('/admin/tabs/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { title, is_visible, is_locked } = body;
+    
+    // 构建动态更新语句
+    const updates: string[] = [];
+    const values: (string | number)[] = [];
+    
+    if (title !== undefined) {
+      updates.push('title = ?');
+      values.push(title);
+    }
+    if (is_visible !== undefined) {
+      updates.push('is_visible = ?');
+      values.push(is_visible);
+    }
+    if (is_locked !== undefined) {
+      updates.push('is_locked = ?');
+      values.push(is_locked);
+    }
+    
+    if (updates.length === 0) {
+      return c.json({ code: 0, msg: '没有要更新的字段' }, 400);
+    }
+    
+    values.push(id);
+    
+    await c.env.DB.prepare(`
+      UPDATE home_tabs SET ${updates.join(', ')} WHERE id = ?
+    `).bind(...values).run();
+    
+    // 清除缓存
+    await c.env.ROBIN_CACHE.delete('home_tabs');
+    
+    return c.json({ code: 1, msg: '更新成功' });
+  } catch (error) {
+    logger.admin.error('Failed to update tab', { error: String(error) });
+    return c.json({ code: 0, msg: '更新失败' }, 500);
+  }
+});
+
+/**
+ * DELETE /admin/tabs/:id
+ * 删除频道
+ */
+layout.delete('/admin/tabs/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    
+    // 检查是否有关联的模块
+    const modules = await c.env.DB.prepare(`
+      SELECT COUNT(*) as count FROM page_modules WHERE tab_id = ?
+    `).bind(id).first();
+    
+    if ((modules?.count as number) > 0) {
+      return c.json({ code: 0, msg: '该频道下有模块，请先删除模块' }, 400);
+    }
+    
+    await c.env.DB.prepare('DELETE FROM home_tabs WHERE id = ?').bind(id).run();
+    
+    // 清除缓存
+    await c.env.ROBIN_CACHE.delete('home_tabs');
+    
+    return c.json({ code: 1, msg: '删除成功' });
+  } catch (error) {
+    return c.json({ code: 0, msg: '删除失败' }, 500);
+  }
+});
+
+/**
+ * POST /admin/tabs/reorder
+ * 批量更新频道排序
+ */
+layout.post('/admin/tabs/reorder', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { orders } = body; // [{ id: 'featured', sort_order: 1 }, ...]
+    
+    if (!Array.isArray(orders)) {
+      return c.json({ code: 0, msg: '参数错误' }, 400);
+    }
+    
+    for (const item of orders) {
+      await c.env.DB.prepare(`
+        UPDATE home_tabs SET sort_order = ? WHERE id = ?
+      `).bind(item.sort_order, item.id).run();
+    }
+    
+    // 清除缓存
+    await c.env.ROBIN_CACHE.delete('home_tabs');
+    
+    return c.json({ code: 1, msg: '排序更新成功' });
+  } catch (error) {
+    return c.json({ code: 0, msg: '排序更新失败' }, 500);
   }
 });
 

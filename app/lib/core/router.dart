@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'logger.dart';
 
 /// 通用路由器
 /// 
@@ -87,16 +87,16 @@ class UniversalRouter {
   /// - 未知协议：显示 Snackbar 提示
   /// - 解析失败：显示错误 Snackbar
   static Future<void> navigate(String url) async {
-    print('[Router] Navigate called with: $url');
+    Logger.info('[Router] Navigate called with: $url');
     if (url.isEmpty) {
-      print('[Router] URL is empty, returning');
+      Logger.info('[Router] URL is empty, returning');
       return;
     }
     
     try {
       final uri = Uri.parse(url);
       final scheme = uri.scheme.toLowerCase();
-      print('[Router] Parsed scheme: $scheme, host: ${uri.host}');
+      Logger.info('[Router] Parsed scheme: $scheme, host: ${uri.host}');
       
       switch (scheme) {
         case 'video':
@@ -126,7 +126,7 @@ class UniversalRouter {
           await _handleWebViewProtocol(uri);
           break;
         default:
-          debugPrint('⚠️ Unknown protocol: $scheme');
+          Logger.warning('[Router] Unknown protocol: $scheme');
           Get.snackbar(
             '提示',
             '不支持的链接类型',
@@ -134,7 +134,7 @@ class UniversalRouter {
           );
       }
     } catch (e) {
-      debugPrint('❌ Router error: $e');
+      Logger.error('[Router] Router error: $e');
       Get.snackbar(
         '错误',
         '无法打开链接',
@@ -165,11 +165,11 @@ class UniversalRouter {
     }
     
     if (vodId != null && vodId.isNotEmpty) {
-      debugPrint('🎬 Opening video detail: $vodId');
+      Logger.player('[Router] Opening video detail: $vodId');
       // 使用命名路由
       Get.toNamed('/video/detail', arguments: {'vodId': vodId});
     } else {
-      debugPrint('⚠️ Invalid video URL: $uri');
+      Logger.warning('[Router] Invalid video URL: $uri');
     }
   }
   
@@ -198,7 +198,7 @@ class UniversalRouter {
         throw 'Could not launch $actualUrl';
       }
     } catch (e) {
-      debugPrint('❌ Failed to launch browser: $e');
+      Logger.error('[Router] Failed to launch browser: $e');
       Get.snackbar(
         '错误',
         '无法打开浏览器',
@@ -274,7 +274,7 @@ class UniversalRouter {
         }
         break;
       default:
-        debugPrint('⚠️ Unknown deeplink: $host');
+        Logger.warning('[Router] Unknown deeplink: $host');
     }
   }
   
@@ -293,10 +293,10 @@ class UniversalRouter {
     }
     
     if (articleId != null && articleId.isNotEmpty) {
-      debugPrint('📰 Opening article detail: $articleId');
+      Logger.info('[Router] Opening article detail: $articleId');
       Get.toNamed('/article/detail', arguments: {'articleId': articleId});
     } else {
-      debugPrint('⚠️ Invalid article URL: $uri');
+      Logger.warning('[Router] Invalid article URL: $uri');
     }
   }
   
@@ -315,13 +315,13 @@ class UniversalRouter {
     }
     
     if (actorId != null && actorId.isNotEmpty) {
-      debugPrint('👤 Opening actor detail: $actorId');
+      Logger.info('[Router] Opening actor detail: $actorId');
       Get.toNamed('/actor', arguments: {
         'actorId': int.tryParse(actorId) ?? 0,
         'actorName': '',
       });
     } else {
-      debugPrint('⚠️ Invalid actor URL: $uri');
+      Logger.warning('[Router] Invalid actor URL: $uri');
     }
   }
   
@@ -339,7 +339,7 @@ class UniversalRouter {
       keyword = uri.queryParameters['keyword'];
     }
     
-    debugPrint('🔍 Opening search: $keyword');
+    Logger.debug('[Router] Opening search: $keyword');
     Get.toNamed('/search', arguments: {'keyword': keyword});
   }
   

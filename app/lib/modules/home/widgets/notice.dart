@@ -111,36 +111,36 @@ class Notice extends StatelessWidget {
     switch (type) {
       case 'warning':
         return {
-          'bg': const Color(0xFFFFC107).withOpacity(0.1),
-          'border': const Color(0xFFFFC107).withOpacity(0.3),
-          'icon_bg': const Color(0xFFFFC107).withOpacity(0.2),
+          'bg': const Color(0xFFFFC107).withValues(alpha: 0.1),
+          'border': const Color(0xFFFFC107).withValues(alpha: 0.3),
+          'icon_bg': const Color(0xFFFFC107).withValues(alpha: 0.2),
           'icon': const Color(0xFFFFC107),
           'title': Colors.white,
           'content': Colors.white70,
         };
       case 'success':
         return {
-          'bg': const Color(0xFF4CAF50).withOpacity(0.1),
-          'border': const Color(0xFF4CAF50).withOpacity(0.3),
-          'icon_bg': const Color(0xFF4CAF50).withOpacity(0.2),
+          'bg': const Color(0xFF4CAF50).withValues(alpha: 0.1),
+          'border': const Color(0xFF4CAF50).withValues(alpha: 0.3),
+          'icon_bg': const Color(0xFF4CAF50).withValues(alpha: 0.2),
           'icon': const Color(0xFF4CAF50),
           'title': Colors.white,
           'content': Colors.white70,
         };
       case 'error':
         return {
-          'bg': const Color(0xFFF44336).withOpacity(0.1),
-          'border': const Color(0xFFF44336).withOpacity(0.3),
-          'icon_bg': const Color(0xFFF44336).withOpacity(0.2),
+          'bg': const Color(0xFFF44336).withValues(alpha: 0.1),
+          'border': const Color(0xFFF44336).withValues(alpha: 0.3),
+          'icon_bg': const Color(0xFFF44336).withValues(alpha: 0.2),
           'icon': const Color(0xFFF44336),
           'title': Colors.white,
           'content': Colors.white70,
         };
       default:
         return {
-          'bg': const Color(0xFF2196F3).withOpacity(0.1),
-          'border': const Color(0xFF2196F3).withOpacity(0.3),
-          'icon_bg': const Color(0xFF2196F3).withOpacity(0.2),
+          'bg': const Color(0xFF2196F3).withValues(alpha: 0.1),
+          'border': const Color(0xFF2196F3).withValues(alpha: 0.3),
+          'icon_bg': const Color(0xFF2196F3).withValues(alpha: 0.2),
           'icon': const Color(0xFF2196F3),
           'title': Colors.white,
           'content': Colors.white70,

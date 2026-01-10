@@ -4,9 +4,10 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Layout, Typography, message, Spin } from 'antd';
+import { Layout, Typography, Spin } from 'antd';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { useNotification } from '../components/providers';
 import ChannelSelector from '../components/LayoutEditor/ChannelSelector';
 import ModuleCanvas from '../components/LayoutEditor/ModuleCanvas';
 import ModuleInspector from '../components/LayoutEditor/ModuleInspector';
@@ -32,6 +33,7 @@ const LayoutEditor: React.FC = () => {
   const [modules, setModules] = useState<Module[]>([]);
   const [selectedModule, setSelectedModule] = useState<Module | null>(null);
   const [saving, setSaving] = useState(false);
+  const { success, error } = useNotification();
 
   // 加载布局数据
   const loadLayout = async (tabId: string) => {
@@ -40,8 +42,8 @@ const LayoutEditor: React.FC = () => {
       const data = await getLayout(tabId);
       setModules(data.modules || []);
       setSelectedModule(null);
-    } catch (error: any) {
-      message.error(error.message || '加载布局失败');
+    } catch (err: any) {
+      error(err.message || '加载布局失败');
     } finally {
       setLoading(false);
     }
@@ -94,7 +96,7 @@ const LayoutEditor: React.FC = () => {
       .map((m, index) => ({ ...m, sort_order: index }));
     setModules(updatedModules);
     setSelectedModule(null);
-    message.success('模块已删除');
+    success('模块已删除');
   };
 
   // 切换模块启用/禁用
@@ -118,7 +120,7 @@ const LayoutEditor: React.FC = () => {
       setSelectedModule({ ...module, is_enabled: enabled });
     }
     
-    message.success(enabled ? '模块已启用' : '模块已禁用');
+    success(enabled ? '模块已启用' : '模块已禁用');
   };
 
   // 保存布局
@@ -131,9 +133,9 @@ const LayoutEditor: React.FC = () => {
         tab_id: selectedTab,
       }));
       await updateLayout(selectedTab, modulesWithTabId);
-      message.success('布局保存成功');
-    } catch (error: any) {
-      message.error(error.message || '保存布局失败');
+      success('布局保存成功');
+    } catch (err: any) {
+      error(err.message || '保存布局失败');
     } finally {
       setSaving(false);
     }

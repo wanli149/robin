@@ -47,7 +47,7 @@ announcements.get('/admin/announcements', async (c) => {
 
     return c.json({
       code: 1,
-      list: listResult.results || [],
+      data: listResult.results || [],
       total: countResult?.total || 0,
       page,
       limit,

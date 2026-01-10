@@ -12,13 +12,13 @@ import {
   Statistic,
   Row,
   Col,
-  message,
   Tag,
   Modal,
   Select,
   InputNumber,
   Tooltip,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   SyncOutlined,
   CheckCircleOutlined,
@@ -26,29 +26,39 @@ import {
   ClockCircleOutlined,
   ReloadOutlined,
   PictureOutlined,
-  MergeCellsOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
+import {
+  getCollectStatsV1,
+  getCollectTasksV1,
+  triggerCollect as triggerCollectApi,
+  triggerValidate as triggerValidateApi,
+  fixCovers as fixCoversApi,
+  rebuildActors,
+} from '../services/adminApi';
 import type { ColumnsType } from 'antd/es/table';
 
 interface CollectTask {
   id: number;
-  source_name: string;
-  task_type: string;
+  source_name?: string;
+  type?: string;
+  task_type?: string;
   status: string;
-  total_count: number;
+  total_count?: number;
   new_count: number;
   update_count: number;
   error_count: number;
-  duration: number;
-  created_at: number;
+  duration?: number;
+  started_at?: number;
+  created_at?: number;
+  completed_at?: number;
 }
 
 interface CollectStats {
   total_videos: number;
   valid_videos: number;
   today_new: number;
-  last_task: CollectTask | null;
+  last_task?: CollectTask | null;
 }
 
 const CollectManagement: React.FC = () => {
@@ -58,21 +68,15 @@ const CollectManagement: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [taskType, setTaskType] = useState<'incremental' | 'full'>('incremental');
   const [limit, setLimit] = useState<number>(100);
+  const { success, error } = useNotification();
 
   // 加载统计数据
   const loadStats = async () => {
     try {
-      const response = await fetch('/admin/collect/stats', {
-        headers: {
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setStats(data.data);
-      }
-    } catch (error) {
-      console.error('Failed to load stats:', error);
+      const data = await getCollectStatsV1();
+      setStats(data as unknown as CollectStats);
+    } catch (err) {
+      console.error('Failed to load stats:', err);
     }
   };
 
@@ -80,17 +84,10 @@ const CollectManagement: React.FC = () => {
   const loadTasks = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/admin/collect/tasks', {
-        headers: {
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setTasks(data.list);
-      }
-    } catch (error) {
-      message.error('加载任务列表失败');
+      const data = await getCollectTasksV1();
+      setTasks(data as unknown as CollectTask[]);
+    } catch (err) {
+      error('加载任务列表失败');
     } finally {
       setLoading(false);
     }
@@ -99,120 +96,46 @@ const CollectManagement: React.FC = () => {
   // 触发采集
   const triggerCollect = async () => {
     try {
-      const response = await fetch('/admin/collect/trigger', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-        body: JSON.stringify({ taskType, limit }),
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('采集任务已触发，请稍后查看结果');
-        setModalVisible(false);
-        setTimeout(loadTasks, 2000);
-      } else {
-        message.error(data.msg || '触发失败');
-      }
-    } catch (error) {
-      message.error('触发采集失败');
+      await triggerCollectApi();
+      success('采集任务已触发，请稍后查看结果');
+      setModalVisible(false);
+      setTimeout(loadTasks, 2000);
+    } catch (err: any) {
+      error(err.message || '触发采集失败');
     }
   };
 
   // 触发URL检测
   const triggerValidate = async () => {
     try {
-      const response = await fetch('/admin/collect/validate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-        body: JSON.stringify({ limit: 100 }),
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('URL检测任务已触发');
-      } else {
-        message.error(data.msg || '触发失败');
-      }
-    } catch (error) {
-      message.error('触发检测失败');
+      await triggerValidateApi();
+      success('URL检测任务已触发');
+    } catch (err: any) {
+      error(err.message || '触发检测失败');
     }
   };
 
   // 修复视频封面
   const fixCovers = async () => {
     try {
-      const response = await fetch('/admin/collect/fix-covers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-        body: JSON.stringify({ limit: 100 }),
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('封面修复任务已触发，将为最多100个视频补充封面');
-      } else {
-        message.error(data.msg || '触发失败');
-      }
-    } catch (error) {
-      message.error('触发修复失败');
+      await fixCoversApi(100);
+      success('封面修复任务已触发，将为最多100个视频补充封面');
+    } catch (err: any) {
+      error(err.message || '触发修复失败');
     }
   };
 
-  // 合并重复视频
-  const mergeDuplicates = async () => {
-    Modal.confirm({
-      title: '合并重复视频',
-      content: '此操作将合并数据库中的重复视频记录，可能需要几分钟时间。确定继续吗？',
-      onOk: async () => {
-        try {
-          const response = await fetch('/admin/collect/migrate', {
-            method: 'POST',
-            headers: {
-              'x-admin-key': localStorage.getItem('admin_key') || '',
-            },
-          });
-          const data = await response.json();
-          if (data.code === 1) {
-            message.success('合并任务已触发，请稍后查看结果');
-          } else {
-            message.error(data.msg || '触发失败');
-          }
-        } catch (error) {
-          message.error('触发合并失败');
-        }
-      },
-    });
-  };
-
   // 重建演员关联
-  const rebuildActors = async () => {
+  const handleRebuildActors = async () => {
     Modal.confirm({
       title: '重建演员关联',
       content: '此操作将重新建立视频与演员的关联关系，可能需要几分钟时间。确定继续吗？',
       onOk: async () => {
         try {
-          const response = await fetch('/admin/collect/rebuild-actors', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-admin-key': localStorage.getItem('admin_key') || '',
-            },
-            body: JSON.stringify({ limit: 1000 }),
-          });
-          const data = await response.json();
-          if (data.code === 1) {
-            message.success('演员关联重建任务已触发');
-          } else {
-            message.error(data.msg || '触发失败');
-          }
-        } catch (error) {
-          message.error('触发重建失败');
+          const result = await rebuildActors();
+          success(`演员关联重建完成！处理: ${result.processed}, 创建: ${result.created}`);
+        } catch (err: any) {
+          error(err.message || '触发重建失败');
         }
       },
     });
@@ -365,13 +288,8 @@ const CollectManagement: React.FC = () => {
               修复数据
             </Button>
           </Tooltip>
-          <Tooltip title="合并数据库中的重复视频记录，优化存储空间">
-            <Button icon={<MergeCellsOutlined />} onClick={mergeDuplicates}>
-              合并重复
-            </Button>
-          </Tooltip>
           <Tooltip title="重新建立视频与演员的关联关系">
-            <Button icon={<TeamOutlined />} onClick={rebuildActors}>
+            <Button icon={<TeamOutlined />} onClick={handleRebuildActors}>
               重建演员
             </Button>
           </Tooltip>

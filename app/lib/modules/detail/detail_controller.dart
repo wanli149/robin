@@ -3,6 +3,7 @@ import '../../core/http_client.dart';
 import '../../core/user_store.dart';
 import '../../core/global_player_manager.dart';
 import '../../core/progress_sync_service.dart';
+import '../../core/logger.dart';
 
 /// 视频详情控制器
 class DetailController extends GetxController {
@@ -62,14 +63,15 @@ class DetailController extends GetxController {
     loadDetail();
   }
 
-  /// 加载视频详情
+  /// 加载视频详情（使用合并后的多语言版本API）
   Future<void> loadDetail() async {
     try {
       isLoading.value = true;
       error.value = '';
 
+      // 优先使用合并后的详情API（多语言版本合并）
       final response = await _httpClient.get(
-        '/api/vod/detail',
+        '/api/vod/detail/merged',
         queryParameters: {'ids': videoId},
       );
 
@@ -80,7 +82,7 @@ class DetailController extends GetxController {
           final vod = data['data'] as Map<String, dynamic>;
           videoDetail.value = vod;
 
-          // 解析所有播放源
+          // 解析所有播放源（新格式：带语言信息）
           _parseAllSources(vod);
           
           // 加载保存的播放进度
@@ -90,7 +92,7 @@ class DetailController extends GetxController {
           final recs = data['recommendations'] as List?;
           if (recs != null && recs.isNotEmpty) {
             recommendations.value = recs
-                .map((e) => e as Map<String, dynamic>)
+                .map((e) => Map<String, dynamic>.from(e as Map))
                 .toList();
           } else {
             _loadRecommendations();
@@ -100,11 +102,21 @@ class DetailController extends GetxController {
           _checkFavoriteStatus();
           _checkAppointmentStatus();
 
-          print('✅ Loaded video detail: ${vod['vod_name']}');
+          Logger.success('[DetailController] Loaded merged video detail: ${vod['vod_name']}');
+          
+          // 打印可用语言和清晰度
+          final availableLangs = vod['available_languages'] as List?;
+          final availableQualities = vod['available_qualities'] as List?;
+          if (availableLangs != null && availableLangs.isNotEmpty) {
+            Logger.success('[DetailController] Available languages: $availableLangs');
+          }
+          if (availableQualities != null && availableQualities.isNotEmpty) {
+            Logger.success('[DetailController] Available qualities: $availableQualities');
+          }
         }
       }
     } catch (e) {
-      print('❌ Failed to load video detail: $e');
+      Logger.error('[DetailController] Failed to load video detail: $e');
       error.value = '加载失败，请重试';
     } finally {
       isLoading.value = false;
@@ -115,17 +127,17 @@ class DetailController extends GetxController {
   void _parseAllSources(Map<String, dynamic> vod) {
     final playSources = vod['play_sources'] as List?;
     if (playSources == null || playSources.isEmpty) {
-      print('⚠️ No play_sources found');
+      Logger.warning('[DetailController] No play_sources found');
       return;
     }
     _parsePlaySources(playSources);
   }
   
-  /// 解析播放源（优化版：直接使用后端清洗后的数据）
+  /// 解析播放源（优化版：支持多语言版本）
   void _parsePlaySources(List playSources) {
     int defaultSourceIndex = 0;
     
-    // 直接使用后端返回的数据，只添加 count 字段
+    // 直接使用后端返回的数据，保留语言和清晰度信息
     final parsedSources = <Map<String, dynamic>>[];
     
     for (var i = 0; i < playSources.length; i++) {
@@ -135,6 +147,8 @@ class DetailController extends GetxController {
       if (episodes.isNotEmpty) {
         parsedSources.add({
           'name': source['name'] ?? '线路${i + 1}',
+          'language': source['language'] ?? '原声',  // 语言版本
+          'quality': source['quality'],               // 清晰度
           'episodes': episodes,
           'count': episodes.length,
         });
@@ -149,7 +163,7 @@ class DetailController extends GetxController {
     }
     
     this.playSources.value = parsedSources;
-    print('✅ Loaded ${parsedSources.length} play sources');
+    Logger.success('[DetailController] Loaded ${parsedSources.length} play sources with language info');
     
     // 设置默认播放源
     if (parsedSources.isNotEmpty) {
@@ -164,25 +178,59 @@ class DetailController extends GetxController {
     
     final source = playSources[sourceIndex];
     final sourceEpisodes = (source['episodes'] as List?)
-        ?.map((e) => e as Map<String, dynamic>)
+        ?.map((e) => Map<String, dynamic>.from(e as Map))
         .toList() ?? [];
     episodes.value = sourceEpisodes;
     
-    print('✅ Switched to source: ${source['name']}, ${sourceEpisodes.length} episodes');
+    Logger.success('[DetailController] Switched to source: ${source['name']}, ${sourceEpisodes.length} episodes');
   }
   
-  /// 切换播放源
-  void switchSource(int sourceIndex) {
+  /// 切换播放源（保持当前集数和播放位置）
+  void switchSource(int sourceIndex) async {
     if (sourceIndex < 0 || sourceIndex >= playSources.length) return;
     if (sourceIndex == currentSourceIndex.value) return;
+    
+    // 保存当前播放状态
+    final previousEpisodeIndex = currentEpisodeIndex.value;
+    final previousPosition = GlobalPlayerManager.to.currentState.value.position;
     
     currentSourceIndex.value = sourceIndex;
     _updateEpisodesFromSource(sourceIndex);
     
-    // 重置到第一集并播放
-    currentEpisodeIndex.value = 0;
+    // 保持当前集数（如果新源有这一集的话）
     if (episodes.isNotEmpty) {
-      _playCurrentEpisode();
+      // 确保集数索引在新源的范围内
+      final targetEpisodeIndex = previousEpisodeIndex < episodes.length 
+          ? previousEpisodeIndex 
+          : episodes.length - 1;
+      
+      currentEpisodeIndex.value = targetEpisodeIndex;
+      await _playCurrentEpisodeWithPosition(previousPosition);
+    }
+  }
+  
+  /// 播放当前集数并跳转到指定位置
+  Future<void> _playCurrentEpisodeWithPosition(Duration position) async {
+    final playUrl = currentPlayUrl;
+    if (playUrl.isEmpty) return;
+    
+    final contentType = episodes.length > 1 ? ContentType.tv : ContentType.movie;
+    final contentName = videoDetail.value?['vod_name'] as String? ?? '';
+    
+    await GlobalPlayerManager.to.switchContent(
+      contentType: contentType,
+      contentId: videoId,
+      contentName: contentName,
+      episodeIndex: currentEpisodeIndex.value + 1,
+      config: PlayerConfig.tvWindow(),
+      videoUrl: playUrl,
+      autoPlay: true,
+    );
+    
+    // 切换完成后跳转到之前的播放位置
+    if (position.inSeconds > 0) {
+      await GlobalPlayerManager.to.seekTo(position);
+      Logger.success('[DetailController] Restored position after source switch: ${position.inSeconds}s');
     }
   }
   
@@ -192,10 +240,12 @@ class DetailController extends GetxController {
     if (playUrl.isEmpty) return;
     
     final contentType = episodes.length > 1 ? ContentType.tv : ContentType.movie;
+    final contentName = videoDetail.value?['vod_name'] as String? ?? '';
     
     GlobalPlayerManager.to.switchContent(
       contentType: contentType,
       contentId: videoId,
+      contentName: contentName,
       episodeIndex: currentEpisodeIndex.value + 1,
       config: PlayerConfig.tvWindow(),
       videoUrl: playUrl,
@@ -211,14 +261,14 @@ class DetailController extends GetxController {
     try {
       final response = await _httpClient.get('/api/user/favorites');
       if (response.statusCode == 200 && response.data != null) {
-        final favorites = (response.data['list'] as List?)
-                ?.map((e) => e as Map<String, dynamic>)
+        final favorites = (response.data['data'] as List?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ?? [];
 
         isFavorited.value = favorites.any((f) => f['vod_id'] == videoId);
       }
     } catch (e) {
-      print('❌ Failed to check favorite status: $e');
+      Logger.error('[DetailController] Failed to check favorite status: $e');
     }
   }
 
@@ -229,14 +279,14 @@ class DetailController extends GetxController {
     try {
       final response = await _httpClient.get('/api/user/appointments');
       if (response.statusCode == 200 && response.data != null) {
-        final appointments = (response.data['list'] as List?)
-                ?.map((e) => e as Map<String, dynamic>)
+        final appointments = (response.data['data'] as List?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ?? [];
 
         isAppointed.value = appointments.any((a) => a['vod_id'] == videoId);
       }
     } catch (e) {
-      print('❌ Failed to check appointment status: $e');
+      Logger.error('[DetailController] Failed to check appointment status: $e');
     }
   }
 
@@ -248,7 +298,7 @@ class DetailController extends GetxController {
     savedPosition.value = Duration.zero;
     _playCurrentEpisode();
     
-    print('✅ Selected episode: ${episodes[index]['name']}');
+    Logger.success('[DetailController] Selected episode: ${episodes[index]['name']}');
   }
 
   /// 切换收藏
@@ -270,7 +320,7 @@ class DetailController extends GetxController {
         Get.snackbar('提示', '已添加到收藏', snackPosition: SnackPosition.BOTTOM);
       }
     } catch (e) {
-      print('❌ Failed to toggle favorite: $e');
+      Logger.error('[DetailController] Failed to toggle favorite: $e');
       Get.snackbar('错误', '操作失败，请重试', snackPosition: SnackPosition.BOTTOM);
     }
   }
@@ -294,7 +344,7 @@ class DetailController extends GetxController {
         Get.snackbar('提示', '预约成功，更新时将通知您', snackPosition: SnackPosition.BOTTOM);
       }
     } catch (e) {
-      print('❌ Failed to toggle appointment: $e');
+      Logger.error('[DetailController] Failed to toggle appointment: $e');
       Get.snackbar('错误', '操作失败，请重试', snackPosition: SnackPosition.BOTTOM);
     }
   }
@@ -323,7 +373,7 @@ class DetailController extends GetxController {
         durationSeconds: duration.inSeconds,
       );
     } catch (e) {
-      print('❌ Failed to save progress: $e');
+      Logger.error('[DetailController] Failed to save progress: $e');
     }
     
     if (UserStore.to.isLoggedIn) {
@@ -336,12 +386,12 @@ class DetailController extends GetxController {
           'duration': duration.inSeconds,
         });
       } catch (e) {
-        print('❌ Failed to sync history: $e');
+        Logger.error('[DetailController] Failed to sync history: $e');
       }
     }
   }
 
-  /// 加载保存的播放位置
+  /// 加载保存的播放位置（用于自动恢复）
   Future<void> loadSavedPosition() async {
     try {
       final contentType = episodes.length > 1 ? 'tv' : 'movie';
@@ -357,36 +407,13 @@ class DetailController extends GetxController {
         if (position.inSeconds > 0) {
           savedPosition.value = position;
           savedEpisodeIndex.value = i;
-          print('✅ Found saved position: episode ${i + 1}, ${position.inSeconds}s');
+          Logger.success('[DetailController] Found saved position: episode ${i + 1}, ${position.inSeconds}s');
           return;
         }
       }
     } catch (e) {
-      print('❌ Failed to load saved position: $e');
+      Logger.error('[DetailController] Failed to load saved position: $e');
     }
-  }
-  
-  /// 继续播放（从上次位置）
-  void continuePlay() {
-    if (savedEpisodeIndex.value >= 0 && savedEpisodeIndex.value < episodes.length) {
-      currentEpisodeIndex.value = savedEpisodeIndex.value;
-      _playCurrentEpisode();
-      
-      // TODO: 跳转到保存的位置
-      // GlobalPlayerManager.to.seekTo(savedPosition.value);
-    }
-  }
-  
-  /// 获取继续播放信息
-  Map<String, dynamic>? get continuePlayInfo {
-    if (savedPosition.value.inSeconds <= 0) return null;
-    if (savedEpisodeIndex.value < 0 || savedEpisodeIndex.value >= episodes.length) return null;
-    
-    return {
-      'episodeIndex': savedEpisodeIndex.value,
-      'episodeName': episodes[savedEpisodeIndex.value]['name'] ?? '第${savedEpisodeIndex.value + 1}集',
-      'position': savedPosition.value,
-    };
   }
 
   /// 加载推荐视频
@@ -394,21 +421,30 @@ class DetailController extends GetxController {
     try {
       final response = await _httpClient.get(
         '/api/recommend/similar/$videoId',
-        queryParameters: {'limit': '10'},
+        queryParameters: {'limit': '9'}, // 3x3 网格需要 9 个
       );
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
         if (data['code'] == 1 && data['data'] != null) {
-          final list = (data['data']['list'] as List?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map))
-              .toList() ?? [];
+          // 兼容两种格式：data['data'] 可能是列表或包含 list 字段的对象
+          List? rawList;
+          if (data['data'] is List) {
+            rawList = data['data'] as List;
+          } else if (data['data'] is Map && data['data']['list'] != null) {
+            rawList = data['data']['list'] as List;
+          }
           
-          recommendations.value = list;
+          if (rawList != null && rawList.isNotEmpty) {
+            final list = rawList
+                .map((e) => Map<String, dynamic>.from(e as Map))
+                .toList();
+            recommendations.value = list;
+          }
         }
       }
     } catch (e) {
-      print('❌ Failed to load recommendations: $e');
+      Logger.error('[DetailController] Failed to load recommendations: $e');
     }
   }
 
@@ -422,16 +458,16 @@ class DetailController extends GetxController {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        if (data['code'] == 1 && data['list'] != null) {
-          final list = data['list'] as List;
+        if (data['code'] == 1 && data['data'] != null) {
+          final list = data['data'] as List;
           if (list.isNotEmpty) {
-            return list[0] as Map<String, dynamic>;
+            return Map<String, dynamic>.from(list[0] as Map);
           }
         }
       }
       return null;
     } catch (e) {
-      print('❌ Failed to search actor: $e');
+      Logger.error('[DetailController] Failed to search actor: $e');
       return null;
     }
   }

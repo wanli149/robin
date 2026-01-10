@@ -11,6 +11,7 @@ import { checkAllSourcesHealth } from './source_health';
 import { cleanupOldTasks } from './task_manager';
 import { cleanupOldLogs } from './collect_logger';
 import { logger } from '../utils/logger';
+import { CACHE_CONFIG } from '../config';
 import type { SystemConfigRow, HotSearchStatsRow, HomeTabRow, VodCacheListRow } from '../types/database';
 // 短剧数据现在直接存储在 vod_cache，不再需要同步
 
@@ -110,7 +111,7 @@ async function warmupCaches(env: Env): Promise<void> {
       `).bind(limit).all();
       
       const keywords = (result.results || []).map((r: HotSearchStatsRow) => r.keyword);
-      await env.ROBIN_CACHE.put('hot_search_keywords', JSON.stringify({ keywords }), { expirationTtl: 600 });
+      await env.ROBIN_CACHE.put('hot_search_keywords', JSON.stringify({ keywords }), { expirationTtl: CACHE_CONFIG.hotSearchTTL });
       logger.scheduler.info('Hot search cache warmed up');
     }
     
@@ -124,7 +125,7 @@ async function warmupCaches(env: Env): Promise<void> {
       enabled: marqueeMap.get('marquee_enabled') === 'true',
       text: marqueeMap.get('marquee_text') || '',
       link: marqueeMap.get('marquee_link') || '',
-    }), { expirationTtl: 600 });
+    }), { expirationTtl: CACHE_CONFIG.marqueeTTL });
     logger.scheduler.info('Marquee cache warmed up');
     
     // 3. 预热 tabs 列表
@@ -135,7 +136,7 @@ async function warmupCaches(env: Env): Promise<void> {
     await env.ROBIN_CACHE.put('home_tabs', JSON.stringify({
       tabs: tabsResult.results,
       timestamp: Date.now(),
-    }), { expirationTtl: 1800 });
+    }), { expirationTtl: CACHE_CONFIG.tabsTTL });
     logger.scheduler.info('Tabs cache warmed up');
     
     // 4. 预热热门排行榜
@@ -151,7 +152,7 @@ async function warmupCaches(env: Env): Promise<void> {
       heat: video.vod_hits_day || 0,
     }));
     
-    await env.ROBIN_CACHE.put('rank:day:all:10', JSON.stringify(rankingList), { expirationTtl: 600 });
+    await env.ROBIN_CACHE.put('rank:day:all:10', JSON.stringify(rankingList), { expirationTtl: CACHE_CONFIG.rankingTTL });
     logger.scheduler.info('Ranking cache warmed up');
     
   } catch (error) {

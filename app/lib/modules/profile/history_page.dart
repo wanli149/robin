@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/sync_service.dart';
+import '../../core/logger.dart';
 import '../../widgets/net_image.dart';
 
 /// 观看历史页面
@@ -61,7 +62,7 @@ class _HistoryPageState extends State<HistoryPage> {
         _currentPage++;
       }
     } catch (e) {
-      print('❌ Failed to load history: $e');
+      Logger.error('Failed to load history: $e');
       Get.snackbar('错误', '加载失败，请重试');
     } finally {
       _isLoading.value = false;
@@ -205,7 +206,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 Icon(
                   Icons.history,
                   size: 80,
-                  color: Colors.white.withOpacity(0.3),
+                  color: Colors.white.withValues(alpha: 0.3),
                 ),
                 const SizedBox(height: 24),
                 const Text(
@@ -301,7 +302,7 @@ class _HistoryPageState extends State<HistoryPage> {
                       child: Container(
                         height: 3,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.white.withValues(alpha: 0.3),
                         ),
                         child: FractionallySizedBox(
                           alignment: Alignment.centerLeft,

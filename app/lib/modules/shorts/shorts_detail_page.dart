@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import '../../widgets/net_image.dart';
 import '../../widgets/player/global_video_player.dart';
@@ -24,6 +25,14 @@ class ShortsDetailPage extends StatefulWidget {
 
 class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBindingObserver {
   late ShortsDetailController controller;
+  bool _playerInitialized = false; // 🚀 跟踪播放器是否已初始化
+  bool _isInitializing = false; // 🚀 初始化互斥锁，防止竞态条件
+  
+  // 🚀 滚动控制器和播放器高度
+  final ScrollController _scrollController = ScrollController();
+  double _playerHeightRatio = 0.55; // 播放器高度比例 (55% - 25%)
+  static const double _maxRatio = 0.55;
+  static const double _minRatio = 0.25;
 
   @override
   void initState() {
@@ -37,21 +46,61 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
     
     // 添加应用生命周期监听
     WidgetsBinding.instance.addObserver(this);
+    
+    // 🚀 监听滚动事件
+    _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
+    // 🚀 取消正在进行的播放器初始化操作
+    GlobalPlayerManager.to.cancelCurrentOperation();
     // 🚀 离开页面时暂停播放器
     GlobalPlayerManager.to.pause();
     // 移除应用生命周期监听
     WidgetsBinding.instance.removeObserver(this);
+    // 🚀 移除滚动监听
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     super.dispose();
   }
 
-  /// 初始化全局播放器
+  /// 🚀 处理滚动事件，动态调整播放器高度
+  void _onScroll() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final maxScrollForShrink = screenHeight * 0.3; // 滚动 30% 屏幕高度时达到最小
+    
+    final scrollOffset = _scrollController.offset;
+    
+    // 计算新的高度比例
+    double newRatio;
+    if (scrollOffset <= 0) {
+      newRatio = _maxRatio;
+    } else if (scrollOffset >= maxScrollForShrink) {
+      newRatio = _minRatio;
+    } else {
+      // 线性插值
+      newRatio = _maxRatio - (scrollOffset / maxScrollForShrink) * (_maxRatio - _minRatio);
+    }
+    
+    if (newRatio != _playerHeightRatio) {
+      setState(() {
+        _playerHeightRatio = newRatio;
+      });
+    }
+  }
+
+  /// 初始化全局播放器（只执行一次，带互斥锁防止竞态条件）
   void _initializeGlobalPlayer(ShortsDetailController controller) {
+    // 🚀 防止重复初始化（双重检查锁定模式）
+    if (_playerInitialized || _isInitializing) return;
+    
     final episodes = controller.episodes;
     if (episodes.isEmpty) return;
+    
+    // 🚀 设置初始化锁
+    _isInitializing = true;
+    _playerInitialized = true;
 
     // 检查是否从短剧流跳转过来，如果是则从第1集开始
     final args = Get.arguments as Map<String, dynamic>?;
@@ -79,7 +128,13 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
         config: PlayerConfig.shortsWindow(),
         videoUrl: videoUrl,
         autoPlay: true, // 详情页自动播放
-      );
+      ).whenComplete(() {
+        // 🚀 初始化完成后释放锁
+        _isInitializing = false;
+      });
+    } else {
+      // 🚀 无播放URL时也要释放锁
+      _isInitializing = false;
     }
   }
 
@@ -88,46 +143,28 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
     return UrlParser.parseVideoUrl(playUrl);
   }
 
-  /// 构建播放器覆盖层
+  /// 构建播放器覆盖层（窗口模式下显示全屏按钮）
   Widget _buildPlayerOverlay(ShortsDetailController controller) {
     return Positioned(
-      right: 16,
-      bottom: 16,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 锁定模式按钮
-          GestureDetector(
-            onTap: () {
-              controller.enterLockedMode();
-            },
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.fullscreen,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                  SizedBox(width: 4),
-                  Text(
-                    '锁定模式',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+      right: 8,
+      top: 8,
+      child: GestureDetector(
+        onTap: () {
+          // 进入全屏模式
+          GlobalPlayerManager.to.enterFullscreen();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(4),
           ),
-        ],
+          child: const Icon(
+            Icons.fullscreen,
+            color: Colors.white,
+            size: 24,
+          ),
+        ),
       ),
     );
   }
@@ -151,13 +188,351 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: _onWillPop,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF121212),
-        body: Obx(() => _buildContent(controller)),
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) async {
+        if (!didPop) {
+          final shouldPop = await _onWillPop();
+          if (shouldPop && context.mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
+      child: Obx(() {
+        // 根据播放器模式决定显示全屏播放器还是详情页
+        final isFullscreen = GlobalPlayerManager.to.playerMode.value == PlayerMode.fullscreen;
+        
+        if (isFullscreen) {
+          return _buildFullscreenPlayer();
+        }
+        
+        return Scaffold(
+          backgroundColor: const Color(0xFF121212),
+          body: Obx(() => _buildContent(controller)),
+        );
+      }),
+    );
+  }
+
+  /// 构建全屏播放器（竖屏，支持上下滑动切换集数）
+  Widget _buildFullscreenPlayer() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // 全屏播放器 - 使用 PageView 支持上下滑动切换集数
+          _buildFullscreenPageView(),
+          
+          // 顶部控制栏（带渐变）
+          _buildFullscreenTopBar(),
+          
+          // 底部控制栏（进度条 + 集数指示）
+          _buildFullscreenBottomControls(),
+        ],
       ),
     );
+  }
+
+  /// 构建全屏 PageView（上下滑动切换集数）
+  Widget _buildFullscreenPageView() {
+    final episodes = controller.episodes;
+    
+    return PageView.builder(
+      scrollDirection: Axis.vertical,
+      controller: PageController(initialPage: controller.currentEpisodeIndex.value),
+      itemCount: episodes.length,
+      onPageChanged: (index) {
+        // 切换集数
+        controller.selectEpisode(index);
+      },
+      itemBuilder: (context, index) {
+        final isCurrentEpisode = index == controller.currentEpisodeIndex.value;
+        
+        return GestureDetector(
+          onTap: () {
+            // 单击切换播放/暂停
+            GlobalPlayerManager.to.togglePlayPause();
+          },
+          child: Container(
+            color: Colors.black,
+            child: ClipRect(
+              child: isCurrentEpisode
+                  ? GlobalVideoPlayer(
+                      showControls: false,
+                      onTap: () => GlobalPlayerManager.to.togglePlayPause(),
+                    )
+                  : _buildEpisodePlaceholder(index),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 构建集数占位符（非当前播放集数）
+  Widget _buildEpisodePlaceholder(int index) {
+    final episodes = controller.episodes;
+    final episode = episodes[index];
+    final coverUrl = controller.shortDetail.value?['cover'] as String? ?? '';
+    
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 封面
+        NetImage(
+          url: coverUrl,
+          fit: BoxFit.cover,
+        ),
+        // 半透明遮罩
+        Container(
+          color: Colors.black.withValues(alpha: 0.5),
+        ),
+        // 集数信息
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.play_circle_outline,
+                color: Colors.white,
+                size: 64,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '第${index + 1}集',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建全屏顶部控制栏
+  Widget _buildFullscreenTopBar() {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: EdgeInsets.only(
+          top: MediaQuery.of(context).padding.top + 8,
+          left: 8,
+          right: 8,
+          bottom: 8,
+        ),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.7),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: Row(
+          children: [
+            // 返回按钮（退出全屏）
+            IconButton(
+              onPressed: () {
+                GlobalPlayerManager.to.exitFullscreen();
+              },
+              icon: const Icon(
+                Icons.arrow_back,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 8),
+            // 短剧名称
+            Expanded(
+              child: Text(
+                controller.shortDetail.value?['name'] as String? ?? '',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建全屏底部控制栏（进度条 + 播放按钮 + 集数指示）
+  Widget _buildFullscreenBottomControls() {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + 12,
+          left: 16,
+          right: 16,
+          top: 40,
+        ),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.8),
+              Colors.black.withValues(alpha: 0.4),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 进度条
+            _buildFullscreenProgressBar(),
+            const SizedBox(height: 12),
+            // 底部控制行
+            _buildFullscreenControlRow(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建全屏进度条
+  Widget _buildFullscreenProgressBar() {
+    return Obx(() {
+      final state = GlobalPlayerManager.to.currentState.value;
+      final progress = state.duration.inMilliseconds > 0
+          ? state.position.inMilliseconds / state.duration.inMilliseconds
+          : 0.0;
+
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return GestureDetector(
+            onHorizontalDragUpdate: (details) {
+              final localX = details.localPosition.dx;
+              final newProgress = (localX / constraints.maxWidth).clamp(0.0, 1.0);
+              final newPosition = Duration(
+                milliseconds: (state.duration.inMilliseconds * newProgress).round(),
+              );
+              GlobalPlayerManager.to.seekTo(newPosition);
+            },
+            onTapDown: (details) {
+              final localX = details.localPosition.dx;
+              final newProgress = (localX / constraints.maxWidth).clamp(0.0, 1.0);
+              final newPosition = Duration(
+                milliseconds: (state.duration.inMilliseconds * newProgress).round(),
+              );
+              GlobalPlayerManager.to.seekTo(newPosition);
+            },
+            child: Container(
+              height: 24,
+              alignment: Alignment.center,
+              color: Colors.transparent,
+              child: Stack(
+                alignment: Alignment.centerLeft,
+                children: [
+                  // 背景轨道
+                  Container(
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(1.5),
+                    ),
+                  ),
+                  // 已播放进度
+                  FractionallySizedBox(
+                    widthFactor: progress.clamp(0.0, 1.0),
+                    child: Container(
+                      height: 3,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFC107),
+                        borderRadius: BorderRadius.circular(1.5),
+                      ),
+                    ),
+                  ),
+                  // 圆形滑块
+                  Positioned(
+                    left: (constraints.maxWidth * progress.clamp(0.0, 1.0) - 6).clamp(0.0, constraints.maxWidth - 12),
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFFC107),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    });
+  }
+
+  /// 构建全屏控制行（播放按钮 + 时间 + 集数）
+  Widget _buildFullscreenControlRow() {
+    return Obx(() {
+      final state = GlobalPlayerManager.to.currentState.value;
+      final currentIndex = controller.currentEpisodeIndex.value;
+      final totalEpisodes = controller.episodes.length;
+
+      return Row(
+        children: [
+          // 播放/暂停按钮
+          GestureDetector(
+            onTap: () => GlobalPlayerManager.to.togglePlayPause(),
+            child: Icon(
+              state.isPlaying ? Icons.pause : Icons.play_arrow,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 12),
+          // 时间显示
+          Text(
+            '${_formatDuration(state.position)} / ${_formatDuration(state.duration)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+            ),
+          ),
+          const Spacer(),
+          // 集数指示
+          Text(
+            '第${currentIndex + 1}集 / 共${totalEpisodes}集',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 滑动提示图标
+          const Icon(
+            Icons.swipe_vertical,
+            color: Colors.white54,
+            size: 16,
+          ),
+        ],
+      );
+    });
+  }
+
+  /// 格式化时长
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   /// 处理系统返回键
@@ -254,19 +629,57 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
 
   /// 构建全局播放器
   Widget _buildGlobalPlayer(ShortsDetailController controller, Map<String, dynamic> detail) {
-    // 初始化全局播放器
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeGlobalPlayer(controller);
-    });
+    // 🚀 在下一帧初始化播放器（只执行一次）
+    if (!_playerInitialized && controller.episodes.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _initializeGlobalPlayer(controller);
+      });
+    }
 
-    return GlobalVideoPlayer(
-      showControls: true,
-      overlay: _buildPlayerOverlay(controller),
-      onTap: () {
-        // 短剧详情页点击播放器切换播放/暂停
-        GlobalPlayerManager.to.togglePlayPause();
-      },
-    );
+    return Obx(() {
+      final contentType = GlobalPlayerManager.to.currentState.value.contentType;
+      final isInitialized = GlobalPlayerManager.to.playerInstance?.value.isInitialized ?? false;
+      
+      // 🚀 只有当播放器类型是 shorts 且已初始化时才显示播放器
+      if (contentType == ContentType.shorts && isInitialized) {
+        return GlobalVideoPlayer(
+          showControls: true,
+          overlay: _buildPlayerOverlay(controller),
+          onTap: () {
+            // 短剧详情页点击播放器切换播放/暂停
+            GlobalPlayerManager.to.togglePlayPause();
+          },
+        );
+      } else {
+        // 🚀 播放器未就绪时显示封面和加载指示器
+        // 封面是竖屏的(9:16)，在横屏播放器(16:9)中需要居中显示，两侧留黑边
+        final coverUrl = detail['cover'] as String? ?? '';
+        return Container(
+          color: Colors.black,
+          child: Stack(
+            children: [
+              // 封面 - 居中显示竖屏封面，保持比例
+              Center(
+                child: AspectRatio(
+                  aspectRatio: 9 / 16, // 竖屏封面比例
+                  child: NetImage(
+                    url: coverUrl,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              // 加载指示器
+              const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
+                  strokeWidth: 3,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    });
   }
 
   /// 构建封面播放器
@@ -307,7 +720,7 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFFFC107).withOpacity(0.5),
+                    color: const Color(0xFFFFC107).withValues(alpha: 0.5),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -328,13 +741,22 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
           bottom: 12,
           child: GestureDetector(
             onTap: () {
-              // 切换到竖屏锁定模式
-              controller.enterLockedMode();
+              // 进入全屏模式
+              if (controller.episodes.isNotEmpty) {
+                _initializeGlobalPlayer(controller);
+                GlobalPlayerManager.to.enterFullscreen();
+              } else {
+                Get.snackbar(
+                  '提示',
+                  '暂无可播放的集数',
+                  snackPosition: SnackPosition.BOTTOM,
+                );
+              }
             },
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: const Icon(
@@ -355,7 +777,7 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
             icon: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -595,7 +1017,7 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
                           end: Alignment.bottomCenter,
                           colors: [
                             Colors.transparent,
-                            Colors.black.withOpacity(0.8),
+                            Colors.black.withValues(alpha: 0.8),
                           ],
                         ),
                         borderRadius: const BorderRadius.only(
@@ -619,15 +1041,18 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
           ),
           const SizedBox(height: 8),
 
-          // 名称
-          Text(
-            shortName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.white,
-              height: 1.3,
+          // 名称 - 固定高度，与首页模块保持一致
+          SizedBox(
+            height: 36,
+            child: Text(
+              shortName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+                height: 1.3,
+              ),
             ),
           ),
         ],
@@ -643,44 +1068,46 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
     return count.toString();
   }
 
-  /// 构建固定播放器布局
+  /// 构建固定播放器布局 - 短剧使用竖屏播放器，支持滑动缩放
   Widget _buildFixedPlayerLayout(ShortsDetailController controller, Map<String, dynamic> detail) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    // 🚀 使用动态高度比例
+    final playerHeight = screenHeight * _playerHeightRatio;
+    
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       body: Column(
         children: [
-          // 自适应播放器区域
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Container(
-              width: double.infinity,
-              color: Colors.black,
-              child: _buildPlayer(controller, detail),
-            ),
+          // 🚀 动态高度播放器区域，带动画过渡
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 50), // 快速响应滚动
+            height: playerHeight,
+            child: _buildVerticalPlayer(controller, detail),
           ),
 
           // 可滚动内容区域
           Expanded(
             child: CustomScrollView(
+              controller: _scrollController, // 🚀 使用滚动控制器
               slivers: [
-                // 短剧信息
+                // 短剧信息（精简版）
                 SliverToBoxAdapter(
-                  child: _buildInfo(detail),
+                  child: _buildCompactInfo(detail),
                 ),
 
-                // 选集列表
+                // 选集列表（横向滚动）
                 SliverToBoxAdapter(
-                  child: _buildEpisodeList(controller, detail),
+                  child: _buildHorizontalEpisodeList(controller),
                 ),
 
                 // 推荐短剧标题
                 const SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(16, 24, 16, 12),
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                     child: Text(
                       '推荐短剧',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
@@ -696,7 +1123,7 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
                       crossAxisCount: 3,
                       mainAxisSpacing: 12,
                       crossAxisSpacing: 12,
-                      childAspectRatio: 0.6,
+                      childAspectRatio: 0.58,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
@@ -709,8 +1136,8 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
                 ),
 
                 // 底部安全区域
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: 100),
+                SliverToBoxAdapter(
+                  child: SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
                 ),
               ],
             ),
@@ -720,159 +1147,279 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
     );
   }
 
-  /// 构建响应式播放器
-  Widget _buildResponsivePlayer(ShortsDetailController controller, Map<String, dynamic> detail) {
+  /// 构建竖屏播放器
+  Widget _buildVerticalPlayer(ShortsDetailController controller, Map<String, dynamic> detail) {
+    final coverUrl = detail['cover'] as String? ?? '';
+    final episodes = controller.episodes;
+    
+    return Container(
+      color: Colors.black,
+      // 🚀 使用 ClipRect 裁剪超出部分，防止视频溢出
+      child: ClipRect(
+        child: Stack(
+          children: [
+            // 播放器内容
+            Positioned.fill(
+              child: episodes.isNotEmpty 
+                  ? _buildVerticalGlobalPlayer(controller, detail)
+                  : _buildVerticalCoverPlayer(controller, detail, coverUrl),
+            ),
+            
+            // 顶部安全区域 + 返回按钮
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: EdgeInsets.only(
+                  top: MediaQuery.of(context).padding.top,
+                ),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.5),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Get.back(),
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            // 全屏按钮（右上角）
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              right: 8,
+              child: GestureDetector(
+                onTap: () {
+                  GlobalPlayerManager.to.enterFullscreen();
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(
+                    Icons.fullscreen,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建竖屏全局播放器
+  Widget _buildVerticalGlobalPlayer(ShortsDetailController controller, Map<String, dynamic> detail) {
+    // 初始化播放器
+    if (!_playerInitialized && controller.episodes.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _initializeGlobalPlayer(controller);
+      });
+    }
+
     return Obx(() {
-      switch (controller.playerMode.value) {
-        case 'full':
-          return _buildFullPlayer(controller, detail);
-        case 'mini':
-          return _buildMiniPlayer(controller, detail);
-        default:
-          return const SizedBox.shrink();
+      final contentType = GlobalPlayerManager.to.currentState.value.contentType;
+      final isInitialized = GlobalPlayerManager.to.playerInstance?.value.isInitialized ?? false;
+      
+      if (contentType == ContentType.shorts && isInitialized) {
+        return GestureDetector(
+          onTap: () => GlobalPlayerManager.to.togglePlayPause(),
+          child: GlobalVideoPlayer(
+            showControls: false,
+            onTap: () => GlobalPlayerManager.to.togglePlayPause(),
+          ),
+        );
+      } else {
+        // 播放器未就绪时显示封面和加载指示器
+        final coverUrl = detail['cover'] as String? ?? '';
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            NetImage(
+              url: coverUrl,
+              fit: BoxFit.cover,
+            ),
+            const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
+                strokeWidth: 3,
+              ),
+            ),
+          ],
+        );
       }
     });
   }
 
-  /// 构建全屏播放器
-  Widget _buildFullPlayer(ShortsDetailController controller, Map<String, dynamic> detail) {
-    return Builder(
-      builder: (context) {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        height: 250,
-        decoration: const BoxDecoration(
-          color: Colors.black,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 8,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            // 播放器内容
-            _buildPlayer(controller, detail),
-
-            // 控制按钮
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              right: 8,
-              child: _buildPlayerControls(controller),
-            ),
-          ],
-        ),
-      ),
-    );
-      },
-    );
-  }
-
-  /// 构建小窗播放器
-  Widget _buildMiniPlayer(ShortsDetailController controller, Map<String, dynamic> detail) {
-    return Builder(
-      builder: (context) => Positioned(
-        top: MediaQuery.of(context).padding.top + 8,
-        right: 8,
-        child: GestureDetector(
-          onTap: () {
-            // 点击小窗播放器切换回全屏
-            controller.setFullMode();
-          },
-          child: Container(
-            width: 160,
-            height: 90,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.5),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Stack(
-              children: [
-                // 小窗播放器内容
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: _buildPlayer(controller, detail),
-                ),
-
-                // 关闭按钮
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: GestureDetector(
-                    onTap: () {
-                      controller.hidePlayer();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                    ),
-                  ),
-                ),
-
-                // 播放状态指示器
-                const Positioned(
-                  bottom: 4,
-                  left: 4,
-                  child: Icon(
-                    Icons.play_arrow,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-
-
-  /// 构建播放器控制按钮
-  Widget _buildPlayerControls(ShortsDetailController controller) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  /// 构建竖屏封面播放器（无集数时显示）
+  Widget _buildVerticalCoverPlayer(ShortsDetailController controller, Map<String, dynamic> detail, String coverUrl) {
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        // 关闭按钮
-        GestureDetector(
-          onTap: () {
-            Get.back();
-          },
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.6),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Icon(
-              Icons.close,
-              color: Colors.white,
-              size: 20,
+        NetImage(
+          url: coverUrl,
+          fit: BoxFit.cover,
+        ),
+        Center(
+          child: GestureDetector(
+            onTap: () {
+              if (controller.episodes.isNotEmpty) {
+                _initializeGlobalPlayer(controller);
+                GlobalPlayerManager.to.enterFullscreen();
+              } else {
+                Get.snackbar('提示', '暂无可播放的集数', snackPosition: SnackPosition.BOTTOM);
+              }
+            },
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFC107),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFFC107).withValues(alpha: 0.5),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.play_arrow,
+                color: Colors.black,
+                size: 40,
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  /// 构建精简版短剧信息
+  Widget _buildCompactInfo(Map<String, dynamic> detail) {
+    final shortName = detail['name'] as String? ?? '未知短剧';
+    final category = detail['category'] as String? ?? '';
+    final episodeCount = detail['episode_count'] as int? ?? 0;
+    final viewCount = detail['view_count'] as int? ?? 0;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 短剧名称
+          Text(
+            shortName,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          // 标签行
+          Wrap(
+            spacing: 8,
+            children: [
+              if (category.isNotEmpty)
+                _buildTag(category, const Color(0xFFFFC107)),
+              _buildTag('共$episodeCount集', Colors.white24),
+              _buildTag('${_formatViewCount(viewCount)}播放', Colors.white24),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建横向选集列表
+  Widget _buildHorizontalEpisodeList(ShortsDetailController controller) {
+    final episodes = controller.episodes;
+    if (episodes.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const Text(
+                  '选集',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '共${episodes.length}集',
+                  style: const TextStyle(fontSize: 12, color: Colors.white54),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 36,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: episodes.length,
+              itemBuilder: (context, index) {
+                final isSelected = controller.currentEpisodeIndex.value == index;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => controller.selectEpisode(index),
+                    child: Container(
+                      width: 56,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isSelected ? const Color(0xFFFFC107) : const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${index + 1}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isSelected ? Colors.black : Colors.white70,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

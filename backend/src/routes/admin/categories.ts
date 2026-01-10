@@ -55,10 +55,10 @@ categories.get('/admin/categories', async (c) => {
         }
         categoriesWithCount.push({ ...cat, video_count: videoCount });
       }
-      return c.json({ code: 1, msg: 'success', list: categoriesWithCount });
+      return c.json({ code: 1, msg: 'success', data: categoriesWithCount });
     }
 
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
     logger.admin.error('Get categories error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get categories' }, 500);
@@ -100,7 +100,7 @@ categories.get('/admin/categories/stats', async (c) => {
       });
     }
 
-    return c.json({ code: 1, msg: 'success', list: stats });
+    return c.json({ code: 1, msg: 'success', data: stats });
   } catch (error) {
     logger.admin.error('Get category stats error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get stats' }, 500);
@@ -171,7 +171,7 @@ categories.get('/admin/categories/mappings', async (c) => {
     `).run();
 
     const result = await c.env.DB.prepare(`SELECT * FROM category_mappings ORDER BY source_id, source_type_id`).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
     logger.admin.error('Get mappings error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get mappings' }, 500);
@@ -250,35 +250,39 @@ categories.get('/admin/categories/with-subs', async (c) => {
   }
   
   try {
-    let cats: CategoryItem[] = [];
-    try {
-      const catResult = await c.env.DB.prepare(`SELECT id, name, name_en, icon, sort_order, is_active FROM video_categories WHERE is_active = 1 ORDER BY sort_order ASC`).all();
-      cats = (catResult.results || []) as CategoryItem[];
-    } catch (e) {
-      logger.admin.warn('Failed to load categories', { error: e instanceof Error ? e.message : 'Unknown' });
-    }
+    // 从数据库获取分类（不使用硬编码降级）
+    const catResult = await c.env.DB.prepare(`
+      SELECT id, name, name_en, icon, sort_order, is_active 
+      FROM video_categories 
+      WHERE is_active = 1 
+      ORDER BY sort_order ASC
+    `).all();
+    const cats = (catResult.results || []) as CategoryItem[];
 
-    if (cats.length === 0) {
-      cats = [
-        { id: 1, name: '电影', name_en: 'movie', sort_order: 1, is_active: true },
-        { id: 2, name: '电视剧', name_en: 'series', sort_order: 2, is_active: true },
-        { id: 3, name: '综艺', name_en: 'variety', sort_order: 3, is_active: true },
-        { id: 4, name: '动漫', name_en: 'anime', sort_order: 4, is_active: true },
-        { id: 5, name: '短剧', name_en: 'shorts', sort_order: 5, is_active: true },
-      ];
-    }
+    // 从数据库获取子分类
+    const subResult = await c.env.DB.prepare(`
+      SELECT id, parent_id, name, name_en, keywords, sort_order, is_active 
+      FROM video_sub_categories 
+      WHERE is_active = 1 
+      ORDER BY parent_id, sort_order ASC
+    `).all();
+    const subCategories = (subResult.results || []) as SubCategoryItem[];
 
-    let subCategories: SubCategoryItem[] = [];
-    try {
-      const subResult = await c.env.DB.prepare(`SELECT id, parent_id, name, name_en, keywords, sort_order, is_active FROM video_sub_categories WHERE is_active = 1 ORDER BY parent_id, sort_order ASC`).all();
-      subCategories = (subResult.results || []) as SubCategoryItem[];
-    } catch (e) {
-      logger.admin.warn('Failed to load sub-categories', { error: e instanceof Error ? e.message : 'Unknown' });
-    }
+    // 构建分类树
+    const categoryTree = cats.map(cat => ({ 
+      ...cat, 
+      subCategories: subCategories.filter(sub => sub.parent_id === cat.id) 
+    }));
 
-    const categoryTree = cats.map(cat => ({ ...cat, subCategories: subCategories.filter(sub => sub.parent_id === cat.id) }));
-
-    return c.json({ code: 1, msg: 'success', data: { categories: categoryTree, flatCategories: cats, flatSubCategories: subCategories } });
+    return c.json({ 
+      code: 1, 
+      msg: 'success', 
+      data: { 
+        categories: categoryTree, 
+        flatCategories: cats, 
+        flatSubCategories: subCategories 
+      } 
+    });
   } catch (error) {
     logger.admin.error('Get categories with subs error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get categories' }, 500);
@@ -298,9 +302,9 @@ categories.get('/admin/sub-categories', async (c) => {
     query += ' ORDER BY sc.parent_id, sc.sort_order';
     
     const result = await c.env.DB.prepare(query).bind(...params).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch {
-    return c.json({ code: 1, msg: 'success', list: [] });
+    return c.json({ code: 1, msg: 'success', data: [] });
   }
 });
 
@@ -366,6 +370,216 @@ categories.post('/admin/sub-categories/migrate', async (c) => {
   } catch (error) {
     logger.admin.error('Sub-category migration error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Migration failed' }, 500);
+  }
+});
+
+// ============================================
+// 动态筛选选项 API（地区、年份）
+// ============================================
+
+/**
+ * 标准化地区名称（用于去重和排序）
+ */
+function normalizeAreaForFilter(area: string): string {
+  const areaMap: Record<string, string> = {
+    '大陆': '中国大陆',
+    '内地': '中国大陆',
+    '国产': '中国大陆',
+    '中国': '中国大陆',
+    '香港': '中国香港',
+    '港': '中国香港',
+    '台湾': '中国台湾',
+    '台': '中国台湾',
+    '港台': '中国香港,中国台湾',
+  };
+  return areaMap[area] || area;
+}
+
+/**
+ * GET /admin/filter-options/areas
+ * 获取所有可用的地区选项（从 vod_cache 动态获取）
+ */
+categories.get('/admin/filter-options/areas', async (c) => {
+  try {
+    const typeId = c.req.query('type_id'); // 可选：按分类筛选
+    
+    let query = `SELECT DISTINCT vod_area FROM vod_cache WHERE vod_area IS NOT NULL AND vod_area != ''`;
+    const params: number[] = [];
+    
+    if (typeId) {
+      query += ' AND type_id = ?';
+      params.push(parseInt(typeId));
+    }
+    
+    const result = await c.env.DB.prepare(query).bind(...params).all();
+    
+    // 处理地区数据：拆分组合值、标准化、去重
+    const areaSet = new Set<string>();
+    const rawAreas = (result.results || []) as { vod_area: string }[];
+    
+    for (const row of rawAreas) {
+      // 拆分组合地区（如 "中国大陆,中国香港"）
+      const areas = row.vod_area.split(',').map(a => a.trim()).filter(a => a);
+      for (const area of areas) {
+        const normalized = normalizeAreaForFilter(area);
+        // 再次拆分（如 "港台" -> "中国香港,中国台湾"）
+        const parts = normalized.split(',').map(a => a.trim()).filter(a => a);
+        parts.forEach(p => areaSet.add(p));
+      }
+    }
+    
+    // 定义排序优先级
+    const areaPriority: Record<string, number> = {
+      '中国大陆': 1,
+      '中国香港': 2,
+      '中国台湾': 3,
+      '日本': 4,
+      '韩国': 5,
+      '美国': 6,
+      '英国': 7,
+      '法国': 8,
+      '泰国': 9,
+    };
+    
+    // 排序：优先级高的在前，其他按字母顺序
+    const sortedAreas = Array.from(areaSet).sort((a, b) => {
+      const pa = areaPriority[a] || 100;
+      const pb = areaPriority[b] || 100;
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b, 'zh-CN');
+    });
+    
+    return c.json({
+      code: 1,
+      msg: 'success',
+      data: sortedAreas.map(area => ({ value: area, label: area })),
+    });
+  } catch (error) {
+    logger.admin.error('Get areas error', { error: error instanceof Error ? error.message : 'Unknown' });
+    return c.json({ code: 0, msg: 'Failed to get areas' }, 500);
+  }
+});
+
+/**
+ * GET /admin/filter-options/years
+ * 获取所有可用的年份选项（从 vod_cache 动态获取）
+ */
+categories.get('/admin/filter-options/years', async (c) => {
+  try {
+    const typeId = c.req.query('type_id'); // 可选：按分类筛选
+    
+    let query = `SELECT DISTINCT vod_year FROM vod_cache WHERE vod_year IS NOT NULL AND vod_year != '' AND vod_year != '0'`;
+    const params: number[] = [];
+    
+    if (typeId) {
+      query += ' AND type_id = ?';
+      params.push(parseInt(typeId));
+    }
+    
+    query += ' ORDER BY vod_year DESC';
+    
+    const result = await c.env.DB.prepare(query).bind(...params).all();
+    const years = (result.results || []) as { vod_year: string }[];
+    
+    // 过滤有效年份（4位数字）
+    const validYears = years
+      .map(row => row.vod_year)
+      .filter(year => /^\d{4}$/.test(year))
+      .sort((a, b) => parseInt(b) - parseInt(a)); // 降序
+    
+    return c.json({
+      code: 1,
+      msg: 'success',
+      data: validYears.map(year => ({ value: year, label: year })),
+    });
+  } catch (error) {
+    logger.admin.error('Get years error', { error: error instanceof Error ? error.message : 'Unknown' });
+    return c.json({ code: 0, msg: 'Failed to get years' }, 500);
+  }
+});
+
+/**
+ * GET /admin/filter-options
+ * 获取所有筛选选项（分类、子分类、地区、年份）
+ * 用于模块配置时的下拉选项
+ */
+categories.get('/admin/filter-options', async (c) => {
+  try {
+    const typeId = c.req.query('type_id');
+    
+    // 并发获取所有数据
+    const [categoriesResult, subCategoriesResult, areasResult, yearsResult] = await Promise.all([
+      // 主分类
+      c.env.DB.prepare(`SELECT id, name, name_en FROM video_categories WHERE is_active = 1 ORDER BY sort_order`).all(),
+      // 子分类
+      typeId
+        ? c.env.DB.prepare(`SELECT id, parent_id, name, name_en FROM video_sub_categories WHERE is_active = 1 AND parent_id = ? ORDER BY sort_order`).bind(parseInt(typeId)).all()
+        : c.env.DB.prepare(`SELECT id, parent_id, name, name_en FROM video_sub_categories WHERE is_active = 1 ORDER BY parent_id, sort_order`).all(),
+      // 地区
+      typeId
+        ? c.env.DB.prepare(`SELECT DISTINCT vod_area FROM vod_cache WHERE vod_area IS NOT NULL AND vod_area != '' AND type_id = ?`).bind(parseInt(typeId)).all()
+        : c.env.DB.prepare(`SELECT DISTINCT vod_area FROM vod_cache WHERE vod_area IS NOT NULL AND vod_area != ''`).all(),
+      // 年份
+      typeId
+        ? c.env.DB.prepare(`SELECT DISTINCT vod_year FROM vod_cache WHERE vod_year IS NOT NULL AND vod_year != '' AND vod_year != '0' AND type_id = ? ORDER BY vod_year DESC`).bind(parseInt(typeId)).all()
+        : c.env.DB.prepare(`SELECT DISTINCT vod_year FROM vod_cache WHERE vod_year IS NOT NULL AND vod_year != '' AND vod_year != '0' ORDER BY vod_year DESC`).all(),
+    ]);
+    
+    // 处理分类
+    let categories = (categoriesResult.results || []) as { id: number; name: string; name_en: string }[];
+    if (categories.length === 0) {
+      categories = [
+        { id: 1, name: '电影', name_en: 'movie' },
+        { id: 2, name: '电视剧', name_en: 'series' },
+        { id: 3, name: '综艺', name_en: 'variety' },
+        { id: 4, name: '动漫', name_en: 'anime' },
+        { id: 5, name: '短剧', name_en: 'shorts' },
+      ];
+    }
+    
+    // 处理子分类
+    const subCategories = (subCategoriesResult.results || []) as { id: number; parent_id: number; name: string; name_en: string }[];
+    
+    // 处理地区（去重、标准化）
+    const areaSet = new Set<string>();
+    const rawAreas = (areasResult.results || []) as { vod_area: string }[];
+    for (const row of rawAreas) {
+      const areas = row.vod_area.split(',').map(a => a.trim()).filter(a => a);
+      for (const area of areas) {
+        const normalized = normalizeAreaForFilter(area);
+        const parts = normalized.split(',').map(a => a.trim()).filter(a => a);
+        parts.forEach(p => areaSet.add(p));
+      }
+    }
+    const areaPriority: Record<string, number> = {
+      '中国大陆': 1, '中国香港': 2, '中国台湾': 3, '日本': 4, '韩国': 5, '美国': 6, '英国': 7, '法国': 8, '泰国': 9,
+    };
+    const areas = Array.from(areaSet).sort((a, b) => {
+      const pa = areaPriority[a] || 100;
+      const pb = areaPriority[b] || 100;
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b, 'zh-CN');
+    });
+    
+    // 处理年份
+    const years = ((yearsResult.results || []) as { vod_year: string }[])
+      .map(row => row.vod_year)
+      .filter(year => /^\d{4}$/.test(year))
+      .sort((a, b) => parseInt(b) - parseInt(a));
+    
+    return c.json({
+      code: 1,
+      msg: 'success',
+      data: {
+        categories: categories.map(c => ({ value: c.id, label: c.name, name_en: c.name_en })),
+        subCategories: subCategories.map(s => ({ value: s.id, label: s.name, parent_id: s.parent_id, name_en: s.name_en })),
+        areas: areas.map(a => ({ value: a, label: a })),
+        years: years.map(y => ({ value: y, label: y })),
+      },
+    });
+  } catch (error) {
+    logger.admin.error('Get filter options error', { error: error instanceof Error ? error.message : 'Unknown' });
+    return c.json({ code: 0, msg: 'Failed to get filter options' }, 500);
   }
 });
 

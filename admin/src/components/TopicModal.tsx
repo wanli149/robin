@@ -8,7 +8,6 @@ import {
   Modal,
   Form,
   Input,
-  message,
   Switch,
   InputNumber,
   Row,
@@ -17,6 +16,7 @@ import {
   Divider,
   Alert,
 } from 'antd';
+import { useNotification } from './providers';
 import { saveTopic, getCategoriesWithSubs } from '../services/adminApi';
 
 const { Option } = Select;
@@ -48,6 +48,7 @@ const TopicModal: React.FC<TopicModalProps> = ({
   const [previewImage, setPreviewImage] = useState<string>('');
   const [dataSourceType, setDataSourceType] = useState<string>('manual');
   const [categories, setCategories] = useState<any[]>([]);
+  const { success, error, warning } = useNotification();
 
   // 加载分类数据
   useEffect(() => {
@@ -126,13 +127,13 @@ const TopicModal: React.FC<TopicModalProps> = ({
         data_source_config: dataSourceConfig,
       });
 
-      message.success(topic ? '更新成功' : '创建成功');
+      success(topic ? '更新成功' : '创建成功');
       form.resetFields();
       setPreviewImage('');
       onSave();
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message || '保存失败');
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -208,7 +209,7 @@ const TopicModal: React.FC<TopicModalProps> = ({
               src={previewImage}
               alt="预览"
               style={{ maxWidth: '100%', maxHeight: 150, objectFit: 'contain', border: '1px solid #d9d9d9', borderRadius: 4 }}
-              onError={() => { message.warning('图片加载失败'); setPreviewImage(''); }}
+              onError={() => { warning('图片加载失败'); setPreviewImage(''); }}
             />
           </Form.Item>
         )}

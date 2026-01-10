@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
+import 'logger.dart';
 
 // ==================== 错误类型定义 ====================
 
@@ -108,7 +109,7 @@ class ErrorHandler {
       title ?? '错误',
       appError.message,
       snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.red.withOpacity(0.8),
+      backgroundColor: Colors.red.withValues(alpha: 0.8),
       colorText: Colors.white,
       duration: const Duration(seconds: 3),
       margin: const EdgeInsets.all(16),
@@ -123,7 +124,7 @@ class ErrorHandler {
       title ?? '成功',
       message,
       snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: const Color(0xFFFFC107).withOpacity(0.8),
+      backgroundColor: const Color(0xFFFFC107).withValues(alpha: 0.8),
       colorText: Colors.black,
       duration: const Duration(seconds: 2),
       margin: const EdgeInsets.all(16),
@@ -138,7 +139,7 @@ class ErrorHandler {
       title ?? '警告',
       message,
       snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.orange.withOpacity(0.8),
+      backgroundColor: Colors.orange.withValues(alpha: 0.8),
       colorText: Colors.white,
       duration: const Duration(seconds: 3),
       margin: const EdgeInsets.all(16),
@@ -153,7 +154,7 @@ class ErrorHandler {
       title ?? '提示',
       message,
       snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.blue.withOpacity(0.8),
+      backgroundColor: Colors.blue.withValues(alpha: 0.8),
       colorText: Colors.white,
       duration: const Duration(seconds: 2),
       margin: const EdgeInsets.all(16),
@@ -236,7 +237,7 @@ class ErrorHandler {
         // 如果还有重试机会，等待后重试
         if (attempts < maxAttempts) {
           await Future.delayed(delay * attempts);
-          print('🔄 Retry attempt $attempts/$maxAttempts');
+          Logger.info('[ErrorHandler] Retry attempt $attempts/$maxAttempts');
         }
       }
     }

@@ -26,7 +26,7 @@ const recommend = new Hono<{ Bindings: Bindings }>();
  * - vod_id: 基于某个视频推荐（similar, content_based, shorts_similar）
  * - user_id: 用户ID（personalized, collaborative）
  * - type_id: 限定分类
- * - limit: 返回数量（默认10）
+ * - limit: 返回数量（默认9，适配3x3网格）
  * - exclude: 排除的视频ID（逗号分隔）
  */
 recommend.get('/api/recommend', async (c) => {
@@ -35,7 +35,7 @@ recommend.get('/api/recommend', async (c) => {
     const vodId = c.req.query('vod_id');
     const userId = c.req.query('user_id');
     const typeId = c.req.query('type_id');
-    const limit = parseInt(c.req.query('limit') || '10', 10);
+    const limit = parseInt(c.req.query('limit') || '9', 10); // 默认9个，适配3x3网格
     const exclude = c.req.query('exclude');
 
     const excludeIds = exclude ? exclude.split(',').filter(Boolean) : [];
@@ -76,7 +76,7 @@ recommend.get('/api/recommend', async (c) => {
 recommend.get('/api/recommend/similar/:vodId', async (c) => {
   try {
     const vodId = c.req.param('vodId');
-    const limit = parseInt(c.req.query('limit') || '10', 10);
+    const limit = parseInt(c.req.query('limit') || '9', 10); // 默认9个，适配3x3网格
     const exclude = c.req.query('exclude');
 
     const excludeIds = exclude ? exclude.split(',').filter(Boolean) : [];
@@ -114,7 +114,7 @@ recommend.get('/api/recommend/similar/:vodId', async (c) => {
 recommend.get('/api/recommend/shorts/:vodId', async (c) => {
   try {
     const vodId = c.req.param('vodId');
-    const limit = parseInt(c.req.query('limit') || '10', 10);
+    const limit = parseInt(c.req.query('limit') || '9', 10); // 默认9个，适配3x3网格
     const exclude = c.req.query('exclude');
 
     const excludeIds = exclude ? exclude.split(',').filter(Boolean) : [];

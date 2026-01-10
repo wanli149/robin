@@ -177,8 +177,20 @@ export interface Ad {
  */
 export const getAds = async (): Promise<Ad[]> => {
   const response = await apiClient.get<ApiResponse>('/admin/ads');
-  if (response.data.code === 1 && response.data.list) {
-    return response.data.list as Ad[];
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data as Ad[];
+  }
+  throw new Error(response.data.msg || '获取广告列表失败');
+};
+
+/**
+ * 获取简单广告列表（用于选择器）
+ */
+export const getAdsSimple = async (location?: string): Promise<Array<{ id: number; name: string; location: string; media_url: string }>> => {
+  const url = location ? `/admin/ads/list-simple?location=${location}` : '/admin/ads/list-simple';
+  const response = await apiClient.get<ApiResponse>(url);
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data as Array<{ id: number; name: string; location: string; media_url: string }>;
   }
   throw new Error(response.data.msg || '获取广告列表失败');
 };
@@ -244,8 +256,8 @@ export interface Topic {
  */
 export const getTopics = async (): Promise<Topic[]> => {
   const response = await apiClient.get<ApiResponse>('/admin/topics');
-  if (response.data.code === 1 && response.data.list) {
-    return response.data.list as Topic[];
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data as Topic[];
   }
   throw new Error(response.data.msg || '获取专题列表失败');
 };
@@ -298,8 +310,8 @@ export interface Video {
  */
 export const getTopicItems = async (topicId: string): Promise<TopicItem[]> => {
   const response = await apiClient.get<ApiResponse>(`/admin/topic/${topicId}/items`);
-  if (response.data.code === 1 && response.data.list) {
-    return response.data.list as TopicItem[];
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data.list as TopicItem[];
   }
   throw new Error(response.data.msg || '获取专题内容失败');
 };
@@ -309,8 +321,8 @@ export const getTopicItems = async (topicId: string): Promise<TopicItem[]> => {
  */
 export const searchVideos = async (keyword: string): Promise<Video[]> => {
   const response = await apiClient.get<ApiResponse>(`/api/search?wd=${encodeURIComponent(keyword)}`);
-  if (response.data.code === 1 && response.data.list) {
-    return response.data.list as Video[];
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data as Video[];
   }
   throw new Error(response.data.msg || '搜索视频失败');
 };
@@ -373,8 +385,8 @@ export interface Short {
  */
 export const getShorts = async (): Promise<Short[]> => {
   const response = await apiClient.get<ApiResponse>('/admin/shorts');
-  if (response.data.code === 1 && response.data.list) {
-    return response.data.list as Short[];
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data.list as Short[];
   }
   throw new Error(response.data.msg || '获取短剧列表失败');
 };
@@ -462,8 +474,8 @@ export interface Feedback {
  */
 export const getFeedback = async (): Promise<Feedback[]> => {
   const response = await apiClient.get<ApiResponse>('/admin/feedback');
-  if (response.data.code === 1 && response.data.list) {
-    return response.data.list as Feedback[];
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data as Feedback[];
   }
   throw new Error(response.data.msg || '获取反馈列表失败');
 };
@@ -496,8 +508,8 @@ export interface AppWallItem {
  */
 export const getAppWall = async (): Promise<AppWallItem[]> => {
   const response = await apiClient.get<ApiResponse>('/admin/app_wall');
-  if (response.data.code === 1 && response.data.list) {
-    return response.data.list as AppWallItem[];
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data as AppWallItem[];
   }
   throw new Error(response.data.msg || '获取应用列表失败');
 };
@@ -522,13 +534,21 @@ export const deleteAppWall = async (id: number): Promise<void> => {
   }
 };
 
+/** 热搜关键词类型 */
+export interface HotKeyword {
+  keyword: string;
+  search_count: number;
+  is_pinned: number;
+  is_hidden: number;
+}
+
 /**
  * 获取热搜关键词
  */
-export const getHotSearch = async (): Promise<string[]> => {
-  const response = await apiClient.get<ApiResponse & { keywords?: string[] }>('/admin/hot_search');
-  if (response.data.code === 1 && response.data.keywords) {
-    return response.data.keywords;
+export const getHotSearch = async (): Promise<HotKeyword[]> => {
+  const response = await apiClient.get<ApiResponse & { data?: HotKeyword[] }>('/admin/hot_search');
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
   }
   throw new Error(response.data.msg || '获取热搜关键词失败');
 };
@@ -604,6 +624,69 @@ export const updateWelfareSwitch = async (enabled: boolean): Promise<void> => {
   });
   if (response.data.code !== 1) {
     throw new Error(response.data.msg || '更新福利频道开关失败');
+  }
+};
+
+// ============================================
+// 频道管理 API
+// ============================================
+
+export interface HomeTab {
+  id: string;
+  title: string;
+  sort_order: number;
+  is_visible: number;
+  is_locked: number;
+}
+
+/**
+ * 获取所有频道
+ */
+export const getTabs = async (): Promise<HomeTab[]> => {
+  const response = await apiClient.get<ApiResponse & { data?: HomeTab[] }>('/admin/tabs');
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
+  }
+  throw new Error(response.data.msg || '获取频道列表失败');
+};
+
+/**
+ * 创建频道
+ */
+export const createTab = async (id: string, title: string): Promise<void> => {
+  const response = await apiClient.post<ApiResponse>('/admin/tabs', { id, title });
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '创建频道失败');
+  }
+};
+
+/**
+ * 更新频道
+ */
+export const updateTab = async (id: string, data: Partial<HomeTab>): Promise<void> => {
+  const response = await apiClient.put<ApiResponse>(`/admin/tabs/${id}`, data);
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '更新频道失败');
+  }
+};
+
+/**
+ * 删除频道
+ */
+export const deleteTab = async (id: string): Promise<void> => {
+  const response = await apiClient.delete<ApiResponse>(`/admin/tabs/${id}`);
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '删除频道失败');
+  }
+};
+
+/**
+ * 更新频道排序
+ */
+export const reorderTabs = async (orders: { id: string; sort_order: number }[]): Promise<void> => {
+  const response = await apiClient.post<ApiResponse>('/admin/tabs/reorder', { orders });
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '更新排序失败');
   }
 };
 
@@ -717,15 +800,16 @@ export interface VideoSource {
   weight: number;
   is_active: boolean;
   response_format?: 'json' | 'xml' | 'auto';
+  is_welfare?: boolean;
 }
 
 /**
  * 获取视频资源站列表
  */
 export const getSources = async (): Promise<VideoSource[]> => {
-  const response = await apiClient.get<ApiResponse & { list?: VideoSource[] }>('/admin/sources');
-  if (response.data.code === 1 && response.data.list) {
-    return response.data.list;
+  const response = await apiClient.get<ApiResponse & { data?: VideoSource[] }>('/admin/sources');
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
   }
   throw new Error(response.data.msg || '获取资源站列表失败');
 };
@@ -889,65 +973,37 @@ export const getModuleStats = async (
   throw new Error(response.data.msg || '获取统计数据失败');
 };
 
-// 更新钉钉Webhook配置
+/**
+ * 更新钉钉Webhook配置
+ */
 export const updateDingTalkWebhook = async (webhook: string): Promise<void> => {
-  const response = await fetch('/admin/config/dingtalk', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-key': localStorage.getItem('admin_key') || '',
-    },
-    body: JSON.stringify({ webhook }),
-  });
-
-  if (!response.ok) {
-    throw new Error('更新钉钉配置失败');
-  }
-
-  const data = await response.json();
-  if (data.code !== 1) {
-    throw new Error(data.msg || '更新钉钉配置失败');
+  const response = await apiClient.post<ApiResponse>('/admin/config/dingtalk', { webhook });
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '更新钉钉配置失败');
   }
 };
 
-// 测试钉钉通知
+/**
+ * 测试钉钉通知
+ */
 export const testDingTalk = async (): Promise<void> => {
-  const response = await fetch('/admin/config/dingtalk/test', {
-    method: 'POST',
-    headers: {
-      'x-admin-key': localStorage.getItem('admin_key') || '',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('测试失败');
-  }
-
-  const data = await response.json();
-  if (data.code !== 1) {
-    throw new Error(data.msg || '测试失败');
+  const response = await apiClient.post<ApiResponse>('/admin/config/dingtalk/test');
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '测试失败');
   }
 };
 
-// 自动发现常用资源站
+/**
+ * 自动发现常用资源站
+ */
 export const autoDiscoverSources = async (): Promise<{ added: number }> => {
-  const response = await fetch('/admin/sources/auto-discover', {
-    method: 'POST',
-    headers: {
-      'x-admin-key': localStorage.getItem('admin_key') || '',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('自动发现失败');
+  const response = await apiClient.post<ApiResponse & { data?: { added: number } }>(
+    '/admin/sources/auto-discover'
+  );
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
   }
-
-  const data = await response.json();
-  if (data.code !== 1) {
-    throw new Error(data.msg || '自动发现失败');
-  }
-
-  return data.data;
+  throw new Error(response.data.msg || '自动发现失败');
 };
 
 // 获取崩溃日志列表
@@ -1113,13 +1169,13 @@ export const getCollectTasks = async (options?: {
   if (options?.page) params.append('page', String(options.page));
   if (options?.limit) params.append('limit', String(options.limit));
   
-  const response = await apiClient.get<ApiResponse & { list?: CollectTaskV2[]; total?: number }>(
+  const response = await apiClient.get<ApiResponse & { data?: { list?: CollectTaskV2[]; total?: number } }>(
     `/admin/collect/v2/tasks?${params.toString()}`
   );
-  if (response.data.code === 1) {
+  if (response.data.code === 1 && response.data.data) {
     return {
-      tasks: response.data.list || [],
-      total: response.data.total || 0,
+      tasks: response.data.data.list || [],
+      total: response.data.data.total || 0,
     };
   }
   throw new Error(response.data.msg || '获取任务列表失败');
@@ -1134,6 +1190,18 @@ export const cancelCollectTask = async (taskId: string): Promise<void> => {
   );
   if (response.data.code !== 1) {
     throw new Error(response.data.msg || '取消任务失败');
+  }
+};
+
+/**
+ * 删除任务
+ */
+export const deleteCollectTask = async (taskId: string): Promise<void> => {
+  const response = await apiClient.delete<ApiResponse>(
+    `/admin/collect/v2/tasks/${taskId}`
+  );
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '删除任务失败');
   }
 };
 
@@ -1173,13 +1241,13 @@ export const getCollectTaskLogs = async (
   if (options?.limit) params.append('limit', String(options.limit));
   if (options?.offset) params.append('offset', String(options.offset));
   
-  const response = await apiClient.get<ApiResponse & { list?: any[]; total?: number }>(
+  const response = await apiClient.get<ApiResponse & { data?: { list?: any[]; total?: number } }>(
     `/admin/collect/v2/task/${taskId}/logs?${params.toString()}`
   );
-  if (response.data.code === 1) {
+  if (response.data.code === 1 && response.data.data) {
     return {
-      logs: response.data.list || [],
-      total: response.data.total || 0,
+      logs: response.data.data.list || [],
+      total: response.data.data.total || 0,
     };
   }
   throw new Error(response.data.msg || '获取日志失败');
@@ -1261,11 +1329,11 @@ export const quickSourceCollect = async (
  * 获取资源站健康状态
  */
 export const getSourcesHealth = async (): Promise<SourceHealthStatus[]> => {
-  const response = await apiClient.get<ApiResponse & { list?: SourceHealthStatus[] }>(
+  const response = await apiClient.get<ApiResponse & { data?: SourceHealthStatus[] }>(
     '/admin/collect/v2/sources/health'
   );
-  if (response.data.code === 1) {
-    return response.data.list || [];
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
   }
   throw new Error(response.data.msg || '获取健康状态失败');
 };
@@ -1339,11 +1407,11 @@ export const getCollectCategories = async (): Promise<Array<{
   name: string;
   name_en: string;
 }>> => {
-  const response = await apiClient.get<ApiResponse & { list?: any[] }>(
+  const response = await apiClient.get<ApiResponse & { data?: any[] }>(
     '/admin/collect/v2/categories'
   );
-  if (response.data.code === 1) {
-    return response.data.list || [];
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
   }
   throw new Error(response.data.msg || '获取分类失败');
 };
@@ -1407,11 +1475,11 @@ export interface SubCategory {
  */
 export const getSubCategories = async (parentId?: number): Promise<SubCategory[]> => {
   const params = parentId ? `?parent_id=${parentId}` : '';
-  const response = await apiClient.get<ApiResponse & { list?: SubCategory[] }>(
+  const response = await apiClient.get<ApiResponse & { data?: SubCategory[] }>(
     `/admin/sub-categories${params}`
   );
   if (response.data.code === 1) {
-    return response.data.list || [];
+    return response.data.data || [];
   }
   throw new Error(response.data.msg || '获取子分类失败');
 };
@@ -1580,13 +1648,13 @@ export const getArticles = async (options?: {
   if (options?.limit) params.append('limit', String(options.limit));
   if (options?.keyword) params.append('keyword', options.keyword);
 
-  const response = await apiClient.get<ApiResponse & { list?: Article[]; total?: number }>(
+  const response = await apiClient.get<ApiResponse & { data?: { list?: Article[]; total?: number } }>(
     `/admin/articles?${params.toString()}`
   );
-  if (response.data.code === 1) {
+  if (response.data.code === 1 && response.data.data) {
     return {
-      list: response.data.list || [],
-      total: response.data.total || 0,
+      list: response.data.data.list || [],
+      total: response.data.data.total || 0,
     };
   }
   throw new Error(response.data.msg || '获取文章失败');
@@ -1619,11 +1687,11 @@ export const deleteArticle = async (id: number): Promise<void> => {
  * 获取文章分类
  */
 export const getArticleCategories = async (): Promise<ArticleCategory[]> => {
-  const response = await apiClient.get<ApiResponse & { list?: ArticleCategory[] }>(
+  const response = await apiClient.get<ApiResponse & { data?: ArticleCategory[] }>(
     '/admin/article-categories'
   );
   if (response.data.code === 1) {
-    return response.data.list || [];
+    return response.data.data || [];
   }
   return [];
 };
@@ -1686,13 +1754,13 @@ export const getActorsAdmin = async (options?: {
   if (options?.keyword) params.append('keyword', options.keyword);
   if (options?.hasAvatar !== undefined) params.append('has_avatar', String(options.hasAvatar));
 
-  const response = await apiClient.get<ApiResponse & { list?: ActorDetail[]; total?: number }>(
+  const response = await apiClient.get<ApiResponse & { data?: { list?: ActorDetail[]; total?: number } }>(
     `/admin/actors?${params.toString()}`
   );
-  if (response.data.code === 1) {
+  if (response.data.code === 1 && response.data.data) {
     return {
-      list: response.data.list || [],
-      total: response.data.total || 0,
+      list: response.data.data.list || [],
+      total: response.data.data.total || 0,
     };
   }
   throw new Error(response.data.msg || '获取演员失败');
@@ -1860,9 +1928,9 @@ export interface AppVersion {
  * 获取历史版本列表
  */
 export const getVersions = async (): Promise<AppVersion[]> => {
-  const response = await apiClient.get<ApiResponse & { list?: AppVersion[] }>('/admin/versions');
+  const response = await apiClient.get<ApiResponse & { data?: AppVersion[] }>('/admin/versions');
   if (response.data.code === 1) {
-    return response.data.list || [];
+    return response.data.data || [];
   }
   throw new Error(response.data.msg || '获取版本列表失败');
 };
@@ -2694,12 +2762,12 @@ export const getAnnouncements = async (options?: {
   if (options?.limit) params.append('limit', String(options.limit));
   if (options?.status) params.append('status', options.status);
 
-  const response = await apiClient.get<ApiResponse & { list?: Announcement[]; total?: number }>(
+  const response = await apiClient.get<ApiResponse & { data?: Announcement[]; total?: number }>(
     `/admin/announcements?${params.toString()}`
   );
   if (response.data.code === 1) {
     return {
-      list: response.data.list || [],
+      list: response.data.data || [],
       total: response.data.total || 0,
     };
   }
@@ -2859,4 +2927,526 @@ export const getSecurityStats = async (): Promise<{
     return response.data.data;
   }
   throw new Error(response.data.msg || '获取统计失败');
+};
+
+
+// ============================================
+// 分类管理 API
+// ============================================
+
+/**
+ * 分类类型
+ */
+export interface Category {
+  id: number;
+  name: string;
+  name_en: string;
+  icon?: string;
+  sort_order: number;
+  is_active: boolean;
+  video_count?: number;
+  today_new?: number;
+}
+
+/**
+ * 分类统计类型
+ */
+export interface CategoryStats {
+  id: number;
+  name: string;
+  video_count: number;
+  today_new: number;
+  week_new: number;
+}
+
+/**
+ * 分类映射类型
+ */
+export interface CategoryMapping {
+  id: number;
+  source_id: number;
+  source_name?: string;
+  source_type_id: string;
+  source_type_name: string;
+  target_category_id: number;
+  target_category_name?: string;
+  sub_type_name?: string;
+}
+
+/**
+ * 获取分类列表
+ */
+export const getCategories = async (): Promise<Category[]> => {
+  const response = await apiClient.get<ApiResponse & { data?: Category[] }>('/admin/categories');
+  if (response.data.code === 1) {
+    return response.data.data || [];
+  }
+  throw new Error(response.data.msg || '获取分类列表失败');
+};
+
+/**
+ * 获取分类统计
+ */
+export const getCategoryStats = async (): Promise<CategoryStats[]> => {
+  const response = await apiClient.get<ApiResponse & { data?: CategoryStats[] }>('/admin/categories/stats');
+  if (response.data.code === 1) {
+    return response.data.data || [];
+  }
+  throw new Error(response.data.msg || '获取分类统计失败');
+};
+
+/**
+ * 保存分类（创建或更新）
+ */
+export const saveCategory = async (category: Partial<Category>): Promise<void> => {
+  const response = await apiClient.post<ApiResponse>('/admin/categories', category);
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '保存分类失败');
+  }
+};
+
+/**
+ * 删除分类
+ */
+export const deleteCategory = async (id: number): Promise<void> => {
+  const response = await apiClient.delete<ApiResponse>(`/admin/categories/${id}`);
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '删除分类失败');
+  }
+};
+
+/**
+ * 获取分类映射列表
+ */
+export const getCategoryMappings = async (): Promise<CategoryMapping[]> => {
+  const response = await apiClient.get<ApiResponse & { data?: CategoryMapping[] }>('/admin/categories/mappings');
+  if (response.data.code === 1) {
+    return response.data.data || [];
+  }
+  throw new Error(response.data.msg || '获取分类映射失败');
+};
+
+/**
+ * 保存分类映射
+ */
+export const saveCategoryMapping = async (mapping: {
+  source_id: number;
+  source_type_id: string;
+  source_type_name: string;
+  target_category_id: number;
+  sub_type_name?: string;
+}): Promise<void> => {
+  const response = await apiClient.post<ApiResponse>('/admin/categories/mappings', mapping);
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '保存分类映射失败');
+  }
+};
+
+/**
+ * 删除分类映射
+ */
+export const deleteCategoryMapping = async (id: number): Promise<void> => {
+  const response = await apiClient.delete<ApiResponse>(`/admin/categories/mappings/${id}`);
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '删除分类映射失败');
+  }
+};
+
+
+// ============================================
+// 视频管理扩展 API
+// ============================================
+
+/**
+ * 视频详情类型
+ */
+export interface VideoDetail {
+  vod_id: string;
+  vod_name: string;
+  vod_pic: string;
+  vod_pic_vertical?: string;
+  vod_remarks: string;
+  vod_year: string;
+  vod_area: string;
+  vod_actor: string;
+  vod_director: string;
+  vod_writer: string;
+  vod_score: number;
+  vod_hits: number;
+  vod_hits_day: number;
+  vod_tag: string;
+  vod_duration: string;
+  vod_total: number;
+  type_id: number;
+  type_name: string;
+  sub_type_id?: number;
+  sub_type_name?: string;
+  source_name: string;
+  is_valid: number;
+  updated_at: number;
+}
+
+/**
+ * 获取视频列表
+ */
+export const getVideos = async (options?: {
+  page?: number;
+  keyword?: string;
+  type_id?: string;
+  sub_type_id?: string;
+  is_valid?: string;
+}): Promise<{ list: VideoDetail[]; total: number }> => {
+  const params = new URLSearchParams();
+  if (options?.page) params.append('page', String(options.page));
+  if (options?.keyword) params.append('keyword', options.keyword);
+  if (options?.type_id) params.append('type_id', options.type_id);
+  if (options?.sub_type_id) params.append('sub_type_id', options.sub_type_id);
+  if (options?.is_valid) params.append('is_valid', options.is_valid);
+
+  const response = await apiClient.get<ApiResponse & { data?: { list?: VideoDetail[]; total?: number } }>(
+    `/admin/videos?${params.toString()}`
+  );
+  if (response.data.code === 1 && response.data.data) {
+    return {
+      list: response.data.data.list || [],
+      total: response.data.data.total || 0,
+    };
+  }
+  throw new Error(response.data.msg || '获取视频列表失败');
+};
+
+/**
+ * 更新视频信息
+ */
+export const updateVideo = async (vodId: string, data: Partial<VideoDetail>): Promise<void> => {
+  const response = await apiClient.put<ApiResponse>(`/admin/video/${vodId}`, data);
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '更新视频失败');
+  }
+};
+
+/**
+ * 删除视频
+ */
+export const deleteVideo = async (vodId: string): Promise<void> => {
+  const response = await apiClient.delete<ApiResponse>(`/admin/video/${vodId}`);
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '删除视频失败');
+  }
+};
+
+/**
+ * 切换视频有效状态
+ */
+export const toggleVideoValid = async (vodId: string, isValid: boolean): Promise<void> => {
+  const response = await apiClient.patch<ApiResponse>(`/admin/video/${vodId}/valid`, { is_valid: isValid });
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '更新状态失败');
+  }
+};
+
+
+// ============================================
+// 采集管理 API (V1)
+// ============================================
+
+/**
+ * 采集任务类型 (V1)
+ */
+export interface CollectTask {
+  id: number;
+  type: string;
+  status: string;
+  new_count: number;
+  update_count: number;
+  error_count: number;
+  started_at: number;
+  completed_at?: number;
+}
+
+/**
+ * 获取采集统计 (V1)
+ */
+export const getCollectStatsV1 = async (): Promise<{
+  total_videos: number;
+  valid_videos: number;
+  today_new: number;
+  last_task?: CollectTask;
+}> => {
+  const response = await apiClient.get<ApiResponse & { data?: any }>('/admin/collect/stats');
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
+  }
+  throw new Error(response.data.msg || '获取采集统计失败');
+};
+
+/**
+ * 获取采集任务列表 (V1)
+ */
+export const getCollectTasksV1 = async (): Promise<CollectTask[]> => {
+  const response = await apiClient.get<ApiResponse & { data?: CollectTask[] }>('/admin/collect/tasks');
+  if (response.data.code === 1) {
+    return response.data.data || [];
+  }
+  throw new Error(response.data.msg || '获取任务列表失败');
+};
+
+/**
+ * 触发采集 (V1)
+ */
+export const triggerCollect = async (): Promise<void> => {
+  const response = await apiClient.post<ApiResponse>('/admin/collect/trigger');
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '触发采集失败');
+  }
+};
+
+/**
+ * 触发验证 (V1)
+ */
+export const triggerValidate = async (): Promise<void> => {
+  const response = await apiClient.post<ApiResponse>('/admin/collect/validate');
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '触发验证失败');
+  }
+};
+
+/**
+ * 修复封面 (V1)
+ */
+export const fixCovers = async (limit?: number): Promise<void> => {
+  const response = await apiClient.post<ApiResponse>('/admin/collect/fix-covers', { limit: limit || 100 });
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '修复封面失败');
+  }
+};
+
+/**
+ * 重建演员关联
+ */
+export const rebuildActors = async (): Promise<{ processed: number; created: number }> => {
+  const response = await apiClient.post<ApiResponse & { data?: { processed: number; created: number } }>(
+    '/admin/collect/rebuild-actors'
+  );
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
+  }
+  throw new Error(response.data.msg || '重建演员关联失败');
+};
+
+
+// ============================================
+// 仪表板统计 API
+// ============================================
+
+/**
+ * 热门视频类型
+ */
+export interface HotVideo {
+  vod_id: string;
+  vod_name: string;
+  vod_pic: string;
+  vod_score: number;
+  vod_hits: number;
+  vod_hits_day: number;
+}
+
+/**
+ * 评分分布类型
+ */
+export interface RatingDistribution {
+  score_range: string;
+  count: number;
+}
+
+/**
+ * 推荐性能类型
+ */
+export interface RecommendationPerformance {
+  total_videos: number;
+  total_vod?: number;
+  coverage: number;
+  avg_recommendations: number;
+  last_update?: number;
+}
+
+/**
+ * 获取热门视频
+ */
+export const getHotVideos = async (limit?: number, period?: string): Promise<HotVideo[]> => {
+  const params = new URLSearchParams();
+  if (limit) params.append('limit', String(limit));
+  if (period) params.append('period', period);
+
+  const response = await apiClient.get<ApiResponse & { data?: HotVideo[] }>(
+    `/admin/stats/hot-videos?${params.toString()}`
+  );
+  if (response.data.code === 1) {
+    return response.data.data || [];
+  }
+  throw new Error(response.data.msg || '获取热门视频失败');
+};
+
+/**
+ * 获取评分分布
+ */
+export const getRatingDistribution = async (): Promise<RatingDistribution[]> => {
+  const response = await apiClient.get<ApiResponse & { data?: RatingDistribution[] }>(
+    '/admin/stats/rating-distribution'
+  );
+  if (response.data.code === 1) {
+    return response.data.data || [];
+  }
+  throw new Error(response.data.msg || '获取评分分布失败');
+};
+
+/**
+ * 获取推荐性能
+ */
+export const getRecommendationPerformance = async (): Promise<RecommendationPerformance> => {
+  const response = await apiClient.get<ApiResponse & { data?: RecommendationPerformance }>(
+    '/admin/stats/recommendation-performance'
+  );
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
+  }
+  throw new Error(response.data.msg || '获取推荐性能失败');
+};
+
+
+// ============================================
+// 演员 API (公开接口)
+// ============================================
+
+/**
+ * 热门演员类型
+ */
+export interface PopularActor {
+  id: number;
+  name: string;
+  avatar?: string;
+  works_count: number;
+  popularity: number;
+}
+
+/**
+ * 获取热门演员
+ */
+export const getPopularActors = async (limit?: number): Promise<PopularActor[]> => {
+  const params = limit ? `?limit=${limit}` : '';
+  const response = await apiClient.get<ApiResponse & { data?: PopularActor[] }>(
+    `/api/actors/popular${params}`
+  );
+  if (response.data.code === 1) {
+    return response.data.data || [];
+  }
+  throw new Error(response.data.msg || '获取热门演员失败');
+};
+
+/**
+ * 搜索演员
+ */
+export const searchActors = async (keyword: string): Promise<PopularActor[]> => {
+  const response = await apiClient.get<ApiResponse & { data?: PopularActor[] }>(
+    `/api/actors/search?keyword=${encodeURIComponent(keyword)}`
+  );
+  if (response.data.code === 1) {
+    return response.data.data || [];
+  }
+  throw new Error(response.data.msg || '搜索演员失败');
+};
+
+/**
+ * 获取演员详情 (公开接口)
+ */
+export const getActorDetail = async (id: number): Promise<ActorDetail> => {
+  const response = await apiClient.get<ApiResponse & { data?: ActorDetail }>(
+    `/api/actor/${id}`
+  );
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
+  }
+  throw new Error(response.data.msg || '获取演员详情失败');
+};
+
+
+// ============================================
+// 广告迁移 API
+// ============================================
+
+/**
+ * 迁移广告数据库
+ */
+export const migrateAds = async (): Promise<void> => {
+  const response = await apiClient.post<ApiResponse>('/admin/ads/migrate');
+  if (response.data.code !== 1) {
+    throw new Error(response.data.msg || '迁移广告数据库失败');
+  }
+};
+
+
+// ============================================
+// 采集指标 API
+// ============================================
+
+/**
+ * 采集指标类型（简化版）
+ */
+export interface CollectMetrics {
+  totalVideos: number;
+  validVideos: number;
+  invalidVideos: number;
+  todayNew: number;
+  weekNew: number;
+  byCategory: Array<{ name: string; count: number }>;
+  bySource: Array<{ name: string; count: number }>;
+}
+
+/**
+ * 性能监控指标类型（完整版）
+ */
+export interface PerformanceMetrics {
+  totalVideos: number;
+  validVideos: number;
+  invalidVideos: number;
+  avgQualityScore: number;
+  excellentCount: number;
+  goodCount: number;
+  fairCount: number;
+  poorCount: number;
+  todayNew: number;
+  todayUpdated: number;
+  weekNew: number;
+  totalTasks: number;
+  successTasks: number;
+  failedTasks: number;
+  avgDuration: number;
+  avgSuccessRate: number;
+  sourceDistribution: Record<string, number>;
+  typeDistribution: Record<string, number>;
+}
+
+/**
+ * 健康状态类型
+ */
+export interface HealthStatus {
+  status: 'healthy' | 'warning' | 'critical';
+  issues: string[];
+}
+
+/**
+ * 获取采集指标（性能监控完整版）
+ */
+export const getCollectMetrics = async (): Promise<{
+  metrics: PerformanceMetrics;
+  health: HealthStatus;
+  report: string;
+}> => {
+  const response = await apiClient.get<ApiResponse & { data?: { metrics: PerformanceMetrics; health: HealthStatus; report: string } }>(
+    '/admin/collect/metrics'
+  );
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
+  }
+  throw new Error(response.data.msg || '获取采集指标失败');
 };

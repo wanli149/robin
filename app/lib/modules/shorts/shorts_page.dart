@@ -4,6 +4,7 @@ import 'shorts_controller.dart';
 import 'widgets/shorts_video_item.dart';
 import '../root/root_controller.dart';
 import '../../core/global_player_manager.dart';
+import '../../core/logger.dart';
 
 /// 短剧页面
 /// 竖屏全屏滑动播放短剧
@@ -79,18 +80,18 @@ class _ShortsPageState extends State<ShortsPage> with AutomaticKeepAliveClientMi
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
         // 🚀 应用进入后台时，禁止播放并暂停
-        print('🎬 [ShortsPage] App paused, disabling play permission');
+        Logger.player('[ShortsPage] App paused, disabling play permission');
         GlobalPlayerManager.to.setPlayPermission(false);
         controller.pauseAllVideos();
         break;
       case AppLifecycleState.resumed:
         // 🚀 应用回到前台时，如果页面可见则允许播放并恢复
         if (_isPageVisible) {
-          print('🎬 [ShortsPage] App resumed, enabling play permission');
+          Logger.player('[ShortsPage] App resumed, enabling play permission');
           GlobalPlayerManager.to.setPlayPermission(true);
           controller.resumeCurrentVideo();
         } else {
-          print('🎬 [ShortsPage] App resumed but page not visible, keeping play disabled');
+          Logger.player('[ShortsPage] App resumed but page not visible, keeping play disabled');
         }
         break;
       default:

@@ -13,6 +13,36 @@ type Bindings = {
 
 const stats = new Hono<{ Bindings: Bindings }>();
 
+// 🚀 确保 play_stats 表存在
+async function ensurePlayStatsTable(db: D1Database): Promise<void> {
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS play_stats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vod_id TEXT NOT NULL,
+        vod_type TEXT NOT NULL,
+        episode_index INTEGER,
+        event_type TEXT NOT NULL,
+        played_seconds INTEGER DEFAULT 0,
+        total_seconds INTEGER DEFAULT 0,
+        date TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `).run();
+    
+    // 创建索引（忽略已存在的错误）
+    try {
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_play_stats_vod_date ON play_stats(vod_id, date)`).run();
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_play_stats_date ON play_stats(date)`).run();
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_play_stats_event_type ON play_stats(event_type, date)`).run();
+    } catch (e) {
+      // 索引可能已存在，忽略
+    }
+  } catch (e) {
+    logger.stats.error('Failed to create play_stats table', { error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
 /**
  * POST /api/stats/module_click
  * 上报模块点击事件
@@ -255,6 +285,112 @@ stats.post('/api/stats/batch', async (c) => {
     });
   } catch (error) {
     logger.stats.error('Batch error', { error: error instanceof Error ? error.message : String(error) });
+    // 统计失败不影响用户体验，返回成功
+    return c.json({
+      code: 1,
+      msg: 'success',
+    });
+  }
+});
+
+/**
+ * POST /api/stats/play
+ * 上报视频播放统计
+ * 
+ * Body:
+ * - events: 播放事件数组
+ *   - type: 'play_start' | 'valid_play' | 'play_complete'
+ *   - vod_id: 视频ID
+ *   - vod_type: 视频类型 (movie, tv, shorts)
+ *   - episode_index: 集数（可选）
+ *   - played_seconds: 已播放秒数（valid_play 时使用）
+ *   - total_seconds: 总时长秒数（valid_play 时使用）
+ *   - timestamp: 时间戳
+ */
+stats.post('/api/stats/play', async (c) => {
+  try {
+    // 🚀 确保表存在
+    await ensurePlayStatsTable(c.env.DB);
+    
+    const body = await c.req.json();
+    const { events } = body;
+
+    if (!events || !Array.isArray(events) || events.length === 0) {
+      return c.json({
+        code: 0,
+        msg: 'Invalid events',
+      }, 400);
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const statements: D1PreparedStatement[] = [];
+
+    // 统计有效播放次数（用于更新 vod_hits）
+    const validPlayCounts = new Map<string, number>();
+
+    for (const event of events) {
+      const { type, vod_id, vod_type, episode_index, played_seconds, total_seconds } = event;
+
+      if (!vod_id || !vod_type) continue;
+
+      // 记录播放日志
+      statements.push(
+        c.env.DB.prepare(`
+          INSERT INTO play_stats (vod_id, vod_type, episode_index, event_type, played_seconds, total_seconds, date, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+        `).bind(
+          vod_id,
+          vod_type,
+          episode_index || null,
+          type,
+          played_seconds || 0,
+          total_seconds || 0,
+          today
+        )
+      );
+
+      // 统计有效播放
+      if (type === 'valid_play') {
+        const count = validPlayCounts.get(vod_id) || 0;
+        validPlayCounts.set(vod_id, count + 1);
+      }
+    }
+
+    // 更新视频播放次数（vod_hits）
+    for (const [vodId, count] of validPlayCounts) {
+      // 更新 vod_cache 表的播放次数
+      statements.push(
+        c.env.DB.prepare(`
+          UPDATE vod_cache 
+          SET vod_hits = COALESCE(vod_hits, 0) + ?,
+              vod_hits_day = COALESCE(vod_hits_day, 0) + ?,
+              vod_hits_week = COALESCE(vod_hits_week, 0) + ?,
+              vod_hits_month = COALESCE(vod_hits_month, 0) + ?
+          WHERE vod_id = ?
+        `).bind(count, count, count, count, vodId)
+      );
+    }
+
+    // 批量执行
+    if (statements.length > 0) {
+      await c.env.DB.batch(statements);
+    }
+
+    logger.stats.info('Play stats recorded', { 
+      eventCount: events.length,
+      validPlays: validPlayCounts.size 
+    });
+
+    return c.json({
+      code: 1,
+      msg: 'success',
+      data: {
+        processed: events.length,
+        valid_plays: validPlayCounts.size,
+      },
+    });
+  } catch (error) {
+    logger.stats.error('Play stats error', { error: error instanceof Error ? error.message : String(error) });
     // 统计失败不影响用户体验，返回成功
     return c.json({
       code: 1,

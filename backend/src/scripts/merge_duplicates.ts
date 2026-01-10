@@ -264,12 +264,13 @@ async function mergeGroup(
     primary.vod_id
   ).run();
 
-  // 批量删除重复记录
+  // 批量删除重复记录（使用参数化查询防止SQL注入）
   if (duplicates.length > 0) {
-    const deleteIds = duplicates.map(d => `'${d.vod_id}'`).join(',');
+    const placeholders = duplicates.map(() => '?').join(',');
+    const deleteIds = duplicates.map(d => d.vod_id);
     await env.DB.prepare(`
-      DELETE FROM vod_cache WHERE vod_id IN (${deleteIds})
-    `).run();
+      DELETE FROM vod_cache WHERE vod_id IN (${placeholders})
+    `).bind(...deleteIds).run();
     
     stats.deleted += duplicates.length;
   }

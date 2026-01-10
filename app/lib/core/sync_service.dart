@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:get/get.dart';
 import 'http_client.dart';
 import 'user_store.dart';
+import 'logger.dart';
 
 /// 同步服务
 /// 负责同步观看历史、播放进度等数据到服务器
@@ -63,7 +64,7 @@ class SyncService extends GetxController {
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
     
-    print('📝 Recorded progress for $vodName: $progress/$duration seconds');
+    Logger.info('[SyncService] Recorded progress for $vodName: $progress/$duration seconds');
   }
   
   /// 立即同步播放进度
@@ -76,7 +77,7 @@ class SyncService extends GetxController {
   }) async {
     // 检查登录状态
     if (!_userStore.isLoggedIn) {
-      print('⚠️ User not logged in, skip sync');
+      Logger.warning('[SyncService] User not logged in, skip sync');
       return;
     }
     
@@ -92,9 +93,9 @@ class SyncService extends GetxController {
         },
       );
       
-      print('✅ Synced progress for $vodName');
+      Logger.success('[SyncService] Synced progress for $vodName');
     } catch (e) {
-      print('❌ Failed to sync progress: $e');
+      Logger.error('[SyncService] Failed to sync progress: $e');
       // 同步失败，加入待同步队列
       recordProgress(
         vodId: vodId,
@@ -112,7 +113,7 @@ class SyncService extends GetxController {
       return;
     }
     
-    print('🔄 Syncing ${_pendingSync.length} pending progress records...');
+    Logger.info('[SyncService] Syncing ${_pendingSync.length} pending progress records...');
     
     final List<String> successIds = [];
     
@@ -130,9 +131,9 @@ class SyncService extends GetxController {
         );
         
         successIds.add(entry.key);
-        print('✅ Synced progress for ${entry.value.vodName}');
+        Logger.success('[SyncService] Synced progress for ${entry.value.vodName}');
       } catch (e) {
-        print('❌ Failed to sync ${entry.value.vodName}: $e');
+        Logger.error('[SyncService] Failed to sync ${entry.value.vodName}: $e');
       }
     }
     
@@ -142,7 +143,7 @@ class SyncService extends GetxController {
     }
     
     if (successIds.isNotEmpty) {
-      print('✅ Successfully synced ${successIds.length} records');
+      Logger.success('[SyncService] Successfully synced ${successIds.length} records');
     }
   }
   
@@ -161,18 +162,14 @@ class SyncService extends GetxController {
         },
       );
       
-      if (response.data['code'] == 200 || response.statusCode == 200) {
-        final data = response.data['data'] ?? response.data;
-        final list = data['list'] ?? data;
-        
-        if (list is List) {
-          return list.map((item) => HistoryItem.fromJson(item)).toList();
-        }
+      if (response.data['code'] == 1) {
+        final list = response.data['data'] as List? ?? [];
+        return list.map((item) => HistoryItem.fromJson(item)).toList();
       }
       
       return [];
     } catch (e) {
-      print('❌ Failed to get history: $e');
+      Logger.error('[SyncService] Failed to get history: $e');
       return [];
     }
   }
@@ -192,18 +189,14 @@ class SyncService extends GetxController {
         },
       );
       
-      if (response.data['code'] == 200 || response.statusCode == 200) {
-        final data = response.data['data'] ?? response.data;
-        final list = data['list'] ?? data;
-        
-        if (list is List) {
-          return list.map((item) => FavoriteItem.fromJson(item)).toList();
-        }
+      if (response.data['code'] == 1) {
+        final list = response.data['data'] as List? ?? [];
+        return list.map((item) => FavoriteItem.fromJson(item)).toList();
       }
       
       return [];
     } catch (e) {
-      print('❌ Failed to get favorites: $e');
+      Logger.error('[SyncService] Failed to get favorites: $e');
       return [];
     }
   }
@@ -229,14 +222,14 @@ class SyncService extends GetxController {
         },
       );
       
-      if (response.data['code'] == 200 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         Get.snackbar('成功', '已添加到收藏');
         return true;
       }
       
       return false;
     } catch (e) {
-      print('❌ Failed to add favorite: $e');
+      Logger.error('[SyncService] Failed to add favorite: $e');
       Get.snackbar('失败', '添加收藏失败');
       return false;
     }
@@ -251,14 +244,14 @@ class SyncService extends GetxController {
     try {
       final response = await _httpClient.delete('/api/user/favorite/$vodId');
       
-      if (response.data['code'] == 200 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         Get.snackbar('成功', '已取消收藏');
         return true;
       }
       
       return false;
     } catch (e) {
-      print('❌ Failed to remove favorite: $e');
+      Logger.error('[SyncService] Failed to remove favorite: $e');
       Get.snackbar('失败', '取消收藏失败');
       return false;
     }
@@ -278,7 +271,7 @@ class SyncService extends GetxController {
     try {
       final response = await _httpClient.delete('/api/user/history/$vodId');
       
-      if (response.data['code'] == 1 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         // 同时从待同步队列中移除
         _pendingSync.remove(vodId);
         return true;
@@ -286,7 +279,7 @@ class SyncService extends GetxController {
       
       return false;
     } catch (e) {
-      print('❌ Failed to delete history: $e');
+      Logger.error('[SyncService] Failed to delete history: $e');
       return false;
     }
   }
@@ -300,7 +293,7 @@ class SyncService extends GetxController {
     try {
       final response = await _httpClient.delete('/api/user/history');
       
-      if (response.data['code'] == 1 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         // 清空待同步队列
         _pendingSync.clear();
         return true;
@@ -308,7 +301,7 @@ class SyncService extends GetxController {
       
       return false;
     } catch (e) {
-      print('❌ Failed to clear history: $e');
+      Logger.error('[SyncService] Failed to clear history: $e');
       return false;
     }
   }

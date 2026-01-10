@@ -1,11 +1,14 @@
+// ignore_for_file: file_names
+
 /// English Language Pack
-/// 
+///
 /// Contains all translatable text in the application
-/// 
+///
 /// ## Naming Convention
 /// - Use lowercase letters and underscores
 /// - Group by module
 /// - Common text at the top
+library;
 
 const Map<String, String> enUS = {
   // ==================== Common ====================

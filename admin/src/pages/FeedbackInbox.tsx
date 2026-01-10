@@ -7,7 +7,6 @@ import { useState, useEffect } from 'react';
 import {
   Table,
   Button,
-  message,
   Typography,
   Card,
   Tag,
@@ -20,6 +19,7 @@ import {
   Statistic,
   Popconfirm,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   CheckOutlined,
   MessageOutlined,
@@ -56,6 +56,7 @@ const FeedbackInbox: React.FC = () => {
   const [currentFeedback, setCurrentFeedback] = useState<FeedbackDetail | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [stats, setStats] = useState<any>(null);
+  const { success, error, warning } = useNotification();
 
   // 加载反馈列表
   const loadFeedback = async () => {
@@ -69,8 +70,8 @@ const FeedbackInbox: React.FC = () => {
       });
       setFeedback(result.list);
       setTotal(result.total);
-    } catch (error: any) {
-      message.error(error.message || '加载反馈列表失败');
+    } catch (err: any) {
+      error(err.message || '加载反馈列表失败');
     } finally {
       setLoading(false);
     }
@@ -81,7 +82,7 @@ const FeedbackInbox: React.FC = () => {
     try {
       const data = await getFeedbackStats();
       setStats(data);
-    } catch (error) {
+    } catch (err) {
       console.log('Stats not available');
     }
   };
@@ -90,11 +91,11 @@ const FeedbackInbox: React.FC = () => {
   const handleProcess = async (id: number) => {
     try {
       await processFeedback(id);
-      message.success('已标记为已处理');
+      success('已标记为已处理');
       loadFeedback();
       loadStats();
-    } catch (error: any) {
-      message.error(error.message || '操作失败');
+    } catch (err: any) {
+      error(err.message || '操作失败');
     }
   };
 
@@ -108,19 +109,19 @@ const FeedbackInbox: React.FC = () => {
   // 发送回复
   const handleSendReply = async () => {
     if (!currentFeedback || !replyContent.trim()) {
-      message.warning('请输入回复内容');
+      warning('请输入回复内容');
       return;
     }
 
     try {
       await replyFeedback(currentFeedback.id, replyContent);
-      message.success('回复成功');
+      success('回复成功');
       setReplyModalVisible(false);
       setReplyContent('');
       loadFeedback();
       loadStats();
-    } catch (error: any) {
-      message.error(error.message || '回复失败');
+    } catch (err: any) {
+      error(err.message || '回复失败');
     }
   };
 
@@ -128,28 +129,28 @@ const FeedbackInbox: React.FC = () => {
   const handleCategoryChange = async (id: number, category: string) => {
     try {
       await updateFeedbackCategory(id, category);
-      message.success('分类已更新');
+      success('分类已更新');
       loadFeedback();
-    } catch (error: any) {
-      message.error(error.message || '更新失败');
+    } catch (err: any) {
+      error(err.message || '更新失败');
     }
   };
 
   // 批量处理
   const handleBatchProcess = async (action: 'process' | 'delete') => {
     if (selectedRowKeys.length === 0) {
-      message.warning('请先选择要处理的反馈');
+      warning('请先选择要处理的反馈');
       return;
     }
 
     try {
       await batchProcessFeedback(selectedRowKeys, action);
-      message.success(`已${action === 'process' ? '处理' : '删除'} ${selectedRowKeys.length} 条反馈`);
+      success(`已${action === 'process' ? '处理' : '删除'} ${selectedRowKeys.length} 条反馈`);
       setSelectedRowKeys([]);
       loadFeedback();
       loadStats();
-    } catch (error: any) {
-      message.error(error.message || '批量操作失败');
+    } catch (err: any) {
+      error(err.message || '批量操作失败');
     }
   };
 

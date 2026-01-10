@@ -15,9 +15,9 @@ import {
   Form,
   Typography,
   Popconfirm,
-  message,
   Radio,
 } from 'antd';
+import { useNotification } from '../providers';
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -52,6 +52,7 @@ const GridIconsEditor: React.FC<GridIconsEditorProps> = ({ value, onChange }) =>
   const [categories, setCategories] = useState<CategoryWithSubs[]>([]);
   const [topics, setTopics] = useState<Array<{ id: string; title: string }>>([]);
   const [articleCategories, setArticleCategories] = useState<Array<{ id: number; name: string }>>([]);
+  const { success } = useNotification();
 
   // 加载分类、专题和文章分类数据
   useEffect(() => {
@@ -135,7 +136,7 @@ const GridIconsEditor: React.FC<GridIconsEditorProps> = ({ value, onChange }) =>
       setEditModalVisible(false);
       setEditingIndex(null);
       form.resetFields();
-      message.success(editingIndex !== null ? '图标已更新' : '图标已添加');
+      success(editingIndex !== null ? '图标已更新' : '图标已添加');
     } catch (error) {
       console.error('Validation failed:', error);
     }
@@ -145,7 +146,7 @@ const GridIconsEditor: React.FC<GridIconsEditorProps> = ({ value, onChange }) =>
   const handleDelete = (index: number) => {
     const newItems = items.filter((_, i) => i !== index);
     onChange?.({ items: newItems });
-    message.success('图标已删除');
+    success('图标已删除');
   };
 
   // 上移

@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:flutter/services.dart';
 
 import 'player_enums.dart';
@@ -15,47 +16,13 @@ import 'mixins/player_pip_mixin.dart';
 import 'mixins/player_listeners_mixin.dart';
 import '../http_client.dart';
 import '../pip_manager.dart';
-import '../progress_sync_service.dart';
+import '../logger.dart';
+import '../../services/play_stats_service.dart';
 
-/// 全局播放器管理器
+/// 全局播放器管理器 (基于 media_kit)
 /// 
 /// 单例模式管理整个应用的视频播放，确保同一时间只有一个播放器实例。
-/// 
-/// ## 核心功能
-/// - 统一管理视频播放器实例
-/// - 支持多种播放模式（小窗、全屏、画中画、流模式）
-/// - 自动保存和恢复播放进度
-/// - 智能预加载下一集
-/// - 自动重试机制
-/// 
-/// ## 架构设计
-/// 使用 Mixin 模式拆分功能：
-/// - [PlayerWakelockMixin] - 防熄屏管理
-/// - [PlayerFullscreenMixin] - 全屏管理
-/// - [PlayerProgressMixin] - 进度管理
-/// - [PlayerPreloadMixin] - 预加载管理
-/// - [PlayerPipMixin] - 画中画管理
-/// - [PlayerListenersMixin] - 监听器管理
-/// 
-/// ## 使用示例
-/// ```dart
-/// // 切换播放内容
-/// await GlobalPlayerManager.to.switchContent(
-///   contentType: ContentType.tv,
-///   contentId: '12345',
-///   episodeIndex: 1,
-///   config: PlayerConfig.tvWindow(),
-///   videoUrl: 'https://example.com/video.m3u8',
-/// );
-/// 
-/// // 播放控制
-/// GlobalPlayerManager.to.play();
-/// GlobalPlayerManager.to.pause();
-/// GlobalPlayerManager.to.togglePlayPause();
-/// 
-/// // 进入全屏
-/// GlobalPlayerManager.to.enterFullscreen();
-/// ```
+/// 使用 media_kit 提供更好的缓冲控制和预加载能力。
 class GlobalPlayerManager extends GetxController
     with
         WidgetsBindingObserver,
@@ -66,76 +33,67 @@ class GlobalPlayerManager extends GetxController
         PlayerPipMixin,
         PlayerListenersMixin {
   
-  /// 获取单例实例
   static GlobalPlayerManager get to => Get.find<GlobalPlayerManager>();
 
   // ==================== 核心属性 ====================
 
-  /// HTTP 客户端
   final HttpClient _httpClient = HttpClient();
 
-  /// 唯一播放器实例
-  VideoPlayerController? _playerInstance;
+  /// media_kit 播放器实例
+  Player? _player;
+  
+  /// media_kit 视频控制器（用于渲染）
+  VideoController? _videoController;
 
-  /// 获取播放器实例（只读）
-  VideoPlayerController? get playerInstance => _playerInstance;
+  /// 获取播放器实例
+  Player? get player => _player;
+  
+  /// 获取视频控制器（用于 Video Widget）
+  VideoController? get videoController => _videoController;
 
-  /// 当前播放器配置
   final Rx<PlayerConfig> currentConfig = PlayerConfig.shortsWindow().obs;
-
-  /// 当前播放状态
   final Rx<PlayerState> currentState = PlayerState.initial().obs;
-
-  /// 播放器模式
   final Rx<PlayerMode> playerMode = PlayerMode.window.obs;
-
-  /// 加载状态
   final RxBool isLoading = false.obs;
-
-  /// 错误信息
   final RxString error = ''.obs;
-
-  /// 重试计数
   final RxInt retryCount = 0.obs;
-
-  /// 最大重试次数
   static const int maxRetryCount = 3;
-
-  /// 播放许可标志（页面可见性控制）
   bool _shouldAutoPlay = true;
-
-  /// 切换开始时间（性能监控）
   DateTime? _switchStartTime;
-
-  /// 切换延迟（毫秒）
   final RxInt switchLatency = 0.obs;
+  
+  // ==================== 操作取消机制 ====================
+  
+  int _currentOperationId = 0;
+  final Set<int> _cancelledOperations = {};
 
   // ==================== 暂停广告相关 ====================
 
-  /// 暂停广告数据
   final Rx<Map<String, dynamic>?> pauseAdData = Rx<Map<String, dynamic>?>(null);
-
-  /// 是否显示暂停广告
   final RxBool showPauseAd = false.obs;
 
   // ==================== 播放/暂停防抖 ====================
 
-  /// 上次切换时间
   DateTime? _lastToggleTime;
-
-  /// 防抖间隔（毫秒）
   static const int _toggleDebounceMs = 300;
+  
+  // ==================== 流订阅 ====================
+  
+  StreamSubscription? _playingSubscription;
+  StreamSubscription? _positionSubscription;
+  StreamSubscription? _durationSubscription;
+  StreamSubscription? _bufferSubscription;
+  StreamSubscription? _completedSubscription;
+  StreamSubscription? _errorSubscription;
 
   // ==================== Mixin 接口实现 ====================
 
-  // PlayerWakelockMixin
   @override
   bool get isInPipModeValue => PipManager.to.isInPipMode.value;
 
   @override
   bool get isPlayingValue => currentState.value.isPlaying;
 
-  // PlayerFullscreenMixin
   @override
   PlayerState get currentPlayerState => currentState.value;
 
@@ -146,7 +104,7 @@ class GlobalPlayerManager extends GetxController
   Rx<PlayerConfig> get currentConfigRx => currentConfig;
 
   @override
-  bool get isPlayerInstancePlaying => _playerInstance?.value.isPlaying ?? false;
+  bool get isPlayerInstancePlaying => _player?.state.playing ?? false;
 
   @override
   Future<void> resumePlay() async => await play();
@@ -154,22 +112,16 @@ class GlobalPlayerManager extends GetxController
   @override
   void notifyStateListeners() => notifyStateListenersInternal(currentState.value);
 
-  // PlayerProgressMixin
   @override
   bool get isPreloadingValue => isPreloading.value;
 
   @override
   void triggerPreloadNextEpisode() => preloadNextEpisode();
 
-  // PlayerPreloadMixin
   @override
   Future<String> getVideoUrl(ContentType contentType, String contentId, int episodeIndex) {
     return _getVideoUrl(contentType, contentId, episodeIndex);
   }
-
-  // PlayerPipMixin
-  @override
-  VideoPlayerController? get playerInstanceValue => _playerInstance;
 
   // ==================== 生命周期 ====================
 
@@ -179,7 +131,7 @@ class GlobalPlayerManager extends GetxController
     WidgetsBinding.instance.addObserver(this);
     PipManager.to.registerPlayerCallback(_onAppLifecycleChanged);
     _loadPauseAdConfig();
-    print('🎬 [GlobalPlayer] Manager initialized');
+    Logger.player('Manager initialized (media_kit)');
   }
 
   @override
@@ -187,28 +139,27 @@ class GlobalPlayerManager extends GetxController
     WidgetsBinding.instance.removeObserver(this);
     PipManager.to.unregisterPlayerCallback(_onAppLifecycleChanged);
     
-    // 保存进度
     saveProgress();
     
-    // 释放资源
     disposeWakelockMixin();
     disposeProgressMixin();
     disposePreloadMixin();
     disposeListenersMixin();
+    
     _disposePlayer();
     
+    Logger.player('Manager closed');
     super.onClose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    print('🎬 [GlobalPlayer] Flutter lifecycle state: $state');
+    Logger.player('Flutter lifecycle state: $state');
   }
 
-  /// 处理应用生命周期变化
   void _onAppLifecycleChanged(String state) {
-    print('🎬 [GlobalPlayer] Lifecycle change: $state');
+    Logger.player('Lifecycle change: $state');
 
     switch (state) {
       case 'paused':
@@ -218,7 +169,6 @@ class GlobalPlayerManager extends GetxController
         }
         break;
       case 'resumed':
-        // 不自动播放，让用户手动控制
         break;
       case 'pip_entered_keep_playing':
         saveProgress();
@@ -232,86 +182,87 @@ class GlobalPlayerManager extends GetxController
 
   // ==================== 核心播放控制 ====================
 
-  /// 切换播放内容
-  /// 
-  /// 切换到新的视频内容，自动处理：
-  /// - 停止当前播放
-  /// - 创建新播放器实例
-  /// - 恢复播放进度
-  /// - 自动播放（如果启用）
-  /// 
-  /// [contentType] 内容类型
-  /// [contentId] 内容ID
-  /// [episodeIndex] 集数索引（从1开始）
-  /// [config] 播放器配置
-  /// [videoUrl] 视频URL（可选，不提供则自动获取）
-  /// [autoPlay] 是否自动播放
   Future<void> switchContent({
     required ContentType contentType,
     required String contentId,
     required int episodeIndex,
     required PlayerConfig config,
+    String? contentName,
     String? videoUrl,
     bool autoPlay = true,
   }) async {
+    final operationId = ++_currentOperationId;
+    
     try {
-      print('🎬 [GlobalPlayer] Switching: $contentType, $contentId, ep: $episodeIndex');
+      Logger.player('Switching: $contentType, $contentId, ep: $episodeIndex (opId: $operationId)');
 
       _switchStartTime = DateTime.now();
       isLoading.value = true;
       error.value = '';
 
-      // 检查是否是相同内容
       final isSameContent = currentState.value.contentType == contentType &&
           currentState.value.contentId == contentId;
 
-      // 停止当前播放
       await _stopCurrentPlayback();
+      
+      if (_isOperationCancelled(operationId)) {
+        Logger.player('Operation $operationId cancelled after stop');
+        return;
+      }
 
-      // 不同内容时清理预加载缓存
       if (!isSameContent) {
         clearPreloadCache();
       }
 
-      // 更新配置和状态
       currentConfig.value = config;
       currentState.value = currentState.value.copyWith(
         contentType: contentType,
         contentId: contentId,
+        contentName: contentName ?? '',
         episodeIndex: episodeIndex,
         position: Duration.zero,
         isPlaying: false,
       );
 
-      // 获取视频URL
       String playUrl = videoUrl ?? '';
       if (playUrl.isEmpty) {
         playUrl = await _getVideoUrl(contentType, contentId, episodeIndex);
+      }
+      
+      if (_isOperationCancelled(operationId)) {
+        Logger.player('Operation $operationId cancelled after getVideoUrl');
+        return;
       }
 
       if (playUrl.isEmpty) {
         throw Exception('无法获取视频播放地址');
       }
 
-      // 创建播放器实例
       await _createPlayerInstance(playUrl);
-      await _applyPlayerConfig(config);
+      
+      if (_isOperationCancelled(operationId)) {
+        Logger.player('Operation $operationId cancelled after createPlayer');
+        await _stopCurrentPlayback();
+        return;
+      }
 
       retryCount.value = 0;
 
       // 恢复播放进度（非短剧流模式）
       if (contentType != ContentType.shortsFlow) {
         final savedProgress = await loadSavedProgress(contentType, contentId, episodeIndex);
-        if (savedProgress.inSeconds > 0 && _playerInstance != null) {
-          final duration = _playerInstance!.value.duration;
-          if (duration.inSeconds > 0 && savedProgress.inSeconds < duration.inSeconds * 0.95) {
-            await _playerInstance!.seekTo(savedProgress);
-            print('🎬 [GlobalPlayer] Restored progress: ${savedProgress.inSeconds}s');
-          }
+        if (savedProgress.inSeconds > 0 && _player != null) {
+          await _player!.seek(savedProgress);
+          Logger.player('Restored progress: ${savedProgress.inSeconds}s');
         }
       }
+      
+      if (_isOperationCancelled(operationId)) {
+        Logger.player('Operation $operationId cancelled before autoPlay');
+        await _stopCurrentPlayback();
+        return;
+      }
 
-      // 自动播放
       if (autoPlay && _shouldAutoPlay) {
         if (contentType == ContentType.shortsFlow) {
           if (_isPlayerVisible()) {
@@ -324,46 +275,63 @@ class GlobalPlayerManager extends GetxController
 
       notifyStateListeners();
 
-      // 预加载下一集
       if (contentType == ContentType.shorts || contentType == ContentType.tv) {
         preloadNextEpisode();
       }
 
-      // 记录切换延迟
       if (_switchStartTime != null) {
         switchLatency.value = DateTime.now().difference(_switchStartTime!).inMilliseconds;
-        print('📊 [GlobalPlayer] Switch latency: ${switchLatency.value}ms');
+        Logger.info('Switch latency: ${switchLatency.value}ms');
       }
 
-      print('🎬 [GlobalPlayer] Content switched successfully');
+      Logger.success('Content switched successfully (opId: $operationId)');
     } catch (e) {
+      if (_isOperationCancelled(operationId)) {
+        Logger.player('Operation $operationId cancelled, ignoring error');
+        return;
+      }
+      
       error.value = '播放器初始化失败: $e';
-      print('❌ [GlobalPlayer] Failed to switch: $e');
+      Logger.error('Failed to switch: $e');
 
-      // 自动重试
       if (retryCount.value < maxRetryCount && _shouldRetry(e)) {
         retryCount.value++;
-        print('🔄 [GlobalPlayer] Retry ${retryCount.value}/$maxRetryCount');
+        Logger.info('Retry ${retryCount.value}/$maxRetryCount');
 
         Future.delayed(Duration(seconds: retryCount.value * 2), () {
-          switchContent(
-            contentType: contentType,
-            contentId: contentId,
-            episodeIndex: episodeIndex,
-            config: config,
-            videoUrl: videoUrl,
-            autoPlay: autoPlay,
-          );
+          if (!_isOperationCancelled(operationId)) {
+            switchContent(
+              contentType: contentType,
+              contentId: contentId,
+              episodeIndex: episodeIndex,
+              config: config,
+              videoUrl: videoUrl,
+              autoPlay: autoPlay,
+            );
+          }
         });
       } else {
         error.value = _getErrorMessage(e);
       }
     } finally {
-      isLoading.value = false;
+      if (!_isOperationCancelled(operationId)) {
+        isLoading.value = false;
+      }
+      _cancelledOperations.remove(operationId);
     }
   }
+  
+  void cancelCurrentOperation() {
+    if (_currentOperationId > 0) {
+      _cancelledOperations.add(_currentOperationId);
+      Logger.player('Cancelled operation: $_currentOperationId');
+    }
+  }
+  
+  bool _isOperationCancelled(int operationId) {
+    return _cancelledOperations.contains(operationId) || operationId != _currentOperationId;
+  }
 
-  /// 切换集数
   Future<void> switchEpisode(int episodeIndex) async {
     if (currentState.value.episodeIndex == episodeIndex) return;
 
@@ -381,11 +349,10 @@ class GlobalPlayerManager extends GetxController
     preloadNextEpisode();
   }
 
-  /// 播放
   Future<void> play() async {
-    if (_playerInstance == null) return;
+    if (_player == null) return;
 
-    await _playerInstance!.play();
+    await _player!.play();
     enableWakelock();
     registerToPipManager();
     startProgressTracking();
@@ -394,13 +361,14 @@ class GlobalPlayerManager extends GetxController
 
     currentState.value = currentState.value.copyWith(isPlaying: true);
     notifyStateListeners();
+    
+    _reportPlayStart();
   }
 
-  /// 暂停
   Future<void> pause() async {
-    if (_playerInstance == null) return;
+    if (_player == null) return;
 
-    await _playerInstance!.pause();
+    await _player!.pause();
     scheduleDisableWakelock();
 
     if (!PipManager.to.isInPipMode.value) {
@@ -409,7 +377,6 @@ class GlobalPlayerManager extends GetxController
 
     stopProgressTracking();
 
-    // 显示暂停广告
     if (!PipManager.to.isInPipMode.value && pauseAdData.value != null) {
       showPauseAd.value = true;
     }
@@ -418,12 +385,11 @@ class GlobalPlayerManager extends GetxController
     notifyStateListeners();
   }
 
-  /// 切换播放/暂停（带防抖）
   Future<void> togglePlayPause() async {
     final now = DateTime.now();
     if (_lastToggleTime != null &&
         now.difference(_lastToggleTime!).inMilliseconds < _toggleDebounceMs) {
-      print('🎬 [GlobalPlayer] Toggle debounced');
+      Logger.player('Toggle debounced');
       return;
     }
     _lastToggleTime = now;
@@ -435,36 +401,61 @@ class GlobalPlayerManager extends GetxController
     }
   }
 
-  /// 跳转到指定位置
   Future<void> seekTo(Duration position) async {
-    if (_playerInstance == null) return;
-    await _playerInstance!.seekTo(position);
+    if (_player == null) return;
+    await _player!.seek(position);
   }
 
-  /// 设置播放速度
   Future<void> setPlaybackSpeed(double speed) async {
-    if (_playerInstance == null) return;
-    await _playerInstance!.setPlaybackSpeed(speed);
+    if (_player == null) return;
+    await _player!.setRate(speed);
     currentState.value = currentState.value.copyWith(playbackSpeed: speed);
     notifyStateListeners();
   }
 
-  /// 设置播放许可
+  Future<void> toggleMute() async {
+    if (_player == null) return;
+    
+    final newMuted = !currentState.value.isMuted;
+    await _player!.setVolume(newMuted ? 0.0 : currentState.value.volume * 100);
+    currentState.value = currentState.value.copyWith(isMuted: newMuted);
+    notifyStateListeners();
+    
+    Logger.player('Mute toggled: $newMuted');
+  }
+
+  Future<void> setMuted(bool muted) async {
+    if (_player == null) return;
+    
+    await _player!.setVolume(muted ? 0.0 : currentState.value.volume * 100);
+    currentState.value = currentState.value.copyWith(isMuted: muted);
+    notifyStateListeners();
+  }
+
+  Future<void> setVolume(double volume) async {
+    if (_player == null) return;
+    
+    final clampedVolume = volume.clamp(0.0, 1.0);
+    if (!currentState.value.isMuted) {
+      await _player!.setVolume(clampedVolume * 100); // media_kit 使用 0-100
+    }
+    currentState.value = currentState.value.copyWith(volume: clampedVolume);
+    notifyStateListeners();
+  }
+
   void setPlayPermission(bool allowed) {
     _shouldAutoPlay = allowed;
-    print('🎬 [GlobalPlayer] Play permission: $allowed');
+    Logger.player('Play permission: $allowed');
 
     if (!allowed && currentState.value.isPlaying) {
       pause();
     }
   }
 
-  /// 获取播放许可状态
   bool get isPlayAllowed => _shouldAutoPlay;
 
   // ==================== 暂停广告 ====================
 
-  /// 加载暂停广告配置
   Future<void> _loadPauseAdConfig() async {
     try {
       final response = await _httpClient.get('/api/ad/pause');
@@ -473,19 +464,18 @@ class GlobalPlayerManager extends GetxController
         final data = response.data;
         if (data['code'] == 1 && data['data'] != null) {
           pauseAdData.value = data['data'];
-          print('✅ [GlobalPlayer] Pause ad loaded');
+          Logger.success('Pause ad loaded');
           return;
         }
       }
 
       pauseAdData.value = null;
     } catch (e) {
-      print('❌ [GlobalPlayer] Failed to load pause ad: $e');
+      Logger.error('Failed to load pause ad: $e');
       pauseAdData.value = null;
     }
   }
 
-  /// 处理暂停广告点击
   void onPauseAdTap() {
     final adData = pauseAdData.value;
     if (adData == null) return;
@@ -509,33 +499,49 @@ class GlobalPlayerManager extends GetxController
     play();
   }
 
-  /// 关闭暂停广告
   void closePauseAd() {
     showPauseAd.value = false;
   }
 
   // ==================== 私有方法 ====================
 
-  /// 停止当前播放
   Future<void> _stopCurrentPlayback() async {
-    if (_playerInstance != null) {
-      await _playerInstance!.pause();
+    if (_player != null) {
+      await _player!.pause();
       stopProgressTracking();
       await saveProgress();
     }
   }
 
-  /// 释放播放器
   void _disposePlayer() {
-    if (_playerInstance != null) {
-      _playerInstance!.removeListener(_onPlayerStateChanged);
-      _playerInstance!.dispose();
-      _playerInstance = null;
-    }
+    _cancelStreamSubscriptions();
+    
+    _videoController?.dispose();
+    _videoController = null;
+    
+    _player?.dispose();
+    _player = null;
+    
     stopProgressTracking();
+    Logger.player('Player disposed');
+  }
+  
+  void _cancelStreamSubscriptions() {
+    _playingSubscription?.cancel();
+    _positionSubscription?.cancel();
+    _durationSubscription?.cancel();
+    _bufferSubscription?.cancel();
+    _completedSubscription?.cancel();
+    _errorSubscription?.cancel();
+    
+    _playingSubscription = null;
+    _positionSubscription = null;
+    _durationSubscription = null;
+    _bufferSubscription = null;
+    _completedSubscription = null;
+    _errorSubscription = null;
   }
 
-  /// 创建播放器实例
   Future<void> _createPlayerInstance(String videoUrl) async {
     _disposePlayer();
 
@@ -544,68 +550,73 @@ class GlobalPlayerManager extends GetxController
       playUrl = await _parseShareUrl(videoUrl);
     }
 
-    _playerInstance = VideoPlayerController.networkUrl(Uri.parse(playUrl));
-    await _playerInstance!.initialize();
-    _playerInstance!.addListener(_onPlayerStateChanged);
-
-    print('🎬 [GlobalPlayer] Player created: $playUrl');
-  }
-
-  /// 应用播放器配置
-  Future<void> _applyPlayerConfig(PlayerConfig config) async {
-    if (_playerInstance == null) return;
-
-    await _playerInstance!.setPlaybackSpeed(currentState.value.playbackSpeed);
-
-    if (playerMode.value == PlayerMode.fullscreen) {
-      if (currentState.value.contentType == ContentType.shorts ||
-          currentState.value.contentType == ContentType.shortsFlow) {
-        await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-      } else {
-        await SystemChrome.setPreferredOrientations([config.orientation]);
-      }
-    } else {
-      await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-    }
-  }
-
-  /// 播放器状态变化监听
-  void _onPlayerStateChanged() {
-    if (_playerInstance == null) return;
-
-    final wasPlaying = currentState.value.isPlaying;
-    final nowPlaying = _playerInstance!.value.isPlaying;
-    final position = _playerInstance!.value.position;
-    final duration = _playerInstance!.value.duration;
-
-    currentState.value = currentState.value.copyWith(
-      position: position,
-      duration: duration,
-      isPlaying: nowPlaying,
+    // 创建 media_kit Player，配置缓冲
+    _player = Player(
+      configuration: const PlayerConfiguration(
+        bufferSize: 32 * 1024 * 1024, // 32MB 缓冲
+      ),
     );
+    
+    // 创建视频控制器
+    _videoController = VideoController(_player!);
+    
+    // 设置流监听
+    _setupStreamListeners();
+    
+    // 打开媒体
+    await _player!.open(Media(playUrl));
 
-    if (_playerInstance!.value.hasError) {
-      error.value = '播放错误';
-      unregisterFromPipManager();
-      print('❌ [GlobalPlayer] Error: ${_playerInstance!.value.errorDescription}');
-    }
-
-    if (nowPlaying && !wasPlaying) {
-      registerToPipManager();
-    } else if (!nowPlaying && wasPlaying && !PipManager.to.isInPipMode.value) {
-      unregisterFromPipManager();
-    }
-
-    notifyStateListeners();
-
-    if (position >= duration && duration.inSeconds > 0) {
-      _onPlaybackCompleted();
-    }
+    Logger.player('Player created: $playUrl');
   }
 
-  /// 播放完成回调
+  void _setupStreamListeners() {
+    if (_player == null) return;
+    
+    _playingSubscription = _player!.stream.playing.listen((playing) {
+      final wasPlaying = currentState.value.isPlaying;
+      currentState.value = currentState.value.copyWith(isPlaying: playing);
+      
+      if (playing && !wasPlaying) {
+        registerToPipManager();
+      } else if (!playing && wasPlaying && !PipManager.to.isInPipMode.value) {
+        unregisterFromPipManager();
+      }
+      
+      notifyStateListeners();
+    });
+    
+    _positionSubscription = _player!.stream.position.listen((position) {
+      currentState.value = currentState.value.copyWith(position: position);
+      notifyStateListeners();
+    });
+    
+    _durationSubscription = _player!.stream.duration.listen((duration) {
+      currentState.value = currentState.value.copyWith(duration: duration);
+      notifyStateListeners();
+    });
+    
+    _bufferSubscription = _player!.stream.buffer.listen((buffer) {
+      // 可以用于显示缓冲进度
+    });
+    
+    _completedSubscription = _player!.stream.completed.listen((completed) {
+      if (completed) {
+        _onPlaybackCompleted();
+      }
+    });
+    
+    _errorSubscription = _player!.stream.error.listen((errorMsg) {
+      if (errorMsg.isNotEmpty) {
+        error.value = '播放错误: $errorMsg';
+        unregisterFromPipManager();
+        Logger.error('Player error: $errorMsg');
+      }
+    });
+  }
+
   void _onPlaybackCompleted() {
-    print('🎬 [GlobalPlayer] Playback completed');
+    Logger.player('Playback completed');
+    _reportPlayComplete();
 
     final contentType = currentState.value.contentType;
     if (contentType == ContentType.shorts || contentType == ContentType.tv) {
@@ -613,35 +624,41 @@ class GlobalPlayerManager extends GetxController
     }
   }
 
-  /// 自动播放下一集
   Future<void> _autoPlayNextEpisode() async {
     try {
       final state = currentState.value;
+      
+      if (state.contentType == ContentType.shortsFlow) {
+        Logger.player('ShortsFlow mode, skip auto play next');
+        return;
+      }
+      
       final nextEpisodeIndex = state.episodeIndex + 1;
 
       List? episodes;
       try {
-        final controller = Get.find<dynamic>(tag: state.contentId);
-        if (controller != null && controller.episodes != null) {
-          episodes = controller.episodes as List;
+        if (state.contentId.isNotEmpty && Get.isRegistered<dynamic>(tag: state.contentId)) {
+          final controller = Get.find<dynamic>(tag: state.contentId);
+          if (controller != null && controller.episodes != null) {
+            episodes = controller.episodes as List;
+          }
         }
       } catch (e) {
-        print('🎬 [GlobalPlayer] No controller for auto play: $e');
+        Logger.player('No controller for auto play: $e');
       }
 
       if (episodes != null && nextEpisodeIndex <= episodes.length) {
-        print('🎬 [GlobalPlayer] Auto playing episode: $nextEpisodeIndex');
+        Logger.player('Auto playing episode: $nextEpisodeIndex');
         await switchEpisode(nextEpisodeIndex);
       } else if (episodes != null) {
-        print('🎬 [GlobalPlayer] Series completed');
+        Logger.player('Series completed');
         Get.snackbar('播放完成', '已播放完所有集数', snackPosition: SnackPosition.BOTTOM);
       }
     } catch (e) {
-      print('❌ [GlobalPlayer] Auto play failed: $e');
+      Logger.error('Auto play failed: $e');
     }
   }
 
-  /// 获取视频URL
   Future<String> _getVideoUrl(ContentType contentType, String contentId, int episodeIndex) async {
     try {
       switch (contentType) {
@@ -672,8 +689,6 @@ class GlobalPlayerManager extends GetxController
             final data = response.data;
             if (data['code'] == 1 && data['data'] != null) {
               final vod = data['data'] as Map<String, dynamic>;
-              
-              // 使用新格式 play_sources
               final playSources = vod['play_sources'] as List?;
               if (playSources != null && playSources.isNotEmpty) {
                 return _parsePlayUrlFromNewFormat(playSources, episodeIndex);
@@ -683,13 +698,12 @@ class GlobalPlayerManager extends GetxController
           break;
       }
     } catch (e) {
-      print('❌ [GlobalPlayer] Failed to get URL: $e');
+      Logger.error('Failed to get URL: $e');
     }
 
     return '';
   }
 
-  /// 解析视频URL
   String _parseVideoUrl(String playUrl) {
     if (playUrl.isEmpty) return '';
 
@@ -709,10 +723,8 @@ class GlobalPlayerManager extends GetxController
     return playUrl.trim();
   }
 
-  /// 🆕 从新格式 play_sources 解析播放URL
   String _parsePlayUrlFromNewFormat(List playSources, int episodeIndex) {
     try {
-      // 优先选择包含 m3u8 的播放源
       Map<String, dynamic>? selectedSource;
       for (final source in playSources) {
         final s = source as Map<String, dynamic>;
@@ -723,7 +735,6 @@ class GlobalPlayerManager extends GetxController
         }
       }
       
-      // 如果没有 m3u8 源，使用第一个
       selectedSource ??= playSources[0] as Map<String, dynamic>;
       
       final episodes = selectedSource['episodes'] as List? ?? [];
@@ -732,13 +743,12 @@ class GlobalPlayerManager extends GetxController
         return episode['url'] as String? ?? '';
       }
     } catch (e) {
-      print('❌ [GlobalPlayer] Failed to parse new format URL: $e');
+      Logger.error('Failed to parse new format URL: $e');
     }
     
     return '';
   }
 
-  /// 解析分享链接
   Future<String> _parseShareUrl(String shareUrl) async {
     try {
       final response = await _httpClient.get(
@@ -754,21 +764,19 @@ class GlobalPlayerManager extends GetxController
       }
       throw Exception('Failed to parse share URL');
     } catch (e) {
-      print('❌ [GlobalPlayer] Failed to parse share URL: $e');
+      Logger.error('Failed to parse share URL: $e');
       rethrow;
     }
   }
 
-  /// 检查播放器是否可见
   bool _isPlayerVisible() {
     if (!_shouldAutoPlay) return false;
-    if (_playerInstance == null || !_playerInstance!.value.isInitialized) return false;
+    if (_player == null) return false;
     if (PipManager.to.isInPipMode.value) return true;
     if (playerMode.value != PlayerMode.flow && playerMode.value != PlayerMode.window) return false;
     return true;
   }
 
-  /// 判断是否应该重试
   bool _shouldRetry(dynamic error) {
     final errorStr = error.toString().toLowerCase();
 
@@ -788,7 +796,6 @@ class GlobalPlayerManager extends GetxController
     return retryCount.value == 0;
   }
 
-  /// 获取用户友好的错误信息
   String _getErrorMessage(dynamic error) {
     final errorStr = error.toString().toLowerCase();
 
@@ -806,5 +813,69 @@ class GlobalPlayerManager extends GetxController
     }
 
     return '播放失败，请重试';
+  }
+  
+  // ==================== 播放统计 ====================
+  
+  void _reportPlayStart() {
+    if (!Get.isRegistered<PlayStatsService>()) return;
+    
+    final state = currentState.value;
+    if (state.contentId.isEmpty) return;
+    if (state.contentType == ContentType.shortsFlow) return;
+    
+    PlayStatsService.to.reportPlayStart(
+      vodId: state.contentId,
+      vodType: _getVodType(state.contentType),
+      episodeIndex: state.episodeIndex,
+    );
+  }
+  
+  void reportValidPlay() {
+    if (!Get.isRegistered<PlayStatsService>()) return;
+    
+    final state = currentState.value;
+    if (state.contentId.isEmpty) return;
+    if (state.contentType == ContentType.shortsFlow) return;
+    
+    final playedSeconds = state.position.inSeconds;
+    final totalSeconds = state.duration.inSeconds;
+    
+    if (playedSeconds >= 30 && totalSeconds > 0) {
+      PlayStatsService.to.reportValidPlay(
+        vodId: state.contentId,
+        vodType: _getVodType(state.contentType),
+        episodeIndex: state.episodeIndex,
+        playedSeconds: playedSeconds,
+        totalSeconds: totalSeconds,
+      );
+    }
+  }
+  
+  void _reportPlayComplete() {
+    if (!Get.isRegistered<PlayStatsService>()) return;
+    
+    final state = currentState.value;
+    if (state.contentId.isEmpty) return;
+    if (state.contentType == ContentType.shortsFlow) return;
+    
+    PlayStatsService.to.reportPlayComplete(
+      vodId: state.contentId,
+      vodType: _getVodType(state.contentType),
+      episodeIndex: state.episodeIndex,
+    );
+  }
+  
+  String _getVodType(ContentType contentType) {
+    switch (contentType) {
+      case ContentType.movie:
+        return 'movie';
+      case ContentType.tv:
+        return 'tv';
+      case ContentType.shorts:
+        return 'shorts';
+      case ContentType.shortsFlow:
+        return 'shorts_flow';
+    }
   }
 }

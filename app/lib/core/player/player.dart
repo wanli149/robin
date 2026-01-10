@@ -1,21 +1,22 @@
 /// 播放器模块导出文件
-/// 
+///
 /// 统一导出播放器相关的所有类和枚举，
 /// 使用时只需导入此文件即可。
-/// 
+///
 /// ## 使用示例
 /// ```dart
 /// import 'package:robin_video/core/player/player.dart';
-/// 
+///
 /// // 使用播放器管理器
 /// GlobalPlayerManager.to.play();
-/// 
+///
 /// // 使用配置
 /// final config = PlayerConfig.tvWindow();
-/// 
+///
 /// // 使用枚举
 /// if (state.contentType == ContentType.tv) { ... }
 /// ```
+library;
 
 // 枚举定义
 export 'player_enums.dart';

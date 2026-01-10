@@ -332,6 +332,8 @@ CREATE TABLE IF NOT EXISTS video_sources (
     weight INTEGER DEFAULT 50,
     is_active BOOLEAN DEFAULT 1,
     sort_order INTEGER DEFAULT 0,
+    response_format TEXT DEFAULT 'auto',  -- 'json', 'xml', 'auto'
+    is_welfare INTEGER DEFAULT 0,         -- 0=普通资源站, 1=福利资源站
     created_at INTEGER DEFAULT (strftime('%s', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_sources_weight ON video_sources(weight DESC, sort_order ASC);
@@ -355,6 +357,20 @@ CREATE TABLE IF NOT EXISTS feedback (
     created_at INTEGER DEFAULT (strftime('%s', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status, created_at DESC);
+
+-- Crash reports (app crash logs)
+CREATE TABLE IF NOT EXISTS crash_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    error TEXT NOT NULL,
+    stack_trace TEXT,
+    context TEXT,
+    device_info TEXT,                 -- JSON: platform, version, etc.
+    app_version TEXT,
+    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_time ON crash_reports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_user ON crash_reports(user_id);
 
 -- App wall (promoted apps)
 CREATE TABLE IF NOT EXISTS app_wall (
@@ -638,3 +654,18 @@ CREATE INDEX IF NOT EXISTS idx_sync_logs_time ON sync_logs(created_at DESC);
 -- 插入默认存储配置
 INSERT OR IGNORE INTO storage_config (id, storage_type, sync_strategy, is_enabled) 
 VALUES (1, 'local', 'local_only', 0);
+
+-- ============================================
+-- User Activity Tracking (用户活跃记录)
+-- ============================================
+
+-- 用户活跃记录表
+CREATE TABLE IF NOT EXISTS user_activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    action_type TEXT,                 -- 'login', 'view', 'search', 'play' 等
+    resource_id TEXT,                 -- 相关资源ID（可选）
+    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_user_activity_time ON user_activity(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_activity_user ON user_activity(user_id, created_at DESC);

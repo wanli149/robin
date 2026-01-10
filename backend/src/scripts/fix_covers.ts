@@ -3,11 +3,35 @@
  * 为数据不完整的视频从资源站获取完整信息（封面、年份、地区、演员等）
  */
 
-import { RESOURCE_SITES } from '../config';
 import { logger } from '../utils/logger';
 
 interface Env {
   DB: D1Database;
+}
+
+// 资源站数据库行类型
+interface VideoSourceDbRow {
+  name: string;
+  api_url: string;
+}
+
+/**
+ * 从数据库获取资源站配置
+ */
+async function getSourceByName(env: Env, sourceName: string): Promise<{ name: string; url: string } | null> {
+  try {
+    const result = await env.DB.prepare(`
+      SELECT name, api_url FROM video_sources WHERE name = ? AND is_active = 1
+    `).bind(sourceName).first() as VideoSourceDbRow | null;
+    
+    if (result) {
+      return { name: result.name, url: result.api_url };
+    }
+    return null;
+  } catch (error) {
+    logger.repair.error('Failed to get source from DB', { sourceName, error: String(error) });
+    return null;
+  }
 }
 
 export async function fixVideoCovers(env: Env, limit: number = 100): Promise<{
@@ -41,10 +65,10 @@ export async function fixVideoCovers(env: Env, limit: number = 100): Promise<{
       const vodId = video.vod_id as string;
       const sourceName = video.source_name as string;
       
-      // 找到对应的资源站
-      const source = RESOURCE_SITES.find(s => s.name === sourceName);
+      // 从数据库获取对应的资源站
+      const source = await getSourceByName(env, sourceName);
       if (!source) {
-        logger.repair.warn('Source not found', { vodId, sourceName });
+        logger.repair.warn('Source not found in database', { vodId, sourceName });
         failed++;
         continue;
       }

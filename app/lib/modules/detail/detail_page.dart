@@ -8,6 +8,7 @@ import '../../widgets/expandable_text.dart';
 import '../../core/router.dart';
 import '../../core/global_player_manager.dart';
 import '../../services/share_service.dart';
+import '../../core/logger.dart';
 
 /// 视频详情页
 /// 显示视频播放器、详情信息、选集列表、推荐视频
@@ -62,8 +63,10 @@ class _DetailPageState extends State<DetailPage> {
 
   @override
   void dispose() {
+    // 🚀 取消正在进行的播放器初始化操作
+    GlobalPlayerManager.to.cancelCurrentOperation();
     // 🚀 离开页面时暂停播放器并保存进度
-    print('🎬 [DetailPage] Disposing, pausing player and saving progress');
+    Logger.player('[DetailPage] Disposing, pausing player and saving progress');
     GlobalPlayerManager.to.pause();
     // 立即保存进度
     GlobalPlayerManager.to.saveProgress();
@@ -181,11 +184,6 @@ class _DetailPageState extends State<DetailPage> {
                 child: _buildInfo(controller, detail),
               ),
 
-              // 操作按钮行
-              SliverToBoxAdapter(
-                child: _buildActionButtons(context, controller, detail),
-              ),
-
               // 选集列表
               if (controller.episodes.isNotEmpty)
                 SliverToBoxAdapter(
@@ -215,7 +213,7 @@ class _DetailPageState extends State<DetailPage> {
                     crossAxisCount: 3,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
-                    childAspectRatio: 0.65,
+                    childAspectRatio: 0.58, // 与首页模块保持一致
                   ),
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
@@ -286,7 +284,7 @@ class _DetailPageState extends State<DetailPage> {
 
     // 防抖：如果正在初始化，跳过
     if (_isInitializing) {
-      print('🎬 [DetailPage] Already initializing, skipping');
+      Logger.player('[DetailPage] Already initializing, skipping');
       return;
     }
 
@@ -299,25 +297,29 @@ class _DetailPageState extends State<DetailPage> {
     
     // 如果播放器存在且内容ID匹配，则不重新初始化（忽略集数差异，因为可能是UI状态延迟）
     if (hasPlayerInstance && isContentMatching) {
-      print('🎬 [DetailPage] Player already initialized for ${widget.videoId}, skipping reinit');
+      Logger.player('[DetailPage] Player already initialized for ${widget.videoId}, skipping reinit');
       return;
     }
     
     // 只有在播放器不存在或内容ID不匹配时才重新初始化
-    print('🎬 [DetailPage] Need initialization: hasPlayer=$hasPlayerInstance, contentMatch=$isContentMatching');
+    Logger.player('[DetailPage] Need initialization: hasPlayer=$hasPlayerInstance, contentMatch=$isContentMatching');
     
     _isInitializing = true;
 
     // 判断内容类型（根据选集数量）
     final contentType = controller.episodes.length > 1 ? ContentType.tv : ContentType.movie;
     
-    print('🎬 [DetailPage] Initializing player for ${widget.videoId}');
+    // 获取视频名称
+    final contentName = detail['vod_name'] as String? ?? '';
+    
+    Logger.player('[DetailPage] Initializing player for ${widget.videoId}, name: $contentName');
     
     // 切换到新内容时，不要保留旧视频的进度和播放状态
     // 新视频应该从头开始播放
     GlobalPlayerManager.to.switchContent(
       contentType: contentType,
       contentId: widget.videoId,
+      contentName: contentName,
       episodeIndex: controller.currentEpisodeIndex.value + 1,
       config: PlayerConfig.tvWindow(),
       videoUrl: playUrl,
@@ -326,7 +328,7 @@ class _DetailPageState extends State<DetailPage> {
       _isInitializing = false; // 初始化完成
     }).catchError((error) {
       _isInitializing = false; // 初始化失败也要重置状态
-      print('🎬 [DetailPage] Initialization failed: $error');
+      Logger.player('[DetailPage] Initialization failed: $error');
     });
   }
 
@@ -345,7 +347,7 @@ class _DetailPageState extends State<DetailPage> {
     final vodDuration = detail['vod_duration'] as String? ?? '';
     final vodTag = detail['vod_tag'] as String? ?? '';
     
-    // 🆕 评分信息
+    // 评分信息
     final vodScore = (detail['vod_score'] as num?)?.toDouble() ?? 0.0;
     final vodTmdbScore = (detail['vod_tmdb_score'] as num?)?.toDouble() ?? 0.0;
 
@@ -357,105 +359,127 @@ class _DetailPageState extends State<DetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 视频标题
-          Text(
-            vodName,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // 🆕 评分和热度行
+          // 视频标题 + 操作按钮（紧凑布局）
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 标题
+              Expanded(
+                child: Text(
+                  vodName,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              // 操作按钮（紧凑图标）
+              _buildCompactActionButtons(controller, detail),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // 🆕 评分 + 年份 + 地区 + 热度（合并为一行）
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               // 评分
-              if (vodScore > 0) ...[
-                Icon(
-                  Icons.star,
-                  color: vodScore >= 8 ? Colors.amber : vodScore >= 6 ? Colors.blue : Colors.grey,
-                  size: 20,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  vodScore.toStringAsFixed(1),
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: vodScore >= 8 ? Colors.amber : vodScore >= 6 ? Colors.blue : Colors.grey,
-                  ),
-                ),
-                if (vodTmdbScore > 0) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    'TMDB: ${vodTmdbScore.toStringAsFixed(1)}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.white54,
+              if (vodScore > 0)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.star,
+                      color: vodScore >= 8 ? Colors.amber : vodScore >= 6 ? Colors.blue : Colors.grey,
+                      size: 16,
                     ),
+                    const SizedBox(width: 2),
+                    Text(
+                      vodScore.toStringAsFixed(1),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: vodScore >= 8 ? Colors.amber : vodScore >= 6 ? Colors.blue : Colors.grey,
+                      ),
+                    ),
+                    if (vodTmdbScore > 0) ...[
+                      Text(
+                        ' / ${vodTmdbScore.toStringAsFixed(1)}',
+                        style: const TextStyle(fontSize: 12, color: Colors.white54),
+                      ),
+                    ],
+                  ],
+                ),
+              // 年份
+              if (vodYear.isNotEmpty)
+                Text(vodYear, style: const TextStyle(fontSize: 13, color: Colors.white70)),
+              // 地区
+              if (vodArea.isNotEmpty)
+                Text(vodArea, style: const TextStyle(fontSize: 13, color: Colors.white70)),
+              // 时长
+              if (vodDuration.isNotEmpty)
+                Text(vodDuration, style: const TextStyle(fontSize: 13, color: Colors.white70)),
+              // 更新状态
+              if (vodRemarks.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFC107),
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                ],
-                const SizedBox(width: 16),
-              ],
+                  child: Text(
+                    vodRemarks,
+                    style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w500),
+                  ),
+                ),
               // 热度
-              if (vodHits > 0) ...[
-                const Icon(
-                  Icons.visibility,
-                  color: Colors.white54,
-                  size: 16,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '$vodHits次播放',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.white54,
-                  ),
-                ),
-                if (vodHitsDay > 0) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    '今日$vodHitsDay',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFFFFC107),
+              if (vodHits > 0)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.visibility, color: Colors.white54, size: 14),
+                    const SizedBox(width: 2),
+                    Text(
+                      _formatHits(vodHits),
+                      style: const TextStyle(fontSize: 12, color: Colors.white54),
                     ),
-                  ),
-                ],
-              ],
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // 标签行
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (vodYear.isNotEmpty) _buildTag(vodYear),
-              if (vodArea.isNotEmpty) _buildTag(vodArea),
-              if (vodDuration.isNotEmpty) _buildTag(vodDuration),
-              if (vodRemarks.isNotEmpty) _buildTag(vodRemarks, color: const Color(0xFFFFC107)),
-              // 🆕 标签
-              if (vodTag.isNotEmpty)
-                ...vodTag.split(',').take(3).map((tag) => _buildTag(tag.trim())),
+                    if (vodHitsDay > 0) ...[
+                      Text(
+                        ' 今日$vodHitsDay',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFFFFC107)),
+                      ),
+                    ],
+                  ],
+                ),
             ],
           ),
 
-          // 导演和演员（可点击）
+          // 标签行（仅显示额外标签）
+          if (vodTag.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: vodTag.split(',').take(5).map((tag) => _buildTag(tag.trim())).toList(),
+            ),
+          ],
+
+          // 导演（可点击，带折叠）
           if (vodDirector.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _buildInfoRow('导演', vodDirector, clickable: true),
+            _buildCollapsibleInfoRow('导演', vodDirector, clickable: true),
           ],
+          // 主演（可点击，带折叠）
           if (vodActor.isNotEmpty) ...[
             const SizedBox(height: 8),
-            _buildInfoRow('主演', vodActor, clickable: true),
+            _buildCollapsibleInfoRow('主演', vodActor, clickable: true, maxItems: 6),
           ],
           if (vodWriter.isNotEmpty) ...[
             const SizedBox(height: 8),
-            _buildInfoRow('编剧', vodWriter),
+            _buildCollapsibleInfoRow('编剧', vodWriter, maxItems: 4),
           ],
 
           // 剧情简介（可折叠）
@@ -484,6 +508,76 @@ class _DetailPageState extends State<DetailPage> {
       ),
     );
   }
+  
+  /// 格式化播放次数
+  String _formatHits(int hits) {
+    if (hits >= 100000000) {
+      return '${(hits / 100000000).toStringAsFixed(1)}亿';
+    } else if (hits >= 10000) {
+      return '${(hits / 10000).toStringAsFixed(1)}万';
+    }
+    return '$hits';
+  }
+  
+  /// 构建紧凑的操作按钮（收藏/预约/分享）
+  Widget _buildCompactActionButtons(DetailController controller, Map<String, dynamic> detail) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 收藏
+        Obx(() => _buildIconButton(
+          icon: controller.isFavorited.value ? Icons.favorite : Icons.favorite_border,
+          color: controller.isFavorited.value ? Colors.red : Colors.white70,
+          onTap: controller.toggleFavorite,
+          tooltip: '收藏',
+        )),
+        const SizedBox(width: 4),
+        // 预约
+        Obx(() => _buildIconButton(
+          icon: controller.isAppointed.value ? Icons.notifications_active : Icons.notifications_none,
+          color: controller.isAppointed.value ? const Color(0xFFFFC107) : Colors.white70,
+          onTap: controller.toggleAppointment,
+          tooltip: '预约',
+        )),
+        const SizedBox(width: 4),
+        // 分享
+        _buildIconButton(
+          icon: Icons.share,
+          color: Colors.white70,
+          onTap: () {
+            final videoName = detail['vod_name'] as String? ?? '未知影片';
+            ShareService.showShareDialog(
+              context: context,
+              type: 'video',
+              id: widget.videoId,
+              title: videoName,
+            );
+          },
+          tooltip: '分享',
+        ),
+      ],
+    );
+  }
+  
+  /// 构建图标按钮
+  Widget _buildIconButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+    String? tooltip,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, color: color, size: 22),
+        ),
+      ),
+    );
+  }
 
   /// 构建标签
   Widget _buildTag(String text, {Color? color}) {
@@ -503,7 +597,7 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
-  /// 构建信息行（支持演员点击）
+  /// 构建信息行（支持演员点击）- 保留用于非折叠场景
   Widget _buildInfoRow(String label, String value, {bool clickable = false}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -528,6 +622,39 @@ class _DetailPageState extends State<DetailPage> {
         ),
       ],
     );
+  }
+  
+  /// 构建可折叠的信息行（演员/导演/编剧）
+  Widget _buildCollapsibleInfoRow(String label, String value, {bool clickable = false, int maxItems = 4}) {
+    final items = value.split(RegExp(r'[,，、/\s]+')).where((a) => a.trim().isNotEmpty).toList();
+    final needsCollapse = items.length > maxItems;
+    
+    return StatefulBuilder(
+      builder: (context, setState) {
+        // 使用局部状态管理展开/折叠
+        return _CollapsibleInfoRow(
+          label: label,
+          items: items,
+          maxItems: maxItems,
+          clickable: clickable,
+          onActorTap: clickable ? (actor) => _onActorTap(actor) : null,
+        );
+      },
+    );
+  }
+  
+  /// 演员点击处理
+  Future<void> _onActorTap(String actor) async {
+    try {
+      final response = await Get.find<DetailController>(tag: widget.videoId).searchActor(actor);
+      if (response != null && response['id'] != null) {
+        UniversalRouter.toActor(response['id'], actor);
+      } else {
+        Get.snackbar('提示', '未找到演员信息', snackPosition: SnackPosition.BOTTOM);
+      }
+    } catch (e) {
+      Get.snackbar('错误', '搜索演员失败', snackPosition: SnackPosition.BOTTOM);
+    }
   }
 
   /// 构建可点击的演员列表
@@ -573,105 +700,6 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
-  /// 构建操作按钮行
-  Widget _buildActionButtons(BuildContext context, DetailController controller, Map<String, dynamic> detail) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          // 收藏按钮
-          Expanded(
-            child: _buildActionButton(
-              icon: Obx(() => Icon(
-                    controller.isFavorited.value
-                        ? Icons.favorite
-                        : Icons.favorite_border,
-                    color: controller.isFavorited.value
-                        ? Colors.red
-                        : Colors.white,
-                    size: 20,
-                  )),
-              label: '收藏',
-              onTap: controller.toggleFavorite,
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // 预约按钮
-          Expanded(
-            child: _buildActionButton(
-              icon: Obx(() => Icon(
-                    controller.isAppointed.value
-                        ? Icons.notifications_active
-                        : Icons.notifications_none,
-                    color: controller.isAppointed.value
-                        ? const Color(0xFFFFC107)
-                        : Colors.white,
-                    size: 20,
-                  )),
-              label: '预约',
-              onTap: controller.toggleAppointment,
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // 分享按钮
-          Expanded(
-            child: _buildActionButton(
-              icon: const Icon(
-                Icons.share,
-                color: Colors.white,
-                size: 20,
-              ),
-              label: '分享',
-              onTap: () {
-                final videoName = detail['vod_name'] as String? ?? '未知影片';
-                
-                ShareService.showShareDialog(
-                  context: context,
-                  type: 'video',
-                  id: widget.videoId,
-                  title: videoName,
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 构建操作按钮
-  Widget _buildActionButton({
-    required Widget icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          children: [
-            icon,
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white70,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// 构建选集列表（支持多播放源）
   Widget _buildEpisodeList(DetailController controller) {
     return Obx(() => EpisodeSelector(
@@ -680,8 +708,6 @@ class _DetailPageState extends State<DetailPage> {
       currentEpisodeIndex: controller.currentEpisodeIndex.value,
       onSourceChanged: controller.switchSource,
       onEpisodeSelected: controller.selectEpisode,
-      continueInfo: controller.continuePlayInfo,
-      onContinuePlay: controller.continuePlay,
     ));
   }
 
@@ -695,6 +721,11 @@ class _DetailPageState extends State<DetailPage> {
 
     return GestureDetector(
       onTap: () {
+        if (vodId.isEmpty) {
+          Logger.warning('[DetailPage] Recommend item has empty vodId: $vodName');
+          return;
+        }
+        Logger.player('[DetailPage] Navigating to recommend: $vodId - $vodName');
         // 跳转到视频详情页
         Get.toNamed('/video/detail', arguments: {'vodId': vodId});
       },
@@ -747,7 +778,7 @@ class _DetailPageState extends State<DetailPage> {
                           end: Alignment.bottomCenter,
                           colors: [
                             Colors.transparent,
-                            Colors.black.withOpacity(0.8),
+                            Colors.black.withValues(alpha: 0.8),
                           ],
                         ),
                         borderRadius: const BorderRadius.only(
@@ -771,19 +802,102 @@ class _DetailPageState extends State<DetailPage> {
           ),
           const SizedBox(height: 8),
 
-          // 名称
-          Text(
-            vodName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.white,
-              height: 1.3,
+          // 名称 - 固定高度，与首页模块保持一致
+          SizedBox(
+            height: 36,
+            child: Text(
+              vodName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+                height: 1.3,
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 可折叠的信息行组件（演员/导演/编剧）
+class _CollapsibleInfoRow extends StatefulWidget {
+  final String label;
+  final List<String> items;
+  final int maxItems;
+  final bool clickable;
+  final Function(String)? onActorTap;
+
+  const _CollapsibleInfoRow({
+    required this.label,
+    required this.items,
+    this.maxItems = 4,
+    this.clickable = false,
+    this.onActorTap,
+  });
+
+  @override
+  State<_CollapsibleInfoRow> createState() => _CollapsibleInfoRowState();
+}
+
+class _CollapsibleInfoRowState extends State<_CollapsibleInfoRow> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final needsCollapse = widget.items.length > widget.maxItems;
+    final displayItems = _isExpanded ? widget.items : widget.items.take(widget.maxItems).toList();
+    final hiddenCount = widget.items.length - widget.maxItems;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${widget.label}：',
+          style: const TextStyle(fontSize: 14, color: Colors.white54),
+        ),
+        Expanded(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              ...displayItems.map((item) {
+                if (widget.clickable && widget.onActorTap != null) {
+                  return GestureDetector(
+                    onTap: () => widget.onActorTap!(item),
+                    child: Text(
+                      item,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFFFFC107),
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  );
+                }
+                return Text(
+                  item,
+                  style: const TextStyle(fontSize: 14, color: Colors.white70),
+                );
+              }),
+              // 展开/收起按钮
+              if (needsCollapse)
+                GestureDetector(
+                  onTap: () => setState(() => _isExpanded = !_isExpanded),
+                  child: Text(
+                    _isExpanded ? '收起' : '等${hiddenCount}人',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

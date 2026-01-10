@@ -8,7 +8,6 @@ import { adminGuard } from '../middleware/admin_guard';
 import { searchVideos, runIncrementalCollect, runFullCollect, runCategoryCollect } from '../services/collector_v2';
 import { batchValidateUrls, reportInvalidUrl } from '../services/url_validator';
 import { fixVideoCovers } from '../scripts/fix_covers';
-import { mergeDuplicateVideos } from '../scripts/merge_duplicates';
 import { rebuildActorLinks } from '../scripts/rebuild_actor_links';
 import { logger } from '../utils/logger';
 
@@ -92,7 +91,7 @@ collect.get('/admin/collect/tasks', async (c) => {
       page,
       total,
       pagecount: Math.ceil(total / limit),
-      list: result.results,
+      data: result.results,
     });
   } catch (error) {
     logger.collector.error('Get tasks error', { error: error instanceof Error ? error.message : String(error) });
@@ -188,36 +187,6 @@ collect.get('/admin/collect/metrics', async (c) => {
       {
         code: 0,
         msg: 'Failed to get metrics',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-      500
-    );
-  }
-});
-
-/**
- * POST /admin/collect/migrate
- * 合并重复视频（将多源视频合并为单条记录）
- */
-collect.post('/admin/collect/migrate', async (c) => {
-  try {
-    logger.collector.info('Starting to merge duplicate videos');
-
-    // 异步执行合并任务
-    c.executionCtx.waitUntil(
-      mergeDuplicateVideos(c.env)
-    );
-
-    return c.json({
-      code: 1,
-      msg: 'Merge task triggered. This may take a few minutes.',
-    });
-  } catch (error) {
-    logger.collector.error('Merge error', { error: error instanceof Error ? error.message : String(error) });
-    return c.json(
-      {
-        code: 0,
-        msg: 'Failed to trigger merge',
         error: error instanceof Error ? error.message : 'Unknown error',
       },
       500
@@ -339,7 +308,7 @@ collect.get('/admin/collect/invalid', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list: result.results,
+      data: result.results,
     });
   } catch (error) {
     logger.collector.error('Get invalid error', { error: error instanceof Error ? error.message : String(error) });
@@ -418,7 +387,7 @@ collect.get('/api/search_cache', async (c) => {
       msg: 'success',
       keyword,
       total: results.length,
-      list: results,
+      data: results,
     });
   } catch (error) {
     logger.collector.error('Search error', { error: error instanceof Error ? error.message : String(error) });

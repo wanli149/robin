@@ -209,13 +209,12 @@ export async function migrateToV2(env: Env): Promise<{
     errors.push(`video_categories: ${error instanceof Error ? error.message : 'Unknown error'}`);
     logger.migration.error('Failed to create video_categories', { error: error instanceof Error ? error.message : String(error) });
   }
-  }
   
   // 6. 为 vod_cache 添加 quality_score 字段（如果不存在）
   try {
     // 检查字段是否存在
     const tableInfo = await env.DB.prepare(`PRAGMA table_info(vod_cache)`).all();
-    const hasQualityScore = (tableInfo.results as TableColumnInfo[]).some(col => col.name === 'quality_score');
+    const hasQualityScore = (tableInfo.results as unknown as TableColumnInfo[]).some(col => col.name === 'quality_score');
     
     if (!hasQualityScore) {
       await env.DB.prepare(`
@@ -231,7 +230,7 @@ export async function migrateToV2(env: Env): Promise<{
   // 7. 为 video_sources 添加 response_format 字段（如果不存在）
   try {
     const sourceTableInfo = await env.DB.prepare(`PRAGMA table_info(video_sources)`).all();
-    const hasResponseFormat = (sourceTableInfo.results as TableColumnInfo[]).some(col => col.name === 'response_format');
+    const hasResponseFormat = (sourceTableInfo.results as unknown as TableColumnInfo[]).some(col => col.name === 'response_format');
     
     if (!hasResponseFormat) {
       await env.DB.prepare(`
@@ -241,6 +240,21 @@ export async function migrateToV2(env: Env): Promise<{
     }
   } catch (error) {
     logger.collector.info('response_format column may already exist');
+  }
+  
+  // 8. 为 video_sources 添加 is_welfare 字段（区分普通资源站和福利资源站）
+  try {
+    const sourceTableInfo2 = await env.DB.prepare(`PRAGMA table_info(video_sources)`).all();
+    const hasIsWelfare = (sourceTableInfo2.results as unknown as TableColumnInfo[]).some(col => col.name === 'is_welfare');
+    
+    if (!hasIsWelfare) {
+      await env.DB.prepare(`
+        ALTER TABLE video_sources ADD COLUMN is_welfare INTEGER DEFAULT 0
+      `).run();
+      logger.collector.info('Added is_welfare column to video_sources');
+    }
+  } catch (error) {
+    logger.collector.info('is_welfare column may already exist');
   }
   
   const success = errors.length === 0;

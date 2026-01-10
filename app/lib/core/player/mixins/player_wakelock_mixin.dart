@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../../logger.dart';
 
 /// 防熄屏管理 Mixin
 /// 
@@ -58,10 +59,10 @@ mixin PlayerWakelockMixin {
       final isEnabled = await WakelockPlus.enabled;
       if (!isEnabled) {
         await WakelockPlus.enable();
-        print('🔆 [Wakelock] Enabled - screen will stay on');
+        Logger.debug('Enabled - screen will stay on');
       }
     } catch (e) {
-      print('❌ [Wakelock] Failed to enable: $e');
+      Logger.error('Failed to enable: $e');
     }
   }
 
@@ -79,7 +80,7 @@ mixin PlayerWakelockMixin {
 
     // 画中画模式下不禁用
     if (isInPipModeValue) {
-      print('🔆 [Wakelock] In PIP mode, keeping enabled');
+      Logger.debug('In PIP mode, keeping enabled');
       return;
     }
 
@@ -91,7 +92,7 @@ mixin PlayerWakelockMixin {
       }
     });
 
-    print('🔆 [Wakelock] Scheduled disable in ${_wakelockDelaySeconds}s');
+    Logger.debug('Scheduled disable in ${_wakelockDelaySeconds}s');
   }
 
   /// 立即禁用防熄屏
@@ -105,10 +106,10 @@ mixin PlayerWakelockMixin {
       final isEnabled = await WakelockPlus.enabled;
       if (isEnabled) {
         await WakelockPlus.disable();
-        print('🔅 [Wakelock] Disabled - screen can turn off');
+        Logger.debug('Disabled - screen can turn off');
       }
     } catch (e) {
-      print('❌ [Wakelock] Failed to disable: $e');
+      Logger.error('Failed to disable: $e');
     }
   }
 

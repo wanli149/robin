@@ -82,8 +82,9 @@ class ApiConfig {
   static const String appVersion = '1.0.0';
   
   // API 端点
-  static const String authLogin = '/auth/login';
-  static const String authRegister = '/auth/register';
+  static const String authLogin = '/api/auth/login';
+  static const String authRegister = '/api/auth/register';
+  static const String authMe = '/api/auth/me';
   static const String userSync = '/user/sync';
   static const String userHistory = '/api/user/history';
   static const String userFavorites = '/api/user/favorites';

@@ -218,7 +218,7 @@ collectV2.get('/admin/collect/v2/tasks', async (c) => {
       page,
       total: result.total,
       pagecount: Math.ceil(result.total / limit),
-      list: result.tasks,
+      data: { list: result.tasks, total: result.total },
     });
   } catch (error) {
     logger.collectorV2.error('Get tasks error', { error: error instanceof Error ? error.message : String(error) });
@@ -247,7 +247,7 @@ collectV2.get('/admin/collect/v2/task/:id/logs', async (c) => {
       code: 1,
       msg: 'success',
       total: result.total,
-      list: result.logs,
+      data: { list: result.logs, total: result.total },
     });
   } catch (error) {
     return c.json({ code: 0, msg: 'Failed to get logs' }, 500);
@@ -393,12 +393,25 @@ collectV2.post('/admin/collect/v2/quick/source/:id', async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { maxPages } = body;
     
-    const taskId = await runSourceCollect(c.env, sourceId, { maxPages });
+    const task = await createTask(c.env, {
+      type: 'source',
+      config: {
+        sourceIds: [sourceId],
+        pageEnd: maxPages || -1,
+      },
+    });
+    
+    // 使用 waitUntil 保持后台任务运行
+    c.executionCtx.waitUntil(
+      executeTask(c.env, task.id).catch(err => 
+        logger.collectorV2.error('Source collect task failed', { taskId: task.id, error: err instanceof Error ? err.message : String(err) })
+      )
+    );
     
     return c.json({
       code: 1,
       msg: 'Source collect started',
-      data: { taskId },
+      data: { taskId: task.id },
     });
   } catch (error) {
     return c.json({ code: 0, msg: 'Failed to start collect' }, 500);
@@ -420,7 +433,7 @@ collectV2.get('/admin/collect/v2/sources/health', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list: healthList,
+      data: healthList,
     });
   } catch (error) {
     return c.json({ code: 0, msg: 'Failed to get health status' }, 500);
@@ -576,6 +589,43 @@ collectV2.get('/admin/collect/v2/stats', async (c) => {
 // ============================================
 
 /**
+ * DELETE /admin/collect/v2/tasks/:taskId
+ * 删除采集任务
+ */
+collectV2.delete('/admin/collect/v2/tasks/:taskId', async (c) => {
+  try {
+    const taskId = c.req.param('taskId');
+    
+    // 检查任务是否存在
+    const task = await c.env.DB.prepare(`
+      SELECT id, status FROM collect_tasks_v2 WHERE id = ?
+    `).bind(taskId).first();
+    
+    if (!task) {
+      return c.json({ code: 0, msg: '任务不存在' }, 404);
+    }
+    
+    // 不允许删除运行中的任务
+    if (task.status === 'running') {
+      return c.json({ code: 0, msg: '无法删除运行中的任务，请先取消' }, 400);
+    }
+    
+    // 删除相关日志
+    await c.env.DB.prepare(`DELETE FROM collect_logs WHERE task_id = ?`).bind(taskId).run();
+    
+    // 删除任务
+    await c.env.DB.prepare(`DELETE FROM collect_tasks_v2 WHERE id = ?`).bind(taskId).run();
+    
+    logger.collectorV2.info('Task deleted', { taskId });
+    
+    return c.json({ code: 1, msg: '任务已删除' });
+  } catch (error) {
+    logger.collectorV2.error('Delete task error', { error: error instanceof Error ? error.message : String(error) });
+    return c.json({ code: 0, msg: '删除失败' }, 500);
+  }
+});
+
+/**
  * POST /admin/collect/v2/cleanup
  * 清理旧数据
  */
@@ -636,7 +686,7 @@ collectV2.get('/admin/collect/v2/categories', async (c) => {
       return c.json({
         code: 1,
         msg: 'success',
-        list: [
+        data: [
           { id: 1, name: '电影', name_en: 'movie' },
           { id: 2, name: '电视剧', name_en: 'series' },
           { id: 3, name: '综艺', name_en: 'variety' },
@@ -649,14 +699,14 @@ collectV2.get('/admin/collect/v2/categories', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list: result.results,
+      data: result.results,
     });
   } catch (error) {
     // 表可能不存在，返回默认分类
     return c.json({
       code: 1,
       msg: 'success',
-      list: [
+      data: [
         { id: 1, name: '电影', name_en: 'movie' },
         { id: 2, name: '电视剧', name_en: 'series' },
         { id: 3, name: '综艺', name_en: 'variety' },

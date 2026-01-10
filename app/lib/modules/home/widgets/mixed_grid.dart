@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/router.dart';
+import '../../../core/logger.dart';
 
 /// 混合网格组件（带广告）
 /// 3列网格布局，支持在指定位置插入广告
@@ -67,7 +68,7 @@ class MixedGrid extends StatelessWidget {
               crossAxisCount: crossAxisCount,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: 0.7,
+              childAspectRatio: 0.58, // 调整比例，给标题更多空间
             ),
             itemCount: displayItems.length,
             itemBuilder: (context, index) {
@@ -100,8 +101,12 @@ class MixedGrid extends StatelessWidget {
       return items;
     }
 
-    // 复制列表并插入广告
+    // 复制列表，移除最后一个视频，然后插入广告
+    // 这样保持总数不变
     final result = List<Map<String, dynamic>>.from(items);
+    if (result.isNotEmpty) {
+      result.removeLast(); // 移除最后一个视频
+    }
     result.insert(insertIndex, {
       ...adData,
       'is_ad': true,
@@ -120,12 +125,12 @@ class MixedGrid extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        print('[MixedGrid] Card tapped! vodId: $vodId');
+        Logger.debug('[MixedGrid] Card tapped! vodId: $vodId');
         if (vodId.isNotEmpty) {
-          print('[MixedGrid] Navigating to: video://$vodId');
+          Logger.debug('[MixedGrid] Navigating to: video://$vodId');
           UniversalRouter.handleRoute('video://$vodId');
         } else {
-          print('[MixedGrid] vodId is empty!');
+          Logger.warning('[MixedGrid] vodId is empty!');
         }
       },
       child: Column(
@@ -169,17 +174,21 @@ class MixedGrid extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
 
-          // 标题
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.white,
+          // 标题 - 固定高度，最多2行
+          SizedBox(
+            height: 36, // 固定高度确保一致性
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+                height: 1.3,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

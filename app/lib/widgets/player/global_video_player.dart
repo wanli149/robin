@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/global_player_manager.dart';
+import '../../core/logger.dart';
 import 'shorts_flow_player.dart';
-import 'shorts_detail_player.dart';
 import 'long_video_player.dart';
 
 /// 全局视频播放器UI组件 - 智能路由播放器
-/// 根据内容类型和播放模式智能选择对应的专用播放器UI
+/// 根据内容类型智能选择对应的专用播放器UI
 /// 
 /// 设计原则：
 /// 1. 单一播放器实例：所有UI组件共享GlobalPlayerManager中的同一个VideoPlayerController
@@ -31,19 +31,12 @@ class GlobalVideoPlayer extends StatelessWidget {
       final manager = GlobalPlayerManager.to;
       final contentType = manager.currentState.value.contentType;
       
-      // 根据内容类型和播放模式智能选择播放器UI
+      // 根据内容类型智能选择播放器UI
       switch (contentType) {
         case ContentType.shortsFlow:
-          // 短剧流：竖屏填充播放，无控制栏，支持滑动切换
-          return ShortsFlowPlayer(
-            showControls: showControls,
-            onTap: onTap,
-            overlay: overlay,
-          );
-          
         case ContentType.shorts:
-          // 短剧详情：支持窗口模式（横屏16:9）和全屏模式（竖屏填充+滑动换集）
-          return ShortsDetailPlayer(
+          // 短剧流和短剧详情：使用同一个播放器，填充模式
+          return ShortsFlowPlayer(
             showControls: showControls,
             onTap: onTap,
             overlay: overlay,
@@ -56,17 +49,6 @@ class GlobalVideoPlayer extends StatelessWidget {
             showControls: showControls,
             onTap: onTap,
             overlay: overlay,
-          );
-        
-        default:
-          // 默认显示黑色背景，避免任何意外的显示
-          return Container(
-            color: Colors.black,
-            child: const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
-              ),
-            ),
           );
       }
     });
@@ -85,17 +67,9 @@ class PlayerRouteInfo {
         return 'ShortsFlowPlayer';
       case ContentType.shorts:
         return playerMode == PlayerMode.fullscreen 
-            ? 'ShortsDetailPlayer(Fullscreen)' 
-            : 'ShortsDetailPlayer(Window)';
+            ? 'ShortsFlowPlayer(Fullscreen)' 
+            : 'ShortsFlowPlayer(Window)';
       case ContentType.tv:
-        switch (playerMode) {
-          case PlayerMode.fullscreen:
-            return 'LongVideoPlayer(Fullscreen)';
-          case PlayerMode.pip:
-            return 'LongVideoPlayer(PIP)';
-          default:
-            return 'LongVideoPlayer(Window)';
-        }
       case ContentType.movie:
         switch (playerMode) {
           case PlayerMode.fullscreen:
@@ -109,6 +83,6 @@ class PlayerRouteInfo {
   }
   
   static void logRouteChange() {
-    print('🎬 [PlayerRouter] Current route: ${getCurrentRoute()}');
+    Logger.player('Current route: ${getCurrentRoute()}');
   }
 }

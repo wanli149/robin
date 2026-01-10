@@ -16,13 +16,13 @@ import {
   Row,
   Col,
   Modal,
-  message,
   Tabs,
   Form,
   InputNumber,
   Popconfirm,
   Alert,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   SearchOutlined,
   UserOutlined,
@@ -41,6 +41,10 @@ import {
   updateActor,
   deleteActor,
   mergeActors,
+  getPopularActors,
+  searchActors as searchActorsApi,
+  getActorDetail,
+  rebuildActors as rebuildActorsApi,
 } from '../services/adminApi';
 
 const { Search } = Input;
@@ -80,22 +84,16 @@ const ActorManagement: React.FC = () => {
   const [editForm] = Form.useForm();
   const [selectedActors, setSelectedActors] = useState<number[]>([]);
   const [mergeModalVisible, setMergeModalVisible] = useState(false);
+  const { success, error, warning, loading: showLoading } = useNotification();
 
   // 加载热门演员
   const loadPopularActors = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/actors/popular?limit=100', {
-        headers: {
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setActors(data.list);
-      }
-    } catch (error) {
-      message.error('加载演员列表失败');
+      const data = await getPopularActors(100);
+      setActors(data as Actor[]);
+    } catch (err) {
+      error('加载演员列表失败');
     } finally {
       setLoading(false);
     }
@@ -110,17 +108,10 @@ const ActorManagement: React.FC = () => {
 
     setLoading(true);
     try {
-      const response = await fetch(`/api/actors/search?keyword=${encodeURIComponent(value)}`, {
-        headers: {
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setActors(data.list);
-      }
-    } catch (error) {
-      message.error('搜索失败');
+      const data = await searchActorsApi(value);
+      setActors(data as Actor[]);
+    } catch (err) {
+      error('搜索失败');
     } finally {
       setLoading(false);
     }
@@ -132,17 +123,12 @@ const ActorManagement: React.FC = () => {
     setDetailModalVisible(true);
     
     try {
-      const response = await fetch(`/api/actor/${actor.id}`, {
-        headers: {
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-      });
-      const data = await response.json();
-      if (data.code === 1 && data.data.works) {
-        setActorWorks(data.data.works);
+      const data = await getActorDetail(actor.id);
+      if (data.works) {
+        setActorWorks(data.works as ActorWork[]);
       }
-    } catch (error) {
-      message.error('加载作品列表失败');
+    } catch (err) {
+      error('加载作品列表失败');
     }
   };
 
@@ -164,11 +150,11 @@ const ActorManagement: React.FC = () => {
     try {
       const values = await editForm.validateFields();
       await updateActor(currentActor.id, values);
-      message.success('保存成功');
+      success('保存成功');
       setEditModalVisible(false);
       loadPopularActors();
-    } catch (error: any) {
-      message.error(error.message || '保存失败');
+    } catch (err: any) {
+      error(err.message || '保存失败');
     }
   };
 
@@ -176,18 +162,18 @@ const ActorManagement: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await deleteActor(id);
-      message.success('删除成功');
+      success('删除成功');
       loadPopularActors();
       loadStats();
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
   // 合并演员
   const handleMerge = async () => {
     if (selectedActors.length < 2) {
-      message.warning('请至少选择2个演员进行合并');
+      warning('请至少选择2个演员进行合并');
       return;
     }
     setMergeModalVisible(true);
@@ -198,42 +184,27 @@ const ActorManagement: React.FC = () => {
     const sourceIds = selectedActors.filter(id => id !== targetId);
     try {
       await mergeActors(sourceIds, targetId);
-      message.success('合并成功');
+      success('合并成功');
       setMergeModalVisible(false);
       setSelectedActors([]);
       loadPopularActors();
       loadStats();
-    } catch (error: any) {
-      message.error(error.message || '合并失败');
+    } catch (err: any) {
+      error(err.message || '合并失败');
     }
   };
 
   // 重建演员关联
   const rebuildActors = async () => {
+    const hide = showLoading('正在重建演员关联，这可能需要几分钟...');
     try {
-      message.loading('正在重建演员关联，这可能需要几分钟...', 0);
-      
-      const response = await fetch('/admin/collect/rebuild-actors', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-        body: JSON.stringify({ limit: 1000 }),
-      });
-      
-      message.destroy();
-      const data = await response.json();
-      
-      if (data.code === 1) {
-        message.success('演员关联重建任务已触发，请等待几分钟后刷新页面');
-        setTimeout(loadPopularActors, 5000);
-      } else {
-        message.error(data.msg || '触发失败');
-      }
-    } catch (error) {
-      message.destroy();
-      message.error('触发重建失败');
+      const result = await rebuildActorsApi();
+      hide();
+      success(`演员关联重建完成！处理: ${result.processed}, 创建: ${result.created}`);
+      setTimeout(loadPopularActors, 2000);
+    } catch (err: any) {
+      hide();
+      error(err.message || '触发重建失败');
     }
   };
 
@@ -242,26 +213,26 @@ const ActorManagement: React.FC = () => {
     try {
       const data = await getCollectStats();
       setStats(data.actors);
-    } catch (error) {
-      console.error('Failed to load stats:', error);
+    } catch (err) {
+      console.error('Failed to load stats:', err);
     }
   };
 
   // 执行数据库迁移
   const handleMigrate = async () => {
+    const hide = showLoading('正在迁移数据库...');
     try {
-      message.loading('正在迁移数据库...', 0);
       const result = await migrateArticlesActors();
-      message.destroy();
+      hide();
       if (result.success) {
-        message.success(`迁移成功！创建表: ${result.tables.join(', ')}`);
+        success(`迁移成功！创建表: ${result.tables.join(', ')}`);
         loadStats();
       } else {
-        message.error(result.message || '迁移失败');
+        error(result.message || '迁移失败');
       }
-    } catch (error) {
-      message.destroy();
-      message.error('迁移失败');
+    } catch (err) {
+      hide();
+      error('迁移失败');
     }
   };
 
@@ -278,12 +249,12 @@ const ActorManagement: React.FC = () => {
         maxPages: values.maxPages || 50,
       });
       
-      message.success(`采集完成！新增: ${result.newCount}, 更新: ${result.updateCount}, 匹配: ${result.matchedCount}`);
+      success(`采集完成！新增: ${result.newCount}, 更新: ${result.updateCount}, 匹配: ${result.matchedCount}`);
       setCollectModalVisible(false);
       loadPopularActors();
       loadStats();
-    } catch (error) {
-      message.error('采集失败');
+    } catch (err) {
+      error('采集失败');
     } finally {
       setCollecting(false);
     }
@@ -301,11 +272,11 @@ const ActorManagement: React.FC = () => {
         limit: values.enrichLimit || 100,
       });
       
-      message.success(`补充完成！成功: ${result.enriched}, 未找到: ${result.notFound}`);
+      success(`补充完成！成功: ${result.enriched}, 未找到: ${result.notFound}`);
       loadPopularActors();
       loadStats();
-    } catch (error) {
-      message.error('补充失败');
+    } catch (err) {
+      error('补充失败');
     } finally {
       setCollecting(false);
     }

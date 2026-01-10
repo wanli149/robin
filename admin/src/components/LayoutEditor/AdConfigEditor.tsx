@@ -6,6 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { InputNumber, Space, Typography, Switch, Radio, Select, Checkbox, Divider, Spin } from 'antd';
+import { getAdsSimple } from '../../services/adminApi';
 
 const { Text } = Typography;
 const { Option } = Select;
@@ -32,13 +33,8 @@ const AdConfigEditor: React.FC<AdConfigEditorProps> = ({ value, onChange }) => {
     const loadAds = async () => {
       setLoadingAds(true);
       try {
-        const response = await fetch('/admin/ads/list-simple?location=insert_grid', {
-          headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-        });
-        const data = await response.json();
-        if (data.code === 1) {
-          setAdList(data.list || []);
-        }
+        const data = await getAdsSimple('insert_grid');
+        setAdList(data);
       } catch (error) {
         console.error('Failed to load ads:', error);
       } finally {

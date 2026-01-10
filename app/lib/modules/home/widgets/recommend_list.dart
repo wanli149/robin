@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../core/http_client.dart';
+import '../../../core/logger.dart';
 
 /// 推荐列表组件
 /// 
@@ -132,11 +133,11 @@ class _RecommendListState extends State<RecommendList> {
             _items = list;
           });
           
-          print('✅ Loaded ${list.length} recommendations (${widget.strategy})');
+          Logger.success('[RecommendList] Loaded ${list.length} recommendations (${widget.strategy})');
         }
       }
     } catch (e) {
-      print('❌ Failed to load recommendations: $e');
+      Logger.error('[RecommendList] Failed to load recommendations: $e');
       setState(() {
         _error = '加载失败';
       });
@@ -256,7 +257,7 @@ class _RecommendListState extends State<RecommendList> {
                     width: widget.itemWidth,
                     height: widget.itemHeight,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       width: widget.itemWidth,
                       height: widget.itemHeight,
                       color: const Color(0xFF2E2E2E),
@@ -308,7 +309,7 @@ class _RecommendListState extends State<RecommendList> {
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.transparent,
-                              Colors.black.withOpacity(0.8),
+                              Colors.black.withValues(alpha: 0.8),
                             ],
                           ),
                         ),

@@ -72,16 +72,25 @@ const TYPE_NAME_RULES: Array<{
   subTypeExtract?: boolean; // 是否提取子分类
 }> = [
   {
-    // 预告片优先级最高（避免被电影匹配）
+    // 预告片/解说优先级最高（避免被电影匹配）
     targetId: 8,
     targetName: '预告片',
-    patterns: ['预告', '预告片', 'trailer', '先导片', '花絮'],
+    patterns: ['预告', '预告片', 'trailer', '先导片', '花絮', '解说', '影视解说'],
+    subTypeExtract: true,
+  },
+  {
+    // 福利/成人内容（需要特殊权限）
+    targetId: 9,
+    targetName: '福利',
+    patterns: ['伦理', '三级', '两性', '写真', '热舞', '福利', '成人'],
     subTypeExtract: true,
   },
   {
     targetId: 5,
     targetName: '短剧',
-    patterns: ['短剧', '微短剧', '竖屏剧'],
+    // 添加资源站的短剧子分类名称
+    patterns: ['短剧', '微短剧', '竖屏剧', '女频', '恋爱', '爽文短剧', '反转爽剧', '古装仙侠', '年代穿越', '脑洞悬疑', '现代都市', '擦边短剧', '漫剧'],
+    excludes: ['恋爱片'],  // 排除电影
     subTypeExtract: true,
   },
   {
@@ -91,10 +100,10 @@ const TYPE_NAME_RULES: Array<{
     subTypeExtract: true,
   },
   {
-    // 纪录片单独分类
+    // 纪录片/科普单独分类
     targetId: 7,
     targetName: '纪录片',
-    patterns: ['纪录片', '纪录', '记录片', '记录', '纪实', '探索', '自然', 'BBC', 'Discovery'],
+    patterns: ['纪录片', '纪录', '记录片', '记录', '纪实', '探索', '自然', 'BBC', 'Discovery', '科普', '学习', '教育'],
     excludes: ['纪录剧'],
     subTypeExtract: true,
   },
@@ -118,14 +127,15 @@ const TYPE_NAME_RULES: Array<{
     targetName: '电影',
     patterns: ['片', '电影', '影片', '剧场版'],
     // 排除真正的电视剧类型（国产剧、韩剧等）和其他类型
-    excludes: ['国产剧', '韩剧', '日剧', '美剧', '泰剧', '港剧', '台剧', '英剧', '内地剧', '香港剧', '台湾剧', '韩国剧', '日本剧', '欧美剧', '海外剧', '电视剧', '连续剧', '网剧', '短剧', '综艺', '动漫', '动画', '体育', '纪录片', '预告片', '预告'],
+    excludes: ['国产剧', '韩剧', '日剧', '美剧', '泰剧', '港剧', '台剧', '英剧', '内地剧', '香港剧', '台湾剧', '韩国剧', '日本剧', '欧美剧', '海外剧', '电视剧', '连续剧', '网剧', '短剧', '综艺', '动漫', '动画', '体育', '纪录片', '预告片', '预告', '解说'],
     subTypeExtract: true,
   },
   {
     targetId: 2,
     targetName: '电视剧',
-    patterns: ['剧', '连续剧', '电视剧', '网剧', '迷你剧'],
-    excludes: ['短剧', '动漫', '动画', '综艺', '纪录', '体育', '预告'],
+    patterns: ['剧', '连续剧', '电视剧', '网剧', '迷你剧', '悬疑'],
+    // 排除短剧相关的关键词，避免误分类
+    excludes: ['短剧', '动漫', '动画', '综艺', '纪录', '体育', '预告', '解说', '女频', '爽文', '反转爽剧', '古装仙侠', '年代穿越', '脑洞悬疑', '现代都市', '擦边短剧', '漫剧'],
     subTypeExtract: true,
   },
 ];
@@ -217,6 +227,13 @@ const SUB_TYPE_EXTRACT_RULES: Record<number, Array<{
     { subName: '电影预告', patterns: ['电影', '影片', '大片'] },
     { subName: '剧集预告', patterns: ['电视剧', '剧集', '网剧'] },
     { subName: '综艺预告', patterns: ['综艺', '真人秀'] },
+    { subName: '影视解说', patterns: ['解说', '影视解说'] },
+  ],
+  9: [ // 福利子分类
+    { subName: '伦理', patterns: ['伦理'] },
+    { subName: '三级', patterns: ['三级', '港台三级'] },
+    { subName: '写真', patterns: ['写真', '热舞'] },
+    { subName: '两性', patterns: ['两性', '课堂'] },
   ],
 };
 
@@ -1024,6 +1041,7 @@ function getTypeName(typeId: number): string {
     6: '体育',
     7: '纪录片',
     8: '预告片',
+    9: '福利',
   };
   return names[typeId] || '电影';
 }

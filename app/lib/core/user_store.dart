@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'logger.dart';
 
 /// 用户信息模型
 /// 
@@ -156,13 +157,13 @@ class UserStore extends GetxController {
         );
         
         _updateLoginStatus();
-        print('✅ 用户已自动登录: $username (永久登录)');
+        Logger.success('[UserStore] 用户已自动登录: $username (永久登录)');
       } else {
         _updateLoginStatus();
-        print('ℹ️ 用户未登录');
+        Logger.info('[UserStore] 用户未登录');
       }
     } catch (e) {
-      print('❌ Failed to load user data: $e');
+      Logger.error('[UserStore] Failed to load user data: $e');
     }
   }
   
@@ -194,9 +195,9 @@ class UserStore extends GetxController {
       // 更新登录状态
       _updateLoginStatus();
       
-      print('✅ 用户登录成功: ${user.username} (永久登录已启用)');
+      Logger.success('[UserStore] 用户登录成功: ${user.username} (永久登录已启用)');
     } catch (e) {
-      print('❌ Failed to save user data: $e');
+      Logger.error('[UserStore] Failed to save user data: $e');
       Get.snackbar(
         '错误',
         '登录信息保存失败',
@@ -223,7 +224,7 @@ class UserStore extends GetxController {
       userInfo.value = null;
       _updateLoginStatus();
       
-      print('✅ User logged out');
+      Logger.success('[UserStore] User logged out');
       
       Get.snackbar(
         '提示',
@@ -234,7 +235,7 @@ class UserStore extends GetxController {
       // 跳转到首页
       Get.offAllNamed('/');
     } catch (e) {
-      print('❌ Failed to logout: $e');
+      Logger.error('[UserStore] Failed to logout: $e');
     }
   }
   
@@ -257,9 +258,9 @@ class UserStore extends GetxController {
       }
       
       _updateLoginStatus();
-      print('✅ User info updated');
+      Logger.success('[UserStore] User info updated');
     } catch (e) {
-      print('❌ Failed to update user info: $e');
+      Logger.error('[UserStore] Failed to update user info: $e');
     }
   }
   

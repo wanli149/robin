@@ -1,13 +1,13 @@
 /**
- * 数据库类型定义
- * 统一定义所有数据库表的行类型，消除 any 类型使用
+ * Database Type Definitions
+ * Unified type definitions for all database table rows, eliminating any type usage
  */
 
 // ============================================
-// 视频相关类型
+// Video Related Types
 // ============================================
 
-/** vod_cache 表行类型 */
+/** vod_cache table row type */
 export interface VodCacheRow {
   vod_id: string;
   vod_name: string;
@@ -44,7 +44,7 @@ export interface VodCacheRow {
   updated_at: number;
 }
 
-/** vod_cache 表部分字段（用于列表查询） */
+/** vod_cache partial fields (for list queries) */
 export interface VodCacheListRow {
   vod_id: string;
   vod_name: string;
@@ -64,7 +64,7 @@ export interface VodCacheListRow {
   updated_at: number;
 }
 
-/** 短剧列表行类型 */
+/** Shorts list row type */
 export interface ShortsListRow {
   vod_id: string;
   vod_name: string;
@@ -78,10 +78,10 @@ export interface ShortsListRow {
 }
 
 // ============================================
-// 资源站相关类型
+// Video Source Related Types
 // ============================================
 
-/** video_sources 表行类型 */
+/** video_sources table row type */
 export interface VideoSourceRow {
   id: number;
   name: string;
@@ -93,7 +93,7 @@ export interface VideoSourceRow {
   updated_at: number;
 }
 
-/** source_health 表行类型 */
+/** source_health table row type */
 export interface SourceHealthRow {
   source_id: number;
   source_name: string;
@@ -112,16 +112,16 @@ export interface SourceHealthRow {
 }
 
 // ============================================
-// 系统配置相关类型
+// System Config Related Types
 // ============================================
 
-/** system_config 表行类型 */
+/** system_config table row type */
 export interface SystemConfigRow {
   key: string;
   value: string | null;
 }
 
-/** hot_search_stats 表行类型 */
+/** hot_search_stats table row type */
 export interface HotSearchStatsRow {
   keyword: string;
   search_count: number;
@@ -131,7 +131,7 @@ export interface HotSearchStatsRow {
   last_search_at: number;
 }
 
-/** home_tabs 表行类型 */
+/** home_tabs table row type */
 export interface HomeTabRow {
   id: number;
   title: string;
@@ -141,10 +141,10 @@ export interface HomeTabRow {
 }
 
 // ============================================
-// 用户相关类型
+// User Related Types
 // ============================================
 
-/** watch_history 表行类型 */
+/** history table row type (watch history) */
 export interface WatchHistoryRow {
   id: number;
   user_id: number;
@@ -155,7 +155,7 @@ export interface WatchHistoryRow {
   updated_at: number;
 }
 
-/** feedback 表行类型 */
+/** feedback table row type */
 export interface FeedbackRow {
   id: number;
   user_id: number | null;
@@ -169,10 +169,10 @@ export interface FeedbackRow {
 }
 
 // ============================================
-// 采集任务相关类型
+// Collect Task Related Types
 // ============================================
 
-/** collect_tasks 表行类型 */
+/** collect_tasks table row type */
 export interface CollectTaskRow {
   id: string;
   task_type: string;
@@ -188,7 +188,7 @@ export interface CollectTaskRow {
   updated_at: number;
 }
 
-/** collect_logs 表行类型 */
+/** collect_logs table row type */
 export interface CollectLogRow {
   id: number;
   task_id: string;
@@ -202,10 +202,10 @@ export interface CollectLogRow {
 }
 
 // ============================================
-// 推荐相关类型
+// Recommendation Related Types
 // ============================================
 
-/** vod_recommendations 表行类型 */
+/** vod_recommendations table row type */
 export interface VodRecommendationRow {
   vod_id: string;
   similar_ids: string;
@@ -215,10 +215,10 @@ export interface VodRecommendationRow {
 }
 
 // ============================================
-// 分类相关类型
+// Category Related Types
 // ============================================
 
-/** video_sub_categories 表行类型 */
+/** video_sub_categories table row type */
 export interface VideoSubCategoryRow {
   id: number;
   parent_id: number;
@@ -230,35 +230,35 @@ export interface VideoSubCategoryRow {
 }
 
 // ============================================
-// 通用类型
+// Common Types
 // ============================================
 
-/** 数据库查询参数类型（替代 any[]） */
+/** Database query parameter type (replaces any[]) */
 export type DbQueryParam = string | number | boolean | null;
 
-/** 播放地址 Episode 类型 */
+/** Play episode type */
 export interface PlayEpisode {
   name: string;
   url: string;
 }
 
-/** 清洗后的播放地址类型 */
+/** Cleaned play URLs type */
 export type CleanedPlayUrls = Record<string, PlayEpisode[]>;
 
-/** 原始播放地址类型 */
+/** Raw play URLs type */
 export type RawPlayUrls = Record<string, string>;
 
-/** 排行榜视频类型 */
+/** Ranking video type */
 export interface RankingVideoRow extends VodCacheListRow {
   rank: number;
   heat: number;
 }
 
 // ============================================
-// 布局模块相关类型
+// Layout Module Related Types
 // ============================================
 
-/** page_modules 表行类型 */
+/** page_modules table row type */
 export interface PageModuleRow {
   id: number;
   tab_id: string;
@@ -270,7 +270,7 @@ export interface PageModuleRow {
   is_enabled: number | null;
 }
 
-/** 解析后的布局模块类型 */
+/** Parsed page module type */
 export interface ParsedPageModule {
   id: number;
   tab_id: string;
@@ -282,7 +282,7 @@ export interface ParsedPageModule {
   is_enabled: boolean;
 }
 
-/** 布局验证结果类型 */
+/** Layout validation result type */
 export interface LayoutValidationResult {
   module_index: number;
   module_type: string;
@@ -293,10 +293,10 @@ export interface LayoutValidationResult {
 }
 
 // ============================================
-// 定时任务相关类型
+// Scheduler Task Related Types
 // ============================================
 
-/** scheduler_tasks 表行类型 */
+/** scheduler_tasks table row type */
 export interface SchedulerTaskRow {
   id: string;
   name: string;
@@ -311,7 +311,7 @@ export interface SchedulerTaskRow {
   updated_at: number | null;
 }
 
-/** scheduler_history 表行类型 */
+/** scheduler_history table row type */
 export interface SchedulerHistoryRow {
   id: number;
   task_id: string;
@@ -321,7 +321,7 @@ export interface SchedulerHistoryRow {
   executed_at: string;
 }
 
-/** 任务执行参数类型 */
+/** Task execution params type */
 export interface TaskExecutionParams {
   maxPages?: number;
   maxVideos?: number;
@@ -332,10 +332,10 @@ export interface TaskExecutionParams {
 }
 
 // ============================================
-// 专题相关类型
+// Topic Related Types
 // ============================================
 
-/** topics 表行类型 */
+/** topics table row type */
 export interface TopicRow {
   id: string;
   title: string;
@@ -347,12 +347,12 @@ export interface TopicRow {
   data_source_config: string | null;
 }
 
-/** 解析后的专题类型 */
+/** Parsed topic row type */
 export interface ParsedTopicRow extends Omit<TopicRow, 'data_source_config'> {
   data_source_config: Record<string, unknown> | null;
 }
 
-/** 专题视频类型 */
+/** Topic video row type */
 export interface TopicVideoRow {
   vod_id: string;
   vod_name: string;
@@ -362,10 +362,10 @@ export interface TopicVideoRow {
 }
 
 // ============================================
-// 演员相关类型
+// Actor Related Types
 // ============================================
 
-/** actors 表行类型 */
+/** actors table row type */
 export interface ActorRow {
   id: number;
   name: string;
@@ -382,10 +382,10 @@ export interface ActorRow {
 }
 
 // ============================================
-// 域名管理相关类型
+// Domain Management Related Types
 // ============================================
 
-/** domains 表行类型 */
+/** domains table row type */
 export interface DomainRow {
   id: number;
   domain: string;
@@ -396,7 +396,7 @@ export interface DomainRow {
   created_at: number;
 }
 
-/** 域名健康检查结果 */
+/** Domain health check result */
 export interface DomainHealthResult {
   domain: string;
   healthy: boolean;
@@ -405,26 +405,26 @@ export interface DomainHealthResult {
 }
 
 // ============================================
-// 反馈相关类型
+// Feedback Related Types
 // ============================================
 
-/** 反馈分类统计 */
+/** Feedback category stats */
 export interface FeedbackCategoryStats {
   category: string;
   count: number;
 }
 
 // ============================================
-// 视频管理相关类型
+// Video Management Related Types
 // ============================================
 
-/** 播放源类型 */
+/** Play source type */
 export interface PlaySource {
   name: string;
   episodes: PlayEpisode[];
 }
 
-/** 无效URL报告行类型 */
+/** Invalid URL report row type */
 export interface InvalidUrlRow {
   id: number;
   vod_id: string;
@@ -437,10 +437,10 @@ export interface InvalidUrlRow {
 }
 
 // ============================================
-// 缓存状态类型
+// Cache Status Types
 // ============================================
 
-/** 缓存状态项 */
+/** Cache status item */
 export interface CacheStatusItem {
   tab: string;
   exists: boolean;
@@ -449,10 +449,10 @@ export interface CacheStatusItem {
 }
 
 // ============================================
-// PRAGMA 表信息类型
+// PRAGMA Table Info Types
 // ============================================
 
-/** SQLite PRAGMA table_info 返回类型 */
+/** SQLite PRAGMA table_info return type */
 export interface TableColumnInfo {
   cid: number;
   name: string;
@@ -463,22 +463,22 @@ export interface TableColumnInfo {
 }
 
 // ============================================
-// 采集监控相关类型
+// Collect Monitor Related Types
 // ============================================
 
-/** 资源站分布统计行 */
+/** Source distribution stats row */
 export interface SourceDistributionRow {
   source_name: string;
   count: number;
 }
 
-/** 类型分布统计行 */
+/** Type distribution stats row */
 export interface TypeDistributionRow {
   type_name: string;
   count: number;
 }
 
-/** 合并视频类型 */
+/** Merge video row type */
 export interface MergeVideoRow extends VodCacheRow {
   source_name: string;
   source_priority: number;

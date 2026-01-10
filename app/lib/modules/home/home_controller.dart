@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/http_client.dart';
 import '../../core/user_store.dart';
+import '../../core/logger.dart';
+import '../../core/cache_service.dart';
 import '../../services/announcement_service.dart';
 
 /// 首页控制器
@@ -74,22 +75,29 @@ class HomeController extends GetxController {
   // 模块列表
   final RxList<Map<String, dynamic>> modules = <Map<String, dynamic>>[].obs;
 
-  // 频道数据缓存（存储完整的缓存数据，包括时间戳）
-  final Map<String, Map<String, dynamic>> _channelCache = {};
+  // 🚀 缓存服务引用
+  CacheService? _cacheService;
+  CacheService get _cache {
+    _cacheService ??= Get.find<CacheService>();
+    return _cacheService!;
+  }
+  
+  // 🚀 登录状态监听器（用于 onClose 时取消）
+  Worker? _loginStatusWorker;
 
   @override
   void onInit() {
     super.onInit();
     
-    // 监听用户登录状态变化
-    ever(UserStore.to.isLoggedInRx, (bool isLoggedIn) {
-      print('🔄 User login status changed: $isLoggedIn');
-      // 用户登录状态改变时，清除缓存并重新加载当前频道
-      clearCache();
-      loadChannelData(currentChannelId);
+    // 🚀 监听用户登录状态变化（保存 Worker 引用以便 onClose 时取消）
+    _loginStatusWorker = ever(UserStore.to.isLoggedInRx, (bool isLoggedIn) {
+      Logger.info('User login status changed: $isLoggedIn');
+      // 用户登录状态改变时，清除用户相关缓存并重新加载当前频道
+      _cache.clearByType(CacheType.userData);
+      loadChannelData(currentChannelId, forceRefresh: true);
     });
     
-    // 延迟加载，等待用户状态初始化完成
+    // 延迟加载，等待用户状态和缓存服务初始化完成
     Future.delayed(const Duration(milliseconds: 500), () {
       // 先加载频道列表，再加载频道数据
       _loadTabs().then((_) {
@@ -100,24 +108,45 @@ class HomeController extends GetxController {
       });
     });
   }
+  
+  @override
+  void onClose() {
+    // 🚀 取消登录状态监听器，防止内存泄漏
+    _loginStatusWorker?.dispose();
+    _loginStatusWorker = null;
+    super.onClose();
+  }
 
   /// 从后端加载频道列表
   Future<void> _loadTabs() async {
-    try {
-      final response = await _httpClient.get('/home_tabs');
-      
-      if (response.statusCode == 200 && response.data != null) {
-        final tabs = response.data['tabs'] as List?;
-        if (tabs != null && tabs.isNotEmpty) {
-          channels.value = tabs.map((tab) => {
-            'id': (tab['id'] as String?) ?? '',
-            'name': (tab['title'] as String?) ?? '',
-          }).toList();
-          print('✅ Loaded ${channels.length} tabs from server');
+    // 🚀 使用缓存服务的 getOrLoad 方法
+    final cachedTabs = await _cache.getOrLoad<List>(
+      CacheKeys.homeTabs,
+      () async {
+        try {
+          final response = await _httpClient.get('/home_tabs');
+          
+          if (response.statusCode == 200 && response.data != null) {
+            final tabs = response.data['tabs'] as List?;
+            if (tabs != null && tabs.isNotEmpty) {
+              return tabs;
+            }
+          }
+        } catch (e) {
+          Logger.warning('Failed to load tabs from server: $e');
         }
-      }
-    } catch (e) {
-      print('⚠️ Failed to load tabs, using defaults: $e');
+        return null;
+      },
+      type: CacheType.homeTabs,
+    );
+    
+    if (cachedTabs != null && cachedTabs.isNotEmpty) {
+      channels.value = cachedTabs.map((tab) => {
+        'id': (tab['id'] as String?) ?? '',
+        'name': (tab['title'] as String?) ?? '',
+      }).toList();
+      Logger.success('Loaded ${channels.length} tabs');
+    } else {
       // 使用默认频道列表
       channels.value = [
         {'id': 'featured', 'name': '精选'},
@@ -127,6 +156,7 @@ class HomeController extends GetxController {
         {'id': 'anime', 'name': '动漫'},
         {'id': 'variety', 'name': '综艺'},
       ];
+      Logger.warning('Using default tabs');
     }
   }
 
@@ -139,23 +169,31 @@ class HomeController extends GetxController {
   }
 
   /// 加载频道数据
-  Future<void> loadChannelData(String channelId) async {
-    // 检查缓存（5分钟内有效）
-    if (_channelCache.containsKey(channelId)) {
-      final cachedData = _channelCache[channelId]!;
-      final cacheTime = cachedData['_cache_time'] as int?;
-      
-      // 如果缓存在5分钟内，直接使用
-      if (cacheTime != null && 
-          DateTime.now().millisecondsSinceEpoch - cacheTime < 300000) {
-        modules.value = List<Map<String, dynamic>>.from(cachedData['modules'] as List);
-        marqueeText.value = (cachedData['marquee_text'] ?? '') as String;
-        marqueeLink.value = (cachedData['marquee_link'] ?? '') as String;
-        print('📦 Using cached data for channel: $channelId');
+  /// 
+  /// [channelId] 频道ID
+  /// [forceRefresh] 强制刷新（忽略缓存）
+  Future<void> loadChannelData(String channelId, {bool forceRefresh = false}) async {
+    final cacheKey = CacheKeys.homeLayout(channelId);
+    
+    // 🚀 非强制刷新时，先尝试从缓存加载
+    if (!forceRefresh) {
+      final cachedData = await _cache.get<Map<String, dynamic>>(cacheKey);
+      if (cachedData != null) {
+        _applyChannelData(cachedData, channelId);
+        Logger.info('Using cached data for channel: $channelId');
+        
+        // 后台静默更新
+        _backgroundUpdateChannel(channelId);
         return;
       }
     }
 
+    // 从网络加载
+    await _loadChannelDataFromNetwork(channelId);
+  }
+  
+  /// 从网络加载频道数据
+  Future<void> _loadChannelDataFromNetwork(String channelId) async {
     try {
       isLoading.value = true;
       error.value = '';
@@ -168,11 +206,7 @@ class HomeController extends GetxController {
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
 
-        // 更新跑马灯
-        marqueeText.value = data['marquee_text'] ?? '';
-        marqueeLink.value = data['marquee_link'] ?? '';
-
-        // 更新模块列表
+        // 构建缓存数据
         final moduleList = (data['modules'] as List?)
                 ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ??
@@ -186,30 +220,40 @@ class HomeController extends GetxController {
           }
         }
 
-        modules.value = moduleList;
-
-        // 缓存数据（带时间戳）
-        _channelCache[channelId] = <String, dynamic>{
+        final cacheData = <String, dynamic>{
           'modules': moduleList,
-          'marquee_text': marqueeText.value,
-          'marquee_link': marqueeLink.value,
-          '_cache_time': DateTime.now().millisecondsSinceEpoch,
+          'marquee_text': data['marquee_text'] ?? '',
+          'marquee_link': data['marquee_link'] ?? '',
         };
 
-        print('✅ Loaded ${moduleList.length} modules for channel: $channelId');
+        // 🚀 保存到缓存
+        await _cache.set(
+          CacheKeys.homeLayout(channelId),
+          cacheData,
+          type: CacheType.homeLayout,
+        );
+
+        // 应用数据
+        _applyChannelData(cacheData, channelId);
+
+        Logger.success('Loaded ${moduleList.length} modules for channel: $channelId');
       } else {
         error.value = '服务器返回错误';
       }
     } catch (e) {
-      print('❌ Failed to load channel data: $e');
+      Logger.error('Failed to load channel data: $e');
       
-      // 检查是否是 401 错误（需要登录的接口）
-      if (e.toString().contains('401')) {
-        // 401错误时，显示内容但不显示需要登录的模块
-        print('⚠️ 401 error for channel $channelId, loading public content only');
-        
-        // 加载公开内容（不需要登录的模块）
-        await _loadPublicContent(channelId);
+      // 🚀 网络失败时，尝试使用过期的缓存（离线模式）
+      final cachedData = await _cache.get<Map<String, dynamic>>(
+        CacheKeys.homeLayout(channelId),
+        ignoreExpiry: true,
+      );
+      
+      if (cachedData != null) {
+        _applyChannelData(cachedData, channelId);
+        Logger.info('Using expired cache for offline mode: $channelId');
+        // 显示离线提示
+        error.value = '网络不可用，显示缓存内容';
       } else {
         error.value = '网络连接失败，请检查网络设置';
       }
@@ -217,78 +261,58 @@ class HomeController extends GetxController {
       isLoading.value = false;
     }
   }
-
-  /// 加载公开内容（不需要登录）
-  Future<void> _loadPublicContent(String channelId) async {
+  
+  /// 应用频道数据到 UI
+  void _applyChannelData(Map<String, dynamic> data, String channelId) {
+    modules.value = List<Map<String, dynamic>>.from(data['modules'] as List? ?? []);
+    marqueeText.value = (data['marquee_text'] ?? '') as String;
+    marqueeLink.value = (data['marquee_link'] ?? '') as String;
+  }
+  
+  /// 后台静默更新频道数据
+  void _backgroundUpdateChannel(String channelId) async {
     try {
-      // 尝试加载不需要登录的内容
       final response = await _httpClient.get(
         '/home_layout',
-        queryParameters: {
-          'tab': channelId,
-          'public_only': 'true', // 只获取公开内容
-        },
+        queryParameters: {'tab': channelId},
       );
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-
-        // 更新跑马灯
-        marqueeText.value = data['marquee_text'] ?? '';
-        marqueeLink.value = data['marquee_link'] ?? '';
-
-        // 更新模块列表（只包含公开模块）
         final moduleList = (data['modules'] as List?)
                 ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ??
             [];
 
-        modules.value = moduleList;
-
-        // 如果是精选频道且没有登录，显示登录提示模块
-        if (channelId == 'featured' && !UserStore.to.isLoggedIn) {
-          final loginPromptModule = _createLoginPromptModule();
-          modules.insert(0, loginPromptModule);
+        if (channelId == 'featured' && UserStore.to.isLoggedIn) {
+          final continueWatchingModule = await _loadContinueWatching();
+          if (continueWatchingModule != null) {
+            moduleList.insert(0, continueWatchingModule);
+          }
         }
 
-        print('✅ Loaded ${moduleList.length} public modules for channel: $channelId');
-      } else {
-        // 如果公开内容也加载失败，显示基本内容
-        _loadFallbackContent(channelId);
+        final cacheData = <String, dynamic>{
+          'modules': moduleList,
+          'marquee_text': data['marquee_text'] ?? '',
+          'marquee_link': data['marquee_link'] ?? '',
+        };
+
+        await _cache.set(
+          CacheKeys.homeLayout(channelId),
+          cacheData,
+          type: CacheType.homeLayout,
+        );
+
+        // 如果当前还在这个频道，更新 UI
+        if (currentChannelId == channelId) {
+          _applyChannelData(cacheData, channelId);
+        }
+
+        Logger.debug('Background updated channel: $channelId');
       }
     } catch (e) {
-      print('❌ Failed to load public content: $e');
-      _loadFallbackContent(channelId);
+      Logger.debug('Background update failed for $channelId: $e');
     }
-  }
-
-  /// 加载备用内容
-  void _loadFallbackContent(String channelId) {
-    modules.value = [];
-    
-    // 显示登录提示（仅精选频道）
-    if (channelId == 'featured') {
-      final loginPromptModule = _createLoginPromptModule();
-      modules.add(loginPromptModule);
-    }
-    
-    marqueeText.value = '欢迎使用拾光影视';
-    marqueeLink.value = '';
-  }
-
-  /// 创建登录提示模块
-  Map<String, dynamic> _createLoginPromptModule() {
-    return {
-      'id': 'login_prompt',
-      'module_type': 'login_prompt',
-      'title': '登录获取更多内容',
-      'sort_order': -2,
-      'data': {
-        'message': '登录后可查看个性化推荐、观看历史等更多内容',
-        'login_text': '立即登录',
-        'register_text': '注册账号',
-      },
-    };
   }
 
   /// 加载继续观看数据
@@ -297,7 +321,7 @@ class HomeController extends GetxController {
       final response = await _httpClient.get('/api/user/history');
 
       if (response.statusCode == 200 && response.data != null) {
-        final historyList = (response.data['list'] as List?)
+        final historyList = (response.data['data'] as List?)
                 ?.map((e) => e as Map<String, dynamic>)
                 .toList() ??
             [];
@@ -318,7 +342,7 @@ class HomeController extends GetxController {
         };
       }
     } catch (e) {
-      print('⚠️ Failed to load continue watching: $e');
+      Logger.warning('Failed to load continue watching: $e');
     }
 
     return null;
@@ -326,14 +350,15 @@ class HomeController extends GetxController {
 
   /// 刷新当前频道
   Future<void> refreshCurrentChannel() async {
-    // 清除缓存
-    _channelCache.remove(currentChannelId);
-    await loadChannelData(currentChannelId);
+    // 🚀 强制刷新，忽略缓存
+    await loadChannelData(currentChannelId, forceRefresh: true);
   }
 
   /// 清除所有缓存
   void clearCache() {
-    _channelCache.clear();
+    // 🚀 使用缓存服务清除首页相关缓存
+    _cache.clearByType(CacheType.homeLayout);
+    _cache.clearByType(CacheType.homeTabs);
   }
 
   /// 检查并显示公告
@@ -343,11 +368,11 @@ class HomeController extends GetxController {
       await Future.delayed(const Duration(milliseconds: 500));
       
       final context = Get.context;
-      if (context != null) {
+      if (context != null && context.mounted) {
         await AnnouncementService.to.checkAndShowAnnouncement(context);
       }
     } catch (e) {
-      print('⚠️ Check announcement error: $e');
+      Logger.warning('Check announcement error: $e');
     }
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'search_controller.dart' as search;
 import '../../widgets/net_image.dart';
+import '../../core/global_config.dart';
 
 
 /// 搜索页面
@@ -206,7 +207,7 @@ class SearchPage extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: isTop3
-                            ? const Color(0xFFFFC107).withOpacity(0.2)
+                            ? const Color(0xFFFFC107).withValues(alpha: 0.2)
                             : const Color(0xFF1E1E1E),
                         borderRadius: BorderRadius.circular(16),
                         border: isTop3
@@ -325,7 +326,7 @@ class SearchPage extends StatelessWidget {
             Text(
               '试试其他关键词吧',
               style: TextStyle(
-                color: Colors.white54.withOpacity(0.7),
+                color: Colors.white54.withValues(alpha: 0.7),
                 fontSize: 14,
               ),
             ),
@@ -334,20 +335,27 @@ class SearchPage extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: controller.searchResults.length + 1, // +1 for ad
-      itemBuilder: (context, index) {
-        // 在首位插入伪装广告
-        if (index == 0) {
-          return _buildFakeAdItem();
-        }
+    return Obx(() {
+      // 响应式监听广告开关
+      final adsEnabled = GlobalConfig.instance.adsEnabled.value;
+      
+      return ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: adsEnabled 
+            ? controller.searchResults.length + 1 // +1 for ad
+            : controller.searchResults.length,
+        itemBuilder: (context, index) {
+          // 在首位插入伪装广告（仅当广告启用时）
+          if (adsEnabled && index == 0) {
+            return _buildFakeAdItem();
+          }
 
-        final actualIndex = index - 1;
-        final video = controller.searchResults[actualIndex];
-        return _buildSearchResultItem(video);
-      },
-    );
+          final actualIndex = adsEnabled ? index - 1 : index;
+          final video = controller.searchResults[actualIndex];
+          return _buildSearchResultItem(video);
+        },
+      );
+    });
   }
 
   /// 构建伪装广告项
@@ -359,7 +367,7 @@ class SearchPage extends StatelessWidget {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: const Color(0xFFFFC107).withOpacity(0.3),
+          color: const Color(0xFFFFC107).withValues(alpha: 0.3),
           width: 1,
         ),
       ),

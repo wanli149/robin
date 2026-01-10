@@ -289,7 +289,7 @@ class _ActorPageState extends State<ActorPage> {
         crossAxisCount: 3,
         mainAxisSpacing: 12,
         crossAxisSpacing: 12,
-        childAspectRatio: 0.65,
+        childAspectRatio: 0.58, // 与首页模块保持一致
       ),
       itemCount: _works.length,
       itemBuilder: (context, index) {
@@ -350,15 +350,19 @@ class _ActorPageState extends State<ActorPage> {
               ],
             ),
           ),
-          const SizedBox(height: 4),
-          // 标题
-          Text(
-            vodName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.white,
+          const SizedBox(height: 8),
+          // 标题 - 固定高度，与首页模块保持一致
+          SizedBox(
+            height: 36,
+            child: Text(
+              vodName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+                height: 1.3,
+              ),
             ),
           ),
           // 年份和评分

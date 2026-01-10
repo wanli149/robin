@@ -46,7 +46,7 @@ class ProfilePage extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              const Color(0xFFFFC107).withOpacity(0.2),
+              const Color(0xFFFFC107).withValues(alpha: 0.2),
               const Color(0xFF121212),
             ],
           ),
@@ -233,11 +233,6 @@ class ProfilePage extends StatelessWidget {
               onTap: controller.shareApp,
             ),
             _MenuItem(
-              icon: Icons.swap_horiz,
-              title: '换源设置',
-              onTap: controller.goToSourceSettings,
-            ),
-            _MenuItem(
               icon: Icons.feedback_outlined,
               title: '求片/反馈',
               onTap: controller.goToFeedback,
@@ -330,7 +325,7 @@ class ProfilePage extends StatelessWidget {
                   );
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.withOpacity(0.2),
+                  backgroundColor: Colors.red.withValues(alpha: 0.2),
                   foregroundColor: Colors.red,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -404,17 +399,6 @@ class ProfilePage extends StatelessWidget {
                       color: Colors.white,
                     ),
                   ),
-                  subtitle: item.subtitle != null
-                      ? (item.subtitle is Widget
-                          ? item.subtitle as Widget
-                          : Text(
-                              item.subtitle!,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.white54,
-                              ),
-                            ))
-                      : null,
                   trailing: const Icon(
                     Icons.chevron_right,
                     color: Colors.white38,
@@ -434,13 +418,11 @@ class ProfilePage extends StatelessWidget {
 class _MenuItem {
   final IconData icon;
   final String title;
-  final String? subtitle;
   final VoidCallback onTap;
 
   _MenuItem({
     required this.icon,
     required this.title,
-    this.subtitle,
     required this.onTap,
   });
 }

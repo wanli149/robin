@@ -1,13 +1,13 @@
 /**
- * 响应签名工具
- * 用于对敏感 API 响应进行签名，防止中间人篡改
+ * Response Signing Utility
+ * Signs sensitive API responses to prevent man-in-the-middle tampering
  */
 
 /**
- * 生成响应签名
- * @param data 响应数据
- * @param secretKey 签名密钥
- * @param timestamp 时间戳
+ * Generate response signature
+ * @param data Response data
+ * @param secretKey Signing key
+ * @param timestamp Timestamp
  */
 export async function signResponse(
   data: unknown,
@@ -28,7 +28,7 @@ export async function signResponse(
 }
 
 /**
- * 创建带签名的响应
+ * Create signed response
  */
 export async function createSignedResponse(
   data: unknown,
@@ -49,22 +49,22 @@ export async function createSignedResponse(
 }
 
 /**
- * 验证响应签名
+ * Verify response signature
  */
 export async function verifyResponseSignature(
   data: unknown,
   timestamp: number,
   signature: string,
   secretKey: string,
-  maxAge: number = 300 // 默认 5 分钟有效期
+  maxAge: number = 300 // Default 5 minutes validity
 ): Promise<boolean> {
-  // 检查时间戳是否过期
+  // Check if timestamp is expired
   const now = Math.floor(Date.now() / 1000);
   if (Math.abs(now - timestamp) > maxAge) {
     return false;
   }
   
-  // 验证签名
+  // Verify signature
   const expectedSignature = await signResponse(data, secretKey, timestamp);
   return signature === expectedSignature;
 }

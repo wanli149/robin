@@ -176,7 +176,7 @@ class TopicList extends StatelessWidget {
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.transparent,
-                              Colors.black.withOpacity(0.8),
+                              Colors.black.withValues(alpha: 0.8),
                             ],
                           ),
                         ),
@@ -270,7 +270,7 @@ class TopicList extends StatelessWidget {
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                     colors: [
-                      Colors.black.withOpacity(0.7),
+                      Colors.black.withValues(alpha: 0.7),
                       Colors.transparent,
                     ],
                   ),
@@ -329,7 +329,7 @@ class TopicList extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             _buildImage(cover),
-            Container(color: Colors.black.withOpacity(0.4)),
+            Container(color: Colors.black.withValues(alpha: 0.4)),
             Center(
               child: Text(
                 name,
@@ -357,7 +357,7 @@ class TopicList extends StatelessWidget {
     return Image.network(
       imageUrl,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, _, _) => Container(
         color: const Color(0xFF2E2E2E),
         child: const Icon(Icons.broken_image, size: 40, color: Colors.white24),
       ),

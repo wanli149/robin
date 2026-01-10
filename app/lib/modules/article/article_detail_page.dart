@@ -214,7 +214,7 @@ class _ArticleDetailPageState extends State<ArticleDetailPage> {
           _article!['cover'],
           width: double.infinity,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
         ),
       ),
     );

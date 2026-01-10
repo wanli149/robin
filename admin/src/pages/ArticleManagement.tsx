@@ -15,7 +15,6 @@ import {
   Input,
   InputNumber,
   Select,
-  message,
   Statistic,
   Row,
   Col,
@@ -24,6 +23,7 @@ import {
   Typography,
   Alert,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   SearchOutlined,
   PlusOutlined,
@@ -63,6 +63,7 @@ const ArticleManagement: React.FC = () => {
   const [collecting, setCollecting] = useState(false);
   
   const [collectForm] = Form.useForm();
+  const { success, error, loading: showLoading } = useNotification();
 
   // 加载文章列表
   const loadArticles = useCallback(async () => {
@@ -76,20 +77,20 @@ const ArticleManagement: React.FC = () => {
       });
       setArticles(result.list);
       setTotal(result.total);
-    } catch (error) {
-      message.error('加载文章失败');
+    } catch (err) {
+      error('加载文章失败');
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, keyword, typeId]);
+  }, [page, pageSize, keyword, typeId, error]);
 
   // 加载分类
   const loadCategories = useCallback(async () => {
     try {
       const list = await getArticleCategories();
       setCategories(list);
-    } catch (error) {
-      console.error('Failed to load categories:', error);
+    } catch (err) {
+      console.error('Failed to load categories:', err);
     }
   }, []);
 
@@ -99,8 +100,8 @@ const ArticleManagement: React.FC = () => {
       const detail = await getArticleDetail(article.id);
       setCurrentArticle(detail);
       setDetailModalVisible(true);
-    } catch (error) {
-      message.error('加载文章详情失败');
+    } catch (err) {
+      error('加载文章详情失败');
     }
   };
 
@@ -108,28 +109,28 @@ const ArticleManagement: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await deleteArticle(id);
-      message.success('删除成功');
+      success('删除成功');
       loadArticles();
-    } catch (error) {
-      message.error('删除失败');
+    } catch (err) {
+      error('删除失败');
     }
   };
 
   // 执行数据库迁移
   const handleMigrate = async () => {
+    const hide = showLoading('正在初始化...');
     try {
-      message.loading('正在初始化...', 0);
       const result = await migrateArticlesActors();
-      message.destroy();
+      hide();
       if (result.success) {
-        message.success('初始化成功');
+        success('初始化成功');
         loadCategories();
       } else {
-        message.error(result.message || '初始化失败');
+        error(result.message || '初始化失败');
       }
-    } catch (error) {
-      message.destroy();
-      message.error('初始化失败');
+    } catch (err) {
+      hide();
+      error('初始化失败');
     }
   };
 
@@ -147,11 +148,11 @@ const ArticleManagement: React.FC = () => {
         typeId: values.typeId,
       });
       
-      message.success(`采集完成！新增: ${result.newCount}, 更新: ${result.updateCount}`);
+      success(`采集完成！新增: ${result.newCount}, 更新: ${result.updateCount}`);
       setCollectModalVisible(false);
       loadArticles();
-    } catch (error) {
-      message.error('采集失败');
+    } catch (err) {
+      error('采集失败');
     } finally {
       setCollecting(false);
     }

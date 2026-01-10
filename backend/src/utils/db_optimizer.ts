@@ -1,19 +1,25 @@
 /**
- * 数据库查询优化工具
- * 减少查询次数，提升性能
+ * Database Query Optimization Utilities
+ * Reduces query count and improves performance
  */
 
-import type { SystemConfigRow, PageModuleRow } from '../types/database';
+import type { SystemConfigRow } from '../types/database';
 import { logger } from './logger';
+import { CACHE_CONFIG } from '../config';
 
 type Bindings = {
   DB: D1Database;
   ROBIN_CACHE: KVNamespace;
 };
 
+// Helper function to safely cast D1 query results
+function castResults<T>(results: Record<string, unknown>[]): T[] {
+  return results as unknown as T[];
+}
+
 /**
- * 批量获取系统配置
- * 一次查询获取多个配置项，避免 N+1 问题
+ * Batch get system configurations
+ * Single query for multiple config items, avoiding N+1 problem
  */
 export async function getSystemConfigs(
   env: Bindings,
@@ -28,14 +34,14 @@ export async function getSystemConfigs(
   `).bind(...keys).all();
   
   const configs: Record<string, string> = {};
-  for (const row of result.results as SystemConfigRow[]) {
+  for (const row of castResults<SystemConfigRow>(result.results)) {
     configs[row.key] = row.value || '';
   }
   
   return configs;
 }
 
-/** 模块输入类型 */
+/** Module input type */
 interface ModuleInput {
   module_type: string;
   title?: string | null;
@@ -46,16 +52,16 @@ interface ModuleInput {
 }
 
 /**
- * 批量插入模块配置
- * 使用事务和批量插入，提升性能
+ * Batch insert module configurations
+ * Uses batch operations for better performance
  */
 export async function batchInsertModules(
   env: Bindings,
   tabId: string,
   modules: ModuleInput[]
 ): Promise<void> {
-  // D1 目前不支持真正的事务，但支持批量操作
-  // 使用 batch API 一次性执行多个语句
+  // D1 doesn't support true transactions, but supports batch operations
+  // Use batch API to execute multiple statements at once
   
   const statements = modules.map(module => 
     env.DB.prepare(`
@@ -72,13 +78,13 @@ export async function batchInsertModules(
     )
   );
   
-  // 批量执行
+  // Batch execute
   await env.DB.batch(statements);
 }
 
 /**
- * 获取跑马灯配置（优化版）
- * 一次查询获取所有相关配置
+ * Get marquee configuration (optimized)
+ * Single query for all related configs
  */
 export async function getMarqueeConfig(
   env: Bindings
@@ -97,9 +103,9 @@ export async function getMarqueeConfig(
 }
 
 /**
- * 缓存包装器
- * 自动处理 KV 缓存的读写
- * 🚀 优化：增加错误处理和空值保护
+ * Cache wrapper
+ * Automatically handles KV cache read/write
+ * Optimized: Added error handling and null protection
  */
 export async function withCache<T>(
   env: Bindings,
@@ -107,21 +113,21 @@ export async function withCache<T>(
   ttl: number,
   fetcher: () => Promise<T>
 ): Promise<T> {
-  // 尝试从缓存读取
+  // Try to read from cache
   try {
     const cached = await env.ROBIN_CACHE.get(cacheKey, 'json');
     if (cached !== null) {
       return cached as T;
     }
   } catch (e) {
-    // KV 读取失败，继续执行查询
+    // KV read failed, continue with query
     logger.admin.warn(`Cache read failed for ${cacheKey}`, { error: e instanceof Error ? e.message : 'Unknown' });
   }
   
-  // 缓存未命中，执行查询
+  // Cache miss, execute query
   const data = await fetcher();
   
-  // 写入缓存（异步，不阻塞响应）
+  // Write to cache (async, non-blocking)
   try {
     await env.ROBIN_CACHE.put(
       cacheKey,
@@ -129,7 +135,7 @@ export async function withCache<T>(
       { expirationTtl: ttl }
     );
   } catch (e) {
-    // KV 写入失败，不影响返回
+    // KV write failed, doesn't affect return
     logger.admin.warn(`Cache write failed for ${cacheKey}`, { error: e instanceof Error ? e.message : 'Unknown' });
   }
   
@@ -137,8 +143,8 @@ export async function withCache<T>(
 }
 
 /**
- * 带缓存的系统配置获取
- * 🚀 新增：常用配置的便捷方法
+ * Get cached system config
+ * Convenience method for commonly used configs
  */
 export async function getCachedConfig(
   env: Bindings,
@@ -153,7 +159,7 @@ export async function getCachedConfig(
       return cached;
     }
   } catch (e) {
-    // 忽略缓存错误
+    // Ignore cache errors
   }
   
   const result = await env.DB.prepare(
@@ -162,19 +168,19 @@ export async function getCachedConfig(
   
   const value = (result?.value as string) || defaultValue;
   
-  // 缓存 30 分钟
+  // Cache for 30 minutes
   try {
-    await env.ROBIN_CACHE.put(cacheKey, value, { expirationTtl: 1800 });
+    await env.ROBIN_CACHE.put(cacheKey, value, { expirationTtl: CACHE_CONFIG.configTTL });
   } catch (e) {
-    // 忽略缓存错误
+    // Ignore cache errors
   }
   
   return value;
 }
 
 /**
- * 预编译的常用查询
- * 减少 SQL 解析开销
+ * Pre-compiled common queries
+ * Reduces SQL parsing overhead
  */
 export class PreparedQueries {
   private env: Bindings;
@@ -184,7 +190,7 @@ export class PreparedQueries {
   }
   
   /**
-   * 获取用户信息
+   * Get user info
    */
   async getUserById(userId: number) {
     return this.env.DB.prepare(`
@@ -195,7 +201,7 @@ export class PreparedQueries {
   }
   
   /**
-   * 获取用户历史记录
+   * Get user watch history
    */
   async getUserHistory(userId: number, limit: number = 20, offset: number = 0) {
     return this.env.DB.prepare(`
@@ -208,7 +214,7 @@ export class PreparedQueries {
   }
   
   /**
-   * 获取启用的模块
+   * Get enabled modules
    */
   async getEnabledModules(tabId: string) {
     return this.env.DB.prepare(`
@@ -221,8 +227,8 @@ export class PreparedQueries {
 }
 
 /**
- * 查询性能监控
- * 记录慢查询，帮助优化
+ * Query performance monitoring
+ * Records slow queries for optimization
  */
 export async function monitorQuery<T>(
   queryName: string,
@@ -234,7 +240,7 @@ export async function monitorQuery<T>(
     const result = await query();
     const duration = Date.now() - start;
     
-    // 慢查询警告（超过 100ms）
+    // Slow query warning (over 100ms)
     if (duration > 100) {
       logger.admin.warn(`Slow query: ${queryName} took ${duration}ms`);
     }
@@ -248,15 +254,15 @@ export async function monitorQuery<T>(
 }
 
 /**
- * 数据库连接池（模拟）
- * D1 自动管理连接，这里主要是限流
+ * Database connection pool (simulated)
+ * D1 manages connections automatically, this is mainly for throttling
  */
 export class QueryThrottler {
   private running = 0;
-  private maxConcurrent = 10; // 最大并发查询数
+  private maxConcurrent = 10; // Max concurrent queries
   
   async execute<T>(query: () => Promise<T>): Promise<T> {
-    // 如果达到并发限制，等待
+    // Wait if concurrent limit reached
     while (this.running >= this.maxConcurrent) {
       await new Promise(resolve => setTimeout(resolve, 10));
     }

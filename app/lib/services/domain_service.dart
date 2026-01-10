@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import '../config/api_config.dart';
+import '../core/logger.dart';
 
 /// 域名服务
 /// 管理 API 域名的获取、缓存、切换
@@ -50,10 +51,10 @@ class DomainService {
       if (cached != null) {
         final List<dynamic> list = jsonDecode(cached);
         _domains = list.map((e) => DomainInfo.fromJson(e)).toList();
-        print('📦 [Domain] Loaded ${_domains.length} domains from cache');
+        Logger.info('[Domain] Loaded ${_domains.length} domains from cache');
       }
     } catch (e) {
-      print('❌ [Domain] Failed to load cache: $e');
+      Logger.error('[Domain] Failed to load cache: $e');
     }
   }
   
@@ -66,13 +67,13 @@ class DomainService {
       
       // 检查是否需要更新（超过缓存有效期）
       if (now - lastUpdate < _cacheHours * 3600 * 1000 && _domains.isNotEmpty) {
-        print('📦 [Domain] Cache still valid, skip refresh');
+        Logger.info('[Domain] Cache still valid, skip refresh');
         return;
       }
       
       await refreshDomains();
     } catch (e) {
-      print('❌ [Domain] Background refresh failed: $e');
+      Logger.error('[Domain] Background refresh failed: $e');
     }
   }
   
@@ -103,15 +104,15 @@ class DomainService {
           await prefs.setString(_cacheKey, jsonEncode(list));
           await prefs.setInt(_lastUpdateKey, DateTime.now().millisecondsSinceEpoch);
           
-          print('✅ [Domain] Refreshed ${_domains.length} domains from $source');
+          Logger.success('[Domain] Refreshed ${_domains.length} domains from $source');
           return;
         }
       } catch (e) {
-        print('⚠️ [Domain] Failed to fetch from $source: $e');
+        Logger.warning('[Domain] Failed to fetch from $source: $e');
       }
     }
     
-    print('❌ [Domain] Failed to refresh domains from all sources');
+    Logger.error('[Domain] Failed to refresh domains from all sources');
   }
   
   /// 获取可用域名列表
@@ -132,7 +133,7 @@ class DomainService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_currentDomainKey, domain);
     
-    print('🔄 [Domain] Switched to: $domain');
+    Logger.info('[Domain] Switched to: $domain');
   }
   
   /// 自动切换到可用域名

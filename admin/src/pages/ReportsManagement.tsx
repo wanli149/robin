@@ -12,9 +12,9 @@ import {
   Tag,
   Button,
   Space,
-  message,
   Modal,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   BugOutlined,
   PlayCircleOutlined,
@@ -53,6 +53,7 @@ const ReportsManagement: React.FC = () => {
   const [crashTotal, setCrashTotal] = useState(0);
   const [invalidTotal, setInvalidTotal] = useState(0);
   const [showFixed, setShowFixed] = useState(false);
+  const { success, error } = useNotification();
 
   // 加载崩溃日志
   const loadCrashReports = async () => {
@@ -62,8 +63,8 @@ const ReportsManagement: React.FC = () => {
       const data = await getCrashReports(50, 0);
       setCrashReports(data.list);
       setCrashTotal(data.total);
-    } catch (error: any) {
-      message.error(error.message || '加载崩溃日志失败');
+    } catch (err: any) {
+      error(err.message || '加载崩溃日志失败');
     } finally {
       setcrashLoading(false);
     }
@@ -77,8 +78,8 @@ const ReportsManagement: React.FC = () => {
       const data = await getInvalidUrls(50, 0, showFixed ? undefined : false);
       setInvalidUrls(data.list);
       setInvalidTotal(data.total);
-    } catch (error: any) {
-      message.error(error.message || '加载失效上报失败');
+    } catch (err: any) {
+      error(err.message || '加载失效上报失败');
     } finally {
       setInvalidLoading(false);
     }
@@ -89,10 +90,10 @@ const ReportsManagement: React.FC = () => {
     try {
       const { markInvalidUrlFixed } = await import('../services/adminApi');
       await markInvalidUrlFixed(id);
-      message.success('已标记为修复');
+      success('已标记为修复');
       loadInvalidUrls();
-    } catch (error: any) {
-      message.error(error.message || '标记失败');
+    } catch (err: any) {
+      error(err.message || '标记失败');
     }
   };
 

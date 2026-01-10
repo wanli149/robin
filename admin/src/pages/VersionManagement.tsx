@@ -11,7 +11,6 @@ import {
   Input,
   Button,
   Checkbox,
-  message,
   Space,
   Alert,
   Table,
@@ -22,6 +21,7 @@ import {
   Row,
   Col,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   RocketOutlined,
   DeleteOutlined,
@@ -41,6 +41,7 @@ const VersionManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [versions, setVersions] = useState<AppVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
+  const { success, error } = useNotification();
 
   // 加载历史版本
   const loadVersions = async () => {
@@ -48,7 +49,7 @@ const VersionManagement: React.FC = () => {
     try {
       const list = await getVersions();
       setVersions(list);
-    } catch (error: any) {
+    } catch (err: any) {
       // 表可能不存在，静默处理
       console.log('No version history yet');
     } finally {
@@ -67,11 +68,11 @@ const VersionManagement: React.FC = () => {
         changelog: values.changelog,
         platform: values.platform || 'android',
       });
-      message.success('版本发布成功');
+      success('版本发布成功');
       form.resetFields();
       loadVersions();
-    } catch (error: any) {
-      message.error(error.message || '发布失败');
+    } catch (err: any) {
+      error(err.message || '发布失败');
     } finally {
       setLoading(false);
     }
@@ -81,10 +82,10 @@ const VersionManagement: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await deleteVersion(id);
-      message.success('删除成功');
+      success('删除成功');
       loadVersions();
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 

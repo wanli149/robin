@@ -243,7 +243,7 @@ class VerticalList extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: isHighlight 
-            ? const Color(0xFFFFC107).withOpacity(0.2)
+            ? const Color(0xFFFFC107).withValues(alpha: 0.2)
             : const Color(0xFF2E2E2E),
         borderRadius: BorderRadius.circular(4),
       ),

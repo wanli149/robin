@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'http_client.dart';
+import 'logger.dart';
 
 /// 播放进度同步策略枚举
 /// 
@@ -280,7 +281,7 @@ class ProgressSyncService extends GetxController {
     await _loadDeviceId();
     await _loadStorageConfig();
     _startSyncTimer();
-    print('📦 [ProgressSync] Service initialized');
+    Logger.info('[ProgressSync] Service initialized');
   }
 
   /// 加载设备ID
@@ -294,7 +295,7 @@ class ProgressSyncService extends GetxController {
       await prefs.setString('device_id', _deviceId!);
     }
     
-    print('📦 [ProgressSync] Device ID: $_deviceId');
+    Logger.info('[ProgressSync] Device ID: $_deviceId');
   }
 
   /// 从服务端加载存储配置
@@ -306,7 +307,7 @@ class ProgressSyncService extends GetxController {
         final data = response.data;
         if (data['code'] == 1 && data['data'] != null) {
           config.value = StorageConfig.fromJson(data['data']);
-          print('📦 [ProgressSync] Config loaded: ${config.value.syncStrategy}');
+          Logger.info('[ProgressSync] Config loaded: ${config.value.syncStrategy}');
           
           // 如果启用了云端同步，拉取云端进度
           if (config.value.isEnabled && 
@@ -317,7 +318,7 @@ class ProgressSyncService extends GetxController {
         }
       }
     } catch (e) {
-      print('❌ [ProgressSync] Failed to load config: $e');
+      Logger.error('[ProgressSync] Failed to load config: $e');
     }
     
     // 使用默认配置
@@ -340,7 +341,7 @@ class ProgressSyncService extends GetxController {
         Duration(seconds: config.value.syncInterval),
         (_) => _flushPendingSync(),
       );
-      print('📦 [ProgressSync] Sync timer started: ${config.value.syncInterval}s');
+      Logger.info('[ProgressSync] Sync timer started: ${config.value.syncInterval}s');
     }
   }
 
@@ -412,9 +413,9 @@ class ProgressSyncService extends GetxController {
       final prefs = await SharedPreferences.getInstance();
       final key = 'progress_${contentType}_${contentId}_$episodeIndex';
       await prefs.setInt(key, positionSeconds);
-      print('💾 [ProgressSync] Local saved: $key = ${positionSeconds}s');
+      Logger.info('[ProgressSync] Local saved: $key = ${positionSeconds}s');
     } catch (e) {
-      print('❌ [ProgressSync] Failed to save local: $e');
+      Logger.error('[ProgressSync] Failed to save local: $e');
     }
   }
 
@@ -426,11 +427,11 @@ class ProgressSyncService extends GetxController {
       final savedSeconds = prefs.getInt(key) ?? 0;
       
       if (savedSeconds > 0) {
-        print('📖 [ProgressSync] Local loaded: $key = ${savedSeconds}s');
+        Logger.info('[ProgressSync] Local loaded: $key = ${savedSeconds}s');
         return Duration(seconds: savedSeconds);
       }
     } catch (e) {
-      print('❌ [ProgressSync] Failed to load local: $e');
+      Logger.error('[ProgressSync] Failed to load local: $e');
     }
     
     return Duration.zero;
@@ -455,13 +456,13 @@ class ProgressSyncService extends GetxController {
         if (data['code'] == 1 && data['data'] != null) {
           final positionSeconds = data['data']['position_seconds'] as int? ?? 0;
           if (positionSeconds > 0) {
-            print('☁️ [ProgressSync] Cloud loaded: $contentId = ${positionSeconds}s');
+            Logger.info('[ProgressSync] Cloud loaded: $contentId = ${positionSeconds}s');
             return Duration(seconds: positionSeconds);
           }
         }
       }
     } catch (e) {
-      print('❌ [ProgressSync] Failed to load from cloud: $e');
+      Logger.error('[ProgressSync] Failed to load from cloud: $e');
     }
     
     return null;
@@ -498,11 +499,11 @@ class ProgressSyncService extends GetxController {
           }
           
           _lastSyncTime = serverTime;
-          print('☁️ [ProgressSync] Pulled ${progressList.length} records from cloud');
+          Logger.info('[ProgressSync] Pulled ${progressList.length} records from cloud');
         }
       }
     } catch (e) {
-      print('❌ [ProgressSync] Failed to pull cloud progress: $e');
+      Logger.error('[ProgressSync] Failed to pull cloud progress: $e');
     }
   }
 
@@ -527,18 +528,18 @@ class ProgressSyncService extends GetxController {
         final data = response.data;
         if (data['code'] == 1) {
           final syncedCount = data['data']?['synced_count'] ?? 0;
-          print('☁️ [ProgressSync] Synced $syncedCount records to cloud');
+          Logger.info('[ProgressSync] Synced $syncedCount records to cloud');
           return;
         }
       }
       
       // 同步失败，放回队列
       _pendingSyncQueue.addAll(toSync);
-      print('❌ [ProgressSync] Sync failed, re-queued ${toSync.length} records');
+      Logger.error('[ProgressSync] Sync failed, re-queued ${toSync.length} records');
     } catch (e) {
       // 同步失败，放回队列
       _pendingSyncQueue.addAll(toSync);
-      print('❌ [ProgressSync] Sync error: $e');
+      Logger.error('[ProgressSync] Sync error: $e');
     }
   }
 
@@ -548,9 +549,9 @@ class ProgressSyncService extends GetxController {
       final prefs = await SharedPreferences.getInstance();
       final key = 'progress_${contentType}_${contentId}_$episodeIndex';
       await prefs.remove(key);
-      print('🗑️ [ProgressSync] Cleared local: $key');
+      Logger.info('[ProgressSync] Cleared local: $key');
     } catch (e) {
-      print('❌ [ProgressSync] Failed to clear local: $e');
+      Logger.error('[ProgressSync] Failed to clear local: $e');
     }
   }
 }

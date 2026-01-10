@@ -72,4 +72,26 @@ class SettingsStore extends GetxService {
     recordSearchHistory.value = value;
     await _prefs.setBool('record_search_history', value);
   }
+  
+  // ==================== 通用方法 ====================
+  
+  /// 获取布尔值设置
+  bool getBool(String key, {bool defaultValue = false}) {
+    return _prefs.getBool(key) ?? defaultValue;
+  }
+  
+  /// 设置布尔值
+  Future<void> setBool(String key, bool value) async {
+    await _prefs.setBool(key, value);
+  }
+  
+  /// 获取字符串设置
+  String getString(String key, {String defaultValue = ''}) {
+    return _prefs.getString(key) ?? defaultValue;
+  }
+  
+  /// 设置字符串
+  Future<void> setString(String key, String value) async {
+    await _prefs.setString(key, value);
+  }
 }

@@ -24,6 +24,7 @@ import {
   DatabaseOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import { getCollectMetrics } from '../services/adminApi';
 
 interface CollectorMetrics {
   totalVideos: number;
@@ -60,17 +61,10 @@ const PerformanceMonitor: React.FC = () => {
   const loadMetrics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/admin/collect/metrics', {
-        headers: {
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setMetrics(data.data.metrics);
-        setHealth(data.data.health);
-        setReport(data.data.report);
-      }
+      const data = await getCollectMetrics();
+      setMetrics(data.metrics);
+      setHealth(data.health);
+      setReport(data.report);
     } catch (error) {
       console.error('Failed to load metrics:', error);
     } finally {

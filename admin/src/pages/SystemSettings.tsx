@@ -10,7 +10,6 @@ import {
   Form,
   Input,
   Button,
-  message,
   Space,
   Tag,
   Switch,
@@ -18,6 +17,7 @@ import {
   Col,
   Alert,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   PlusOutlined,
   SaveOutlined,
@@ -46,6 +46,7 @@ import {
   getShareConfig,
   updateShareConfig,
   clearVideos,
+  type HotKeyword,
 } from '../services/adminApi';
 
 const { Title, Text } = Typography;
@@ -55,9 +56,10 @@ const SystemSettings: React.FC = () => {
   const [marqueeForm] = Form.useForm();
   const [appForm] = Form.useForm();
   const [shareForm] = Form.useForm();
+  const { success, error } = useNotification();
   
   const [loading, setLoading] = useState(false);
-  const [hotKeywords, setHotKeywords] = useState<string[]>([]);
+  const [hotKeywords, setHotKeywords] = useState<HotKeyword[]>([]);
   const [newKeyword, setNewKeyword] = useState('');
   const [permanentUrls, setPermanentUrls] = useState<string[]>([]);
   const [newUrl, setNewUrl] = useState('');
@@ -81,38 +83,38 @@ const SystemSettings: React.FC = () => {
     try {
       const keywords = await getHotSearch();
       setHotKeywords(keywords);
-    } catch (error: any) {
-      message.error(error.message || '加载热搜关键词失败');
+    } catch (err: any) {
+      error(err.message || '加载热搜关键词失败');
     }
   };
 
   // 添加热搜关键词
   const handleAddKeyword = () => {
     if (!newKeyword.trim()) {
-      message.warning('请输入关键词');
+      error('请输入关键词');
       return;
     }
-    if (hotKeywords.includes(newKeyword.trim())) {
-      message.warning('关键词已存在');
+    if (hotKeywords.some(k => k.keyword === newKeyword.trim())) {
+      error('关键词已存在');
       return;
     }
-    setHotKeywords([...hotKeywords, newKeyword.trim()]);
+    setHotKeywords([...hotKeywords, { keyword: newKeyword.trim(), search_count: 0, is_pinned: 1, is_hidden: 0 }]);
     setNewKeyword('');
   };
 
   // 删除热搜关键词
   const handleRemoveKeyword = (keyword: string) => {
-    setHotKeywords(hotKeywords.filter((k) => k !== keyword));
+    setHotKeywords(hotKeywords.filter((k) => k.keyword !== keyword));
   };
 
   // 保存热搜关键词
   const handleSaveHotSearch = async () => {
     setLoading(true);
     try {
-      await updateHotSearch(hotKeywords);
-      message.success('热搜关键词保存成功');
-    } catch (error: any) {
-      message.error(error.message || '保存失败');
+      await updateHotSearch(hotKeywords.map(k => k.keyword));
+      success('热搜关键词保存成功');
+    } catch (err: any) {
+      error(err.message || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -124,10 +126,10 @@ const SystemSettings: React.FC = () => {
       const values = await contactForm.validateFields();
       setLoading(true);
       await updateContactConfig(values.customer_service, values.official_group);
-      message.success('联系方式配置保存成功');
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message || '保存失败');
+      success('联系方式配置保存成功');
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -139,10 +141,10 @@ const SystemSettings: React.FC = () => {
       const values = await marqueeForm.validateFields();
       setLoading(true);
       await updateMarqueeConfig(values.marquee_text, values.marquee_link);
-      message.success('滚动通告配置保存成功');
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message || '保存失败');
+      success('滚动通告配置保存成功');
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -170,9 +172,9 @@ const SystemSettings: React.FC = () => {
           await toggleConfigSwitch(key, enabled);
       }
       setSwitches(prev => ({ ...prev, [key]: enabled }));
-      message.success(`${enabled ? '已开启' : '已关闭'}`);
-    } catch (error: any) {
-      message.error(error.message || '操作失败');
+      success(`${enabled ? '已开启' : '已关闭'}`);
+    } catch (err: any) {
+      error(err.message || '操作失败');
     } finally {
       setLoading(false);
     }
@@ -184,25 +186,25 @@ const SystemSettings: React.FC = () => {
       const { getPermanentUrls } = await import('../services/adminApi');
       const urls = await getPermanentUrls();
       setPermanentUrls(urls);
-    } catch (error: any) {
-      message.error(error.message || '加载永久网址失败');
+    } catch (err: any) {
+      error(err.message || '加载永久网址失败');
     }
   };
 
   // 添加永久网址
   const handleAddUrl = () => {
     if (!newUrl.trim()) {
-      message.warning('请输入网址');
+      error('请输入网址');
       return;
     }
     try {
       new URL(newUrl.trim());
     } catch {
-      message.error('请输入有效的URL（如：https://example.com）');
+      error('请输入有效的URL（如：https://example.com）');
       return;
     }
     if (permanentUrls.includes(newUrl.trim())) {
-      message.warning('网址已存在');
+      error('网址已存在');
       return;
     }
     setPermanentUrls([...permanentUrls, newUrl.trim()]);
@@ -220,9 +222,9 @@ const SystemSettings: React.FC = () => {
     try {
       const { updatePermanentUrls } = await import('../services/adminApi');
       await updatePermanentUrls(permanentUrls);
-      message.success('永久网址保存成功');
-    } catch (error: any) {
-      message.error(error.message || '保存失败');
+      success('永久网址保存成功');
+    } catch (err: any) {
+      error(err.message || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -238,10 +240,10 @@ const SystemSettings: React.FC = () => {
         app_logo: values.app_logo,
         app_slogan: values.app_slogan,
       });
-      message.success('APP配置保存成功');
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message || '保存失败');
+      success('APP配置保存成功');
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -267,10 +269,10 @@ const SystemSettings: React.FC = () => {
       const values = await shareForm.validateFields();
       setLoading(true);
       await updateShareConfig(values);
-      message.success('分享配置保存成功');
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message || '保存失败');
+      success('分享配置保存成功');
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -320,8 +322,8 @@ const SystemSettings: React.FC = () => {
           app_slogan: allConfig.app_slogan || '',
         });
       } catch { /* 新配置可能不存在 */ }
-    } catch (error: any) {
-      message.error(error.message || '加载系统配置失败');
+    } catch (err: any) {
+      error(err.message || '加载系统配置失败');
     }
   };
 
@@ -436,9 +438,9 @@ const SystemSettings: React.FC = () => {
             <Text type="secondary">配置搜索页面显示的热搜关键词，用户点击可快速搜索</Text>
             
             <Space wrap>
-              {hotKeywords.map((keyword, index) => (
-                <Tag key={index} closable onClose={() => handleRemoveKeyword(keyword)} color="blue">
-                  {keyword}
+              {hotKeywords.map((item, index) => (
+                <Tag key={index} closable onClose={() => handleRemoveKeyword(item.keyword)} color={item.is_pinned ? 'blue' : 'default'}>
+                  {item.keyword} {item.search_count > 0 && <span style={{ opacity: 0.6 }}>({item.search_count})</span>}
                 </Tag>
               ))}
             </Space>
@@ -579,9 +581,9 @@ const SystemSettings: React.FC = () => {
                   try {
                     const { updateDingTalkWebhook } = await import('../services/adminApi');
                     await updateDingTalkWebhook(permanentUrls[0] || '');
-                    message.success('钉钉配置保存成功');
-                  } catch (error: any) {
-                    message.error(error.message || '保存失败');
+                    success('钉钉配置保存成功');
+                  } catch (err: any) {
+                    error(err.message || '保存失败');
                   } finally {
                     setLoading(false);
                   }
@@ -593,16 +595,16 @@ const SystemSettings: React.FC = () => {
               <Button
                 onClick={async () => {
                   if (!permanentUrls[0]) {
-                    message.warning('请先配置Webhook地址');
+                    error('请先配置Webhook地址');
                     return;
                   }
                   setLoading(true);
                   try {
                     const { testDingTalk } = await import('../services/adminApi');
                     await testDingTalk();
-                    message.success('测试消息已发送，请查看钉钉群');
-                  } catch (error: any) {
-                    message.error(error.message || '测试失败');
+                    success('测试消息已发送，请查看钉钉群');
+                  } catch (err: any) {
+                    error(err.message || '测试失败');
                   } finally {
                     setLoading(false);
                   }
@@ -629,7 +631,7 @@ const SystemSettings: React.FC = () => {
                 <Button
                   onClick={() => {
                     navigator.clipboard.writeText(`${window.location.origin}/api.php/provide/vod`);
-                    message.success('已复制到剪贴板');
+                    success('已复制到剪贴板');
                   }}
                 >
                   复制
@@ -648,7 +650,7 @@ const SystemSettings: React.FC = () => {
                 <Button
                   onClick={() => {
                     navigator.clipboard.writeText(`${window.location.origin}/api.php/provide/vod/at/xml`);
-                    message.success('已复制到剪贴板');
+                    success('已复制到剪贴板');
                   }}
                 >
                   复制
@@ -677,12 +679,12 @@ const SystemSettings: React.FC = () => {
                   const response = await fetch('/api.php/provide/vod?ac=list&t=1&pg=1');
                   const data = await response.json();
                   if (data.code === 1) {
-                    message.success(`接口测试成功！返回 ${data.total} 个视频`);
+                    success(`接口测试成功！返回 ${data.total} 个视频`);
                   } else {
-                    message.error('接口测试失败');
+                    error('接口测试失败');
                   }
-                } catch (error) {
-                  message.error('接口测试失败');
+                } catch (err) {
+                  error('接口测试失败');
                 } finally {
                   setLoading(false);
                 }
@@ -751,9 +753,9 @@ const SystemSettings: React.FC = () => {
                   setLoading(true);
                   try {
                     const result = await clearVideos();
-                    message.success(`清空完成！已删除 ${result.deleted} 个视频`);
-                  } catch (error: any) {
-                    message.error(error.message || '清空失败');
+                    success(`清空完成！已删除 ${result.deleted} 个视频`);
+                  } catch (err: any) {
+                    error(err.message || '清空失败');
                   } finally {
                     setLoading(false);
                   }

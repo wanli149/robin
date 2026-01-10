@@ -17,10 +17,9 @@ import {
   InputNumber,
   Select,
   Tag,
-  message,
   Popconfirm,
-  App,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   PlusOutlined,
   EditOutlined,
@@ -40,10 +39,11 @@ interface Source {
   weight: number;
   is_active: boolean;
   response_format?: 'json' | 'xml' | 'auto';
+  is_welfare?: boolean;
 }
 
 const SourceManagement: React.FC = () => {
-  const { message: messageApi, modal } = App.useApp();
+  const { success, error, loading: showLoading, modal } = useNotification();
   const [loading, setLoading] = useState(false);
   const [sources, setSources] = useState<Source[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -57,8 +57,8 @@ const SourceManagement: React.FC = () => {
       const { getSources } = await import('../services/adminApi');
       const data = await getSources();
       setSources(data);
-    } catch (error: any) {
-      message.error(error.message || '加载资源站列表失败');
+    } catch (err: any) {
+      error(err.message || '加载资源站列表失败');
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,7 @@ const SourceManagement: React.FC = () => {
   const handleAdd = () => {
     setEditingSource(null);
     form.resetFields();
-    form.setFieldsValue({ weight: 50, is_active: true, response_format: 'auto' });
+    form.setFieldsValue({ weight: 50, is_active: true, response_format: 'auto', is_welfare: false });
     setModalVisible(true);
   };
 
@@ -90,12 +90,12 @@ const SourceManagement: React.FC = () => {
         id: editingSource?.id,
       });
 
-      message.success(editingSource ? '更新成功' : '添加成功');
+      success(editingSource ? '更新成功' : '添加成功');
       setModalVisible(false);
       loadSources();
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message || '保存失败');
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -107,10 +107,10 @@ const SourceManagement: React.FC = () => {
       setLoading(true);
       const { deleteSource } = await import('../services/adminApi');
       await deleteSource(id);
-      message.success('删除成功');
+      success('删除成功');
       loadSources();
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
+    } catch (err: any) {
+      error(err.message || '删除失败');
     } finally {
       setLoading(false);
     }
@@ -121,17 +121,17 @@ const SourceManagement: React.FC = () => {
     try {
       const { toggleSource } = await import('../services/adminApi');
       await toggleSource(source.id!);
-      message.success(`已${source.is_active ? '禁用' : '启用'}`);
+      success(`已${source.is_active ? '禁用' : '启用'}`);
       loadSources();
-    } catch (error: any) {
-      message.error(error.message || '操作失败');
+    } catch (err: any) {
+      error(err.message || '操作失败');
     }
   };
 
   // 测试资源站连接
   const handleTest = async (source: Source) => {
     console.log('[Test] Starting test for source:', source);
-    const hide = messageApi.loading(`正在测试 ${source.name}...`, 0);
+    const hide = showLoading(`正在测试 ${source.name}...`);
     try {
       const { testSource } = await import('../services/adminApi');
       console.log('[Test] Calling testSource API...');
@@ -159,10 +159,10 @@ const SourceManagement: React.FC = () => {
           }`,
         });
       }
-    } catch (error: any) {
-      console.error('[Test] Error:', error);
+    } catch (err: any) {
+      console.error('[Test] Error:', err);
       hide();
-      messageApi.error(error.message || '测试失败');
+      error(err.message || '测试失败');
     }
   };
 
@@ -180,6 +180,12 @@ const SourceManagement: React.FC = () => {
       title: '资源站名称',
       dataIndex: 'name',
       key: 'name',
+      render: (name: string, record: Source) => (
+        <Space>
+          {name}
+          {record.is_welfare && <Tag color="pink">福利</Tag>}
+        </Space>
+      ),
     },
     {
       title: 'API 地址',
@@ -276,10 +282,10 @@ const SourceManagement: React.FC = () => {
           setLoading(true);
           const { autoDiscoverSources } = await import('../services/adminApi');
           const result = await autoDiscoverSources();
-          message.success(`成功添加 ${result.added} 个资源站`);
+          success(`成功添加 ${result.added} 个资源站`);
           loadSources();
-        } catch (error: any) {
-          message.error(error.message || '自动发现失败');
+        } catch (err: any) {
+          error(err.message || '自动发现失败');
         } finally {
           setLoading(false);
         }
@@ -289,7 +295,7 @@ const SourceManagement: React.FC = () => {
 
   // 同步所有资源站的分类映射
   const handleSyncAllCategories = async () => {
-    const hide = messageApi.loading('正在同步所有资源站的分类映射...', 0);
+    const hide = showLoading('正在同步所有资源站的分类映射...');
     try {
       const { syncAllSourceCategories } = await import('../services/adminApi');
       const result = await syncAllSourceCategories();
@@ -298,15 +304,15 @@ const SourceManagement: React.FC = () => {
         title: '同步完成',
         content: result.msg,
       });
-    } catch (error: any) {
+    } catch (err: any) {
       hide();
-      messageApi.error(error.message || '同步失败');
+      error(err.message || '同步失败');
     }
   };
 
   // 同步单个资源站的分类映射
   const handleSyncCategories = async (source: Source) => {
-    const hide = messageApi.loading(`正在同步 ${source.name} 的分类映射...`, 0);
+    const hide = showLoading(`正在同步 ${source.name} 的分类映射...`);
     try {
       const { syncSourceCategories } = await import('../services/adminApi');
       const result = await syncSourceCategories(source.id!);
@@ -318,9 +324,9 @@ const SourceManagement: React.FC = () => {
           `${m.sourceTypeName} (${m.sourceTypeId}) → ${m.targetCategoryName}`
         ).join('\n') || '无'}${mappings.length > 10 ? '\n...' : ''}`,
       });
-    } catch (error: any) {
+    } catch (err: any) {
       hide();
-      messageApi.error(error.message || '同步失败');
+      error(err.message || '同步失败');
     }
   };
 
@@ -410,6 +416,15 @@ const SourceManagement: React.FC = () => {
             valuePropName="checked"
           >
             <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+          </Form.Item>
+
+          <Form.Item
+            label="福利资源站"
+            name="is_welfare"
+            valuePropName="checked"
+            help="福利资源站需要特殊权限访问，未配置时福利频道不显示"
+          >
+            <Switch checkedChildren="是" unCheckedChildren="否" />
           </Form.Item>
         </Form>
       </Modal>

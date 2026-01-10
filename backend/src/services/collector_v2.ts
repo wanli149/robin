@@ -23,8 +23,9 @@ import {
   type ParsedVideo,
   type ParsedVideoList 
 } from './response_parser';
-import { cleanPlayUrls, cleanImageUrl, type CleanedPlayUrls } from './data_cleaner';
+import { cleanPlayUrls, cleanImageUrl, normalizeArea, stripHtml, type CleanedPlayUrls } from './data_cleaner';
 import { logger } from '../utils/logger';
+import { COLLECTOR_CONFIG } from '../config';
 import type { VodCacheRow } from '../types/database';
 
 interface Env {
@@ -40,16 +41,15 @@ interface SourceInfo {
   responseFormat: ResponseFormat;
 }
 
-// 采集配置
-// 🚀 优化：减少超时和重试，降低 CPU 消耗
+// 采集配置（使用配置常量）
 const CONFIG = {
-  PAGE_SIZE: 20,                    // 每页数量（资源站默认）
-  BATCH_SIZE: 5,                    // 🚀 减少批量大小，降低内存压力
-  REQUEST_DELAY: 100,               // 🚀 减少请求间隔
-  BATCH_DELAY: 300,                 // 🚀 减少批次间隔
-  MAX_RETRIES: 2,                   // 🚀 减少重试次数
-  REQUEST_TIMEOUT: 8000,            // 🚀 减少超时时间
-  PROGRESS_UPDATE_INTERVAL: 20,     // 🚀 减少进度更新频率，降低 D1 写入
+  PAGE_SIZE: COLLECTOR_CONFIG.pageSize,
+  BATCH_SIZE: COLLECTOR_CONFIG.batchSize,
+  REQUEST_DELAY: COLLECTOR_CONFIG.requestDelay,
+  BATCH_DELAY: COLLECTOR_CONFIG.batchDelay,
+  MAX_RETRIES: COLLECTOR_CONFIG.maxRetries,
+  REQUEST_TIMEOUT: COLLECTOR_CONFIG.requestTimeout,
+  PROGRESS_UPDATE_INTERVAL: COLLECTOR_CONFIG.progressUpdateInterval,
 };
 
 // 当前任务的数据库分类映射（在 executeTask 中设置）
@@ -59,6 +59,211 @@ let currentDbSubCategories: SubCategory[] | undefined;
 // ============================================
 // 主采集函数
 // ============================================
+
+/** 采集统计结果 */
+interface CollectStats {
+  totalNew: number;
+  totalUpdate: number;
+  totalSkip: number;
+  totalError: number;
+  totalProcessed: number;
+}
+
+/** 初始化任务环境 */
+async function initializeTask(
+  env: Env,
+  taskId: string,
+  taskLogger: ReturnType<typeof createLogger>
+): Promise<{ sources: SourceInfo[]; checkpoint: TaskCheckpoint | null } | null> {
+  // 加载子分类配置（用于智能分类）
+  currentDbMappings = await loadMappingsFromDb(env);
+  currentDbSubCategories = await loadSubCategoriesFromDb(env);
+  taskLogger.info('config_loaded', `智能分类已就绪, 加载了 ${currentDbSubCategories.length} 个子分类配置`);
+  
+  // 获取任务信息
+  const task = await getTask(env, taskId);
+  if (!task) return null;
+  
+  // 获取要采集的资源站
+  const sources = await getSourcesForTask(env, task);
+  if (sources.length === 0) {
+    taskLogger.warn('no_sources', '没有可用的资源站');
+    await updateTaskStatus(env, taskId, 'completed');
+    return null;
+  }
+  
+  taskLogger.info('sources_loaded', `加载了 ${sources.length} 个资源站`, { 
+    sources: sources.map(s => s.name) 
+  });
+  
+  return { sources, checkpoint: task.checkpoint || null };
+}
+
+/** 检查任务是否应该中断 */
+async function shouldInterruptTask(
+  env: Env,
+  taskId: string,
+  taskLogger: ReturnType<typeof createLogger>
+): Promise<boolean> {
+  const currentTask = await getTask(env, taskId);
+  if (currentTask?.status === 'cancelled' || currentTask?.status === 'paused') {
+    taskLogger.info('task_interrupted', `任务被${currentTask.status === 'cancelled' ? '取消' : '暂停'}`);
+    return true;
+  }
+  return false;
+}
+
+/** 采集单个分类的所有页面 */
+async function collectCategory(
+  env: Env,
+  taskId: string,
+  task: CollectTask,
+  source: SourceInfo,
+  categoryId: number | undefined,
+  startPage: number,
+  sourceIndex: number,
+  stats: CollectStats,
+  taskLogger: ReturnType<typeof createLogger>
+): Promise<{ interrupted: boolean; stats: CollectStats }> {
+  if (categoryId) {
+    taskLogger.info('category_start', `开始采集分类: ${categoryId}`);
+  }
+  
+  // 获取总页数
+  const configForCategory = categoryId 
+    ? { ...task.config, categoryIds: [categoryId] }
+    : { ...task.config, categoryIds: undefined };
+  
+  const totalPages = await getTotalPages(env, source, configForCategory);
+  const pageEnd = task.config.pageEnd === -1 ? totalPages : Math.min(task.config.pageEnd || totalPages, totalPages);
+  
+  taskLogger.info('pages_info', `总页数: ${totalPages}, 采集范围: ${startPage}-${pageEnd}${categoryId ? `, 分类: ${categoryId}` : ''}`);
+  
+  await updateTaskProgress(env, taskId, {
+    totalPages: pageEnd - startPage + 1,
+    currentPage: 0,
+  });
+  
+  // 遍历页面
+  for (let page = startPage; page <= pageEnd; page++) {
+    // 检查任务状态
+    if (await shouldInterruptTask(env, taskId, taskLogger)) {
+      await updateTaskProgress(env, taskId, {
+        checkpoint: { sourceIndex, page, timestamp: Date.now() },
+      });
+      return { interrupted: true, stats };
+    }
+    
+    taskLogger.debug('fetch_page', `获取第 ${page} 页${categoryId ? ` (分类: ${categoryId})` : ''}`);
+    
+    try {
+      const videos = await fetchPage(source, page, task.config, categoryId);
+      
+      if (videos.length === 0) {
+        taskLogger.debug('empty_page', `第 ${page} 页无数据`);
+        continue;
+      }
+      
+      // 批量处理视频
+      const result = await processVideos(env, videos, source, task, taskLogger);
+      
+      stats.totalNew += result.newCount;
+      stats.totalUpdate += result.updateCount;
+      stats.totalSkip += result.skipCount;
+      stats.totalError += result.errorCount;
+      stats.totalProcessed += videos.length;
+      
+      // 更新进度
+      await updateTaskProgress(env, taskId, {
+        currentPage: page - startPage + 1,
+        processedCount: stats.totalProcessed,
+        newCount: stats.totalNew,
+        updateCount: stats.totalUpdate,
+        skipCount: stats.totalSkip,
+        errorCount: stats.totalError,
+        checkpoint: { sourceIndex, page, timestamp: Date.now() },
+      });
+      
+      // 检查是否达到最大数量限制
+      if (task.config.maxVideos && stats.totalProcessed >= task.config.maxVideos) {
+        taskLogger.info('max_reached', `达到最大采集数量限制: ${task.config.maxVideos}`);
+        break;
+      }
+      
+      await sleep(CONFIG.BATCH_DELAY);
+      
+    } catch (pageError) {
+      taskLogger.error('page_error', `第 ${page} 页采集失败: ${pageError instanceof Error ? pageError.message : 'Unknown'}`, {
+        page,
+        categoryId,
+        error: pageError instanceof Error ? pageError.stack : undefined,
+      });
+      stats.totalError++;
+    }
+  }
+  
+  return { interrupted: false, stats };
+}
+
+/** 采集单个资源站 */
+async function collectSource(
+  env: Env,
+  taskId: string,
+  task: CollectTask,
+  source: SourceInfo,
+  sourceIndex: number,
+  startPage: number,
+  stats: CollectStats,
+  taskLogger: ReturnType<typeof createLogger>
+): Promise<{ interrupted: boolean; stats: CollectStats }> {
+  taskLogger.info('source_start', `开始采集: ${source.name}`, { sourceId: source.id });
+  
+  await updateTaskProgress(env, taskId, {
+    currentSource: source.name,
+    currentSourceId: source.id,
+  });
+  
+  try {
+    // 确定要采集的分类列表
+    const categoryIds = task.config.categoryIds && task.config.categoryIds.length > 0 
+      ? task.config.categoryIds 
+      : [undefined];
+    
+    taskLogger.debug('categories_to_collect', `准备采集 ${categoryIds.length} 个分类`, { categoryIds });
+    
+    let currentStartPage = startPage;
+    
+    for (const categoryId of categoryIds) {
+      const result = await collectCategory(
+        env, taskId, task, source, categoryId,
+        currentStartPage, sourceIndex, stats, taskLogger
+      );
+      
+      stats = result.stats;
+      
+      if (result.interrupted) {
+        return { interrupted: true, stats };
+      }
+      
+      // 下一个分类从第1页开始
+      currentStartPage = task.config.pageStart || 1;
+    }
+    
+    taskLogger.info('source_complete', `${source.name} 采集完成`, {
+      new: stats.totalNew,
+      update: stats.totalUpdate,
+      skip: stats.totalSkip,
+      error: stats.totalError,
+    });
+    
+  } catch (sourceError) {
+    taskLogger.error('source_error', `${source.name} 采集失败: ${sourceError instanceof Error ? sourceError.message : 'Unknown'}`, {
+      error: sourceError instanceof Error ? sourceError.stack : undefined,
+    });
+  }
+  
+  return { interrupted: false, stats };
+}
 
 /**
  * 执行采集任务
@@ -70,190 +275,70 @@ export async function executeTask(env: Env, taskId: string): Promise<void> {
     return;
   }
   
-  const logger = createLogger(env, taskId);
+  const taskLogger = createLogger(env, taskId);
   
   try {
-    // 更新状态为运行中
     await updateTaskStatus(env, taskId, 'running');
-    logger.info('task_start', `开始执行${getTaskTypeName(task.taskType)}任务`);
+    taskLogger.info('task_start', `开始执行${getTaskTypeName(task.taskType)}任务`);
     
-    // 加载数据库分类映射和子分类
-    currentDbMappings = await loadMappingsFromDb(env);
-    currentDbSubCategories = await loadSubCategoriesFromDb(env);
-    logger.info('mappings_loaded', `加载了 ${currentDbMappings.size} 个资源站映射, ${currentDbSubCategories.length} 个子分类`);
-    
-    // 获取要采集的资源站
-    const sources = await getSourcesForTask(env, task);
-    if (sources.length === 0) {
-      logger.warn('no_sources', '没有可用的资源站');
-      await updateTaskStatus(env, taskId, 'completed');
+    // 初始化任务环境
+    const initResult = await initializeTask(env, taskId, taskLogger);
+    if (!initResult) {
+      await flushLogs(env, taskId);
       return;
     }
     
-    logger.info('sources_loaded', `加载了 ${sources.length} 个资源站`, { 
-      sources: sources.map(s => s.name) 
-    });
-    
-    // 获取断点信息
-    const checkpoint = task.checkpoint;
+    const { sources, checkpoint } = initResult;
     let startSourceIndex = checkpoint?.sourceIndex || 0;
     let startPage = checkpoint?.page || (task.config.pageStart || 1);
     
-    // 累计统计
-    let totalNew = task.progress.newCount;
-    let totalUpdate = task.progress.updateCount;
-    let totalSkip = task.progress.skipCount;
-    let totalError = task.progress.errorCount;
-    let totalProcessed = task.progress.processedCount;
+    // 初始化统计
+    let stats: CollectStats = {
+      totalNew: task.progress.newCount,
+      totalUpdate: task.progress.updateCount,
+      totalSkip: task.progress.skipCount,
+      totalError: task.progress.errorCount,
+      totalProcessed: task.progress.processedCount,
+    };
     
     // 遍历资源站
     for (let sourceIndex = startSourceIndex; sourceIndex < sources.length; sourceIndex++) {
       const source = sources[sourceIndex];
       
-      // 检查任务是否被取消或暂停
-      const currentTask = await getTask(env, taskId);
-      if (currentTask?.status === 'cancelled' || currentTask?.status === 'paused') {
-        logger.info('task_interrupted', `任务被${currentTask.status === 'cancelled' ? '取消' : '暂停'}`);
+      if (await shouldInterruptTask(env, taskId, taskLogger)) {
         await flushLogs(env, taskId);
         return;
       }
       
-      logger.info('source_start', `开始采集: ${source.name}`, { sourceId: source.id });
+      const result = await collectSource(
+        env, taskId, task, source, sourceIndex,
+        sourceIndex === startSourceIndex ? startPage : (task.config.pageStart || 1),
+        stats, taskLogger
+      );
       
-      // 更新当前资源站
-      await updateTaskProgress(env, taskId, {
-        currentSource: source.name,
-        currentSourceId: source.id,
-      });
+      stats = result.stats;
       
-      try {
-        // 确定要采集的分类列表
-        // 如果指定了多个分类，遍历每个分类；否则不传分类参数（采集所有）
-        const categoryIds = task.config.categoryIds && task.config.categoryIds.length > 0 
-          ? task.config.categoryIds 
-          : [undefined]; // undefined 表示不传分类参数
-        
-        for (const categoryId of categoryIds) {
-          if (categoryId) {
-            logger.info('category_start', `开始采集分类: ${categoryId}`);
-          }
-          
-          // 获取总页数（传入当前分类ID）
-          const configForCategory = categoryId 
-            ? { ...task.config, categoryIds: [categoryId] }
-            : { ...task.config, categoryIds: undefined };
-          
-          const totalPages = await getTotalPages(env, source, configForCategory);
-          const pageEnd = task.config.pageEnd === -1 ? totalPages : Math.min(task.config.pageEnd || totalPages, totalPages);
-          const pageStart = sourceIndex === startSourceIndex ? startPage : (task.config.pageStart || 1);
-          
-          logger.info('pages_info', `总页数: ${totalPages}, 采集范围: ${pageStart}-${pageEnd}${categoryId ? `, 分类: ${categoryId}` : ''}`);
-          
-          await updateTaskProgress(env, taskId, {
-            totalPages: pageEnd - pageStart + 1,
-            currentPage: 0,
-          });
-          
-          // 遍历页面
-          for (let page = pageStart; page <= pageEnd; page++) {
-            // 再次检查任务状态
-            const taskStatus = await getTask(env, taskId);
-            if (taskStatus?.status === 'cancelled' || taskStatus?.status === 'paused') {
-              // 保存断点
-              await updateTaskProgress(env, taskId, {
-                checkpoint: { sourceIndex, page, timestamp: Date.now() },
-              });
-              await flushLogs(env, taskId);
-              return;
-            }
-            
-            logger.debug('fetch_page', `获取第 ${page} 页${categoryId ? ` (分类: ${categoryId})` : ''}`);
-            
-            try {
-              // 获取页面数据（传入当前分类ID）
-              const videos = await fetchPage(source, page, task.config, categoryId);
-              
-              if (videos.length === 0) {
-                logger.debug('empty_page', `第 ${page} 页无数据`);
-                continue;
-              }
-              
-              // 批量处理视频
-              const result = await processVideos(env, videos, source, task, logger);
-              
-              totalNew += result.newCount;
-              totalUpdate += result.updateCount;
-              totalSkip += result.skipCount;
-              totalError += result.errorCount;
-              totalProcessed += videos.length;
-              
-              // 更新进度
-              await updateTaskProgress(env, taskId, {
-                currentPage: page - pageStart + 1,
-                processedCount: totalProcessed,
-                newCount: totalNew,
-                updateCount: totalUpdate,
-                skipCount: totalSkip,
-                errorCount: totalError,
-                checkpoint: { sourceIndex, page, timestamp: Date.now() },
-              });
-              
-              // 检查是否达到最大数量限制
-              if (task.config.maxVideos && totalProcessed >= task.config.maxVideos) {
-                logger.info('max_reached', `达到最大采集数量限制: ${task.config.maxVideos}`);
-                break;
-              }
-              
-              // 页面间隔
-              await sleep(CONFIG.BATCH_DELAY);
-              
-            } catch (pageError) {
-              logger.error('page_error', `第 ${page} 页采集失败: ${pageError instanceof Error ? pageError.message : 'Unknown'}`, {
-                page,
-                categoryId,
-                error: pageError instanceof Error ? pageError.stack : undefined,
-              });
-              totalError++;
-            }
-          }
-          
-          // 重置起始页（下一个分类从第1页开始）
-          startPage = task.config.pageStart || 1;
-        }
-        
-        logger.info('source_complete', `${source.name} 采集完成`, {
-          new: totalNew,
-          update: totalUpdate,
-          skip: totalSkip,
-          error: totalError,
-        });
-        
-      } catch (sourceError) {
-        logger.error('source_error', `${source.name} 采集失败: ${sourceError instanceof Error ? sourceError.message : 'Unknown'}`, {
-          error: sourceError instanceof Error ? sourceError.stack : undefined,
-        });
+      if (result.interrupted) {
+        await flushLogs(env, taskId);
+        return;
       }
-      
-      // 重置起始页（下一个资源站从第1页开始）
-      startPage = task.config.pageStart || 1;
     }
     
     // 任务完成
     await updateTaskStatus(env, taskId, 'completed');
-    logger.info('task_complete', `任务完成`, {
-      total: totalProcessed,
-      new: totalNew,
-      update: totalUpdate,
-      skip: totalSkip,
-      error: totalError,
+    taskLogger.info('task_complete', `任务完成`, {
+      total: stats.totalProcessed,
+      new: stats.totalNew,
+      update: stats.totalUpdate,
+      skip: stats.totalSkip,
+      error: stats.totalError,
     });
     
-    // 更新搜索索引
     await updateSearchIndex(env);
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error('task_error', `任务执行失败: ${errorMessage}`, {
+    taskLogger.error('task_error', `任务执行失败: ${errorMessage}`, {
       error: error instanceof Error ? error.stack : undefined,
     });
     
@@ -339,11 +424,11 @@ async function getTotalPages(
       url.searchParams.set('t', String(config.categoryIds[0]));
     }
     
-    logger.collectorV2.debug(`Fetching total pages from: ${url.toString()}`);
+    logger.collectorV2.info(`Fetching total pages from: ${url.toString()}`);
     const response = await fetchWithRetry(url.toString());
-    logger.collectorV2.debug(`Got response, parsing with format: ${source.responseFormat}`);
+    logger.collectorV2.info(`Got response, parsing with format: ${source.responseFormat}`);
     const parsed = await parseResponse(response, source.responseFormat);
-    logger.collectorV2.debug(`Parsed response, pagecount: ${parsed.pagecount}, list length: ${parsed.list?.length}`);
+    logger.collectorV2.info(`Parsed response, pagecount: ${parsed.pagecount}, list length: ${parsed.list?.length}`);
     
     return parsed.pagecount || 1;
   } catch (error) {
@@ -473,7 +558,7 @@ async function saveVideo(
 ): Promise<'new' | 'updated' | 'skipped'> {
   const vodName = video.vod_name || '';
   const vodYear = video.vod_year || '';
-  const vodArea = video.vod_area || '';
+  const vodArea = normalizeArea(video.vod_area || '');
   const vodDirector = (video.vod_director || '').split(',')[0].trim(); // 取第一个导演
   
   // 多级查找已存在的视频
@@ -550,7 +635,7 @@ async function saveVideo(
       video.vod_lang || '',
       video.vod_actor || '',
       video.vod_director || '',
-      video.vod_content || '',
+      stripHtml(video.vod_content),  // 清洗HTML标签
       JSON.stringify(playUrls),
       parseFloat(video.vod_score || '0'),
       video.vod_tag || '',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:get/get.dart';
+import '../../core/logger.dart';
 
 /// WebView 页面
 /// 用于加载网页内容，支持前进后退和刷新
@@ -50,7 +51,7 @@ class _WebViewPageState extends State<WebViewPage> {
             _updateTitle();
           },
           onWebResourceError: (WebResourceError error) {
-            print('❌ WebView error: ${error.description}');
+            Logger.error('WebView error: ${error.description}');
           },
         ),
       )
@@ -128,7 +129,7 @@ class _WebViewPageState extends State<WebViewPage> {
         color: const Color(0xFF1E1E1E),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 8,
             offset: const Offset(0, -2),
           ),

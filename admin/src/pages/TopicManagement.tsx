@@ -8,7 +8,6 @@ import {
   Table,
   Button,
   Space,
-  message,
   Popconfirm,
   Typography,
   Card,
@@ -19,6 +18,7 @@ import {
   Statistic,
   Tag,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   PlusOutlined,
   EditOutlined,
@@ -53,20 +53,26 @@ const TopicManagement: React.FC = () => {
   const [contentModalVisible, setContentModalVisible] = useState(false);
   const [managingTopic, setManagingTopic] = useState<Topic | null>(null);
   const [stats, setStats] = useState<any[]>([]);
+  const { success, error } = useNotification();
 
   // 加载专题列表
   const loadTopics = async () => {
     setLoading(true);
     try {
       const data = await getTopics();
-      setTopics(data);
+      // 转换类型：将 is_active 从 number | boolean | undefined 转为 boolean | undefined
+      const normalizedTopics: Topic[] = data.map(t => ({
+        ...t,
+        is_active: t.is_active === undefined ? undefined : Boolean(t.is_active),
+      }));
+      setTopics(normalizedTopics);
       // 加载统计
       try {
         const statsData = await getTopicsStats();
         setStats(statsData);
       } catch { /* 统计可能不可用 */ }
-    } catch (error: any) {
-      message.error(error.message || '加载专题列表失败');
+    } catch (err: any) {
+      error(err.message || '加载专题列表失败');
     } finally {
       setLoading(false);
     }
@@ -76,10 +82,10 @@ const TopicManagement: React.FC = () => {
   const handleToggle = async (id: string) => {
     try {
       await toggleTopic(id);
-      message.success('状态已更新');
+      success('状态已更新');
       loadTopics();
-    } catch (error: any) {
-      message.error(error.message || '操作失败');
+    } catch (err: any) {
+      error(err.message || '操作失败');
     }
   };
 
@@ -93,10 +99,10 @@ const TopicManagement: React.FC = () => {
   const handleDelete = async (id: string) => {
     try {
       await deleteTopic(id);
-      message.success('删除成功');
+      success('删除成功');
       loadTopics();
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 

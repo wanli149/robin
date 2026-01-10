@@ -4,7 +4,8 @@
  */
 
 import { useCallback, useState } from 'react';
-import { Card, Button, Empty, Space, message } from 'antd';
+import { Card, Button, Empty, Space } from 'antd';
+import { useNotification } from '../providers';
 import { SaveOutlined, PlusOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import type { Module } from '../../pages/LayoutEditor';
 import { validateLayout, type ValidationResult } from '../../services/adminApi';
@@ -37,6 +38,7 @@ const ModuleCanvas: React.FC<ModuleCanvasProps> = ({
   const [validationModalVisible, setValidationModalVisible] = useState(false);
   const [validationResults, setValidationResults] = useState<ValidationResult[]>([]);
   const [validating, setValidating] = useState(false);
+  const { error } = useNotification();
 
   // 移动模块
   const moveModule = useCallback(
@@ -67,11 +69,16 @@ const ModuleCanvas: React.FC<ModuleCanvasProps> = ({
   const handleValidate = async () => {
     setValidating(true);
     try {
-      const results = await validateLayout(tabId, modules);
+      // 转换 Module[] 为 LayoutModule[] 格式
+      const layoutModules = modules.map(m => ({
+        ...m,
+        tab_id: m.tab_id || tabId,
+      }));
+      const results = await validateLayout(tabId, layoutModules);
       setValidationResults(results);
       setValidationModalVisible(true);
-    } catch (error: any) {
-      message.error(error.message || '验证失败');
+    } catch (err: any) {
+      error(err.message || '验证失败');
     } finally {
       setValidating(false);
     }

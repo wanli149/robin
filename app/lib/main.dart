@@ -5,17 +5,24 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import 'config/api_config.dart';
+import 'core/logger.dart';
 import 'config/theme.dart';
 import 'core/user_store.dart';
 import 'core/http_client.dart';
 import 'core/sync_service.dart';
+import 'core/app_info.dart';
+import 'core/global_config.dart';
 
 import 'core/performance_config.dart';
 import 'core/pip_manager.dart';
-import 'core/global_player_manager.dart';
+import 'core/player/global_player_manager.dart';
+import 'core/player/media_kit_initializer.dart';
 import 'core/progress_sync_service.dart';
 import 'core/settings_store.dart';
+import 'core/cache_service.dart';
 import 'services/announcement_service.dart';
+import 'services/favorites_service.dart';
+import 'services/play_stats_service.dart';
 
 // 国际化支持
 import 'i18n/i18n.dart';
@@ -43,6 +50,9 @@ void main() {
     () {
       // 确保 Flutter 绑定初始化
       WidgetsFlutterBinding.ensureInitialized();
+      
+      // 初始化 media_kit（必须在 runApp 之前）
+      MediaKitInitializer.initialize();
 
       // 设置 Flutter 错误处理
       FlutterError.onError = (FlutterErrorDetails details) {
@@ -100,9 +110,11 @@ Future<void> _reportCrash({
     final httpClient = HttpClient();
     
     // 获取设备信息
+    final appInfo = Get.find<AppInfo>();
     final deviceInfo = {
       'platform': defaultTargetPlatform.toString(),
-      'version': '1.0.0', // TODO: 从配置获取版本号
+      'version': appInfo.version.value,
+      'build_number': appInfo.buildNumber.value,
     };
 
     // 构建崩溃报告
@@ -245,17 +257,23 @@ class MyApp extends StatelessWidget {
     // 初始化性能配置
     PerformanceConfig.initialize();
     
+    // 初始化应用信息（版本号等）
+    Get.putAsync(() => AppInfo().init(), permanent: true);
+    
+    // 🚀 初始化缓存服务（优先初始化，其他服务可能依赖）
+    Get.putAsync(() => CacheService().init(), permanent: true);
+    
     // 初始化用户状态管理
     Get.put(UserStore());
 
     // 初始化 HTTP 客户端并设置 Base URL
     final httpClient = HttpClient();
     final baseUrl = ApiConfig.baseUrl;
-    print('🌐 [Init] Using base URL: $baseUrl');
-    print('🌐 [Init] forceDevMode: ${ApiConfig.forceDevMode}');
-    print('🌐 [Init] isProduction: ${ApiConfig.isProduction}');
-    print('🌐 [Init] Platform: ${Platform.operatingSystem}');
-    print('🌐 [Init] Is Physical Device: ${!kIsWeb && (Platform.isAndroid || Platform.isIOS)}');
+    Logger.network('GET', 'Using base URL: $baseUrl');
+    Logger.info('forceDevMode: ${ApiConfig.forceDevMode}', 'Init');
+    Logger.info('isProduction: ${ApiConfig.isProduction}', 'Init');
+    Logger.info('Platform: ${Platform.operatingSystem}', 'Init');
+    Logger.info('Is Physical Device: ${!kIsWeb && (Platform.isAndroid || Platform.isIOS)}', 'Init');
     httpClient.setBaseUrl(baseUrl);
     
     // 初始化同步服务
@@ -267,14 +285,23 @@ class MyApp extends StatelessWidget {
     // 初始化进度同步服务
     Get.put(ProgressSyncService(), permanent: true);
     
-    // 初始化全局播放器管理器
+    // 初始化全局播放器管理器 (基于 media_kit)
     Get.put(GlobalPlayerManager(), permanent: true);
     
     // 初始化公告服务
     Get.put(AnnouncementService(), permanent: true);
     
+    // 初始化收藏服务
+    Get.put(FavoritesService(), permanent: true);
+    
+    // 🚀 初始化播放统计服务
+    Get.putAsync(() => PlayStatsService().init(), permanent: true);
+    
     // 初始化设置存储（异步初始化）
     Get.putAsync(() => SettingsStore().init(), permanent: true);
+    
+    // 初始化全局配置服务
+    Get.put(GlobalConfig(), permanent: true);
     
     // 应用初始化完成
     
@@ -292,7 +319,7 @@ class MyApp extends StatelessWidget {
         final isConnected = await httpClient.testConnection();
         
         if (!isConnected) {
-          print('⚠️ Default connection failed, trying to find working URL...');
+          Logger.warning('Default connection failed, trying to find working URL...');
           
           // 尝试找到可用的API地址
           final workingUrl = await httpClient.findWorkingBaseUrl();
@@ -301,20 +328,20 @@ class MyApp extends StatelessWidget {
           // 更新API配置
           ApiConfig.setCustomBaseUrl(workingUrl);
           
-          print('✅ Switched to working URL: $workingUrl');
+          Logger.success('Switched to working URL: $workingUrl');
           
           // 通知首页重新加载
           try {
             final homeController = Get.find<HomeController>();
             homeController.refreshCurrentChannel();
           } catch (e) {
-            print('⚠️ Home controller not found: $e');
+            Logger.warning('Home controller not found: $e');
           }
         } else {
-          print('✅ Network connection OK');
+          Logger.success('Network connection OK');
         }
       } catch (e) {
-        print('❌ Network check failed: $e');
+        Logger.error('Network check failed: $e');
       }
     });
   }

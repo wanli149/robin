@@ -5,8 +5,10 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Form, Input, Button, Card, message, Typography } from 'antd';
+import { Form, Input, Button, Card, Typography } from 'antd';
 import { LockOutlined, KeyOutlined } from '@ant-design/icons';
+import { useNotification } from '../components/providers';
+import { getDashboard } from '../services/adminApi';
 
 const { Title, Text } = Typography;
 
@@ -17,21 +19,29 @@ interface LoginFormValues {
 const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { success, error } = useNotification();
 
   const onFinish = async (values: LoginFormValues) => {
     setLoading(true);
     
     try {
-      // 存储管理员密钥到 localStorage
+      // 先存储密钥
       localStorage.setItem('admin_key', values.adminKey);
       
-      message.success('登录成功');
+      // 验证密钥是否有效（调用需要认证的 API）
+      await getDashboard();
       
-      // 跳转到仪表板
+      success('登录成功');
       navigate('/dashboard');
-    } catch (error) {
-      message.error('登录失败，请检查密钥');
+    } catch (err: any) {
+      // 验证失败，清除密钥
       localStorage.removeItem('admin_key');
+      
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        error('密钥无效，请检查后重试');
+      } else {
+        error(err.message || '登录失败，请检查网络连接');
+      }
     } finally {
       setLoading(false);
     }

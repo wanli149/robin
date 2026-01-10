@@ -3,9 +3,11 @@ import 'package:get/get.dart';
 import '../../../widgets/net_image.dart';
 import '../../../widgets/player/global_video_player.dart';
 import '../../../services/share_service.dart';
+import '../../../services/favorites_service.dart';
 import '../../../core/global_player_manager.dart';
 import '../../../core/user_store.dart';
 import '../../../core/url_parser.dart';
+import '../../../core/logger.dart';
 
 /// 短剧视频项（重构版）
 /// 使用全局播放器管理器
@@ -29,6 +31,7 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
   late Function(String, double) _guidanceListener;
   bool _hasShownGuidance = false;
   bool _listenersAdded = false; // 🚀 跟踪监听器状态
+  bool _isListenerOperationInProgress = false; // 🚀 监听器操作互斥锁
   
   // 🚀 防抖定时器
   static const _switchDebounceMs = 300;
@@ -68,17 +71,37 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
       final now = DateTime.now();
       if (_lastSwitchTime != null && 
           now.difference(_lastSwitchTime!).inMilliseconds < _switchDebounceMs) {
-        print('🎬 [ShortsVideoItem] Switch debounced for ${widget.shortData['vod_id']}');
+        Logger.player('[ShortsVideoItem] Switch debounced for ${widget.shortData['vod_id']}');
         return;
       }
       _lastSwitchTime = now;
       
-      // 页面变为活跃时，切换到当前视频
-      print('🎬 [ShortsVideoItem] Activating video ${widget.shortData['vod_id']}');
+      // 页面变为活跃时，检查是否需要重新初始化
+      final vodId = widget.shortData['vod_id']?.toString() ?? '';
+      final currentContentId = _globalPlayer.currentState.value.contentId;
+      final currentContentType = _globalPlayer.currentState.value.contentType;
+      
+      // 🚀 如果当前播放的就是这个视频（从详情页返回），直接继续播放，不重新初始化
+      if (currentContentId == vodId && 
+          (currentContentType == ContentType.shortsFlow || currentContentType == ContentType.shorts)) {
+        Logger.player('[ShortsVideoItem] Resuming video $vodId (returning from detail)');
+        // 切换回 shortsFlow 模式但保持播放位置
+        if (currentContentType == ContentType.shorts) {
+          // 从详情页返回，需要切换 contentType 但保持播放
+          _globalPlayer.currentState.value = _globalPlayer.currentState.value.copyWith(
+            contentType: ContentType.shortsFlow,
+          );
+        }
+        _addListeners();
+        _globalPlayer.play();
+        return;
+      }
+      
+      Logger.player('[ShortsVideoItem] Activating video $vodId');
       _initializePlayer();
     } else if (!widget.isActive && oldWidget.isActive) {
       // 🚀 页面变为非活跃时，暂停播放并移除监听器
-      print('🎬 [ShortsVideoItem] Deactivating video ${widget.shortData['vod_id']}');
+      Logger.player('[ShortsVideoItem] Deactivating video ${widget.shortData['vod_id']}');
       _globalPlayer.pause();
       _removeListeners();
     }
@@ -90,21 +113,35 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
     super.dispose();
   }
   
-  /// 🚀 安全移除监听器
+  /// 🚀 安全移除监听器（带互斥锁防止竞态条件）
   void _removeListeners() {
-    if (_listenersAdded) {
-      _globalPlayer.removeProgressListener(_progressListener);
-      _globalPlayer.removeGuidanceListener(_guidanceListener);
-      _listenersAdded = false;
+    if (_isListenerOperationInProgress) return;
+    _isListenerOperationInProgress = true;
+    
+    try {
+      if (_listenersAdded) {
+        _globalPlayer.removeProgressListener(_progressListener);
+        _globalPlayer.removeGuidanceListener(_guidanceListener);
+        _listenersAdded = false;
+      }
+    } finally {
+      _isListenerOperationInProgress = false;
     }
   }
   
-  /// 🚀 安全添加监听器
+  /// 🚀 安全添加监听器（带互斥锁防止竞态条件）
   void _addListeners() {
-    if (!_listenersAdded) {
-      _globalPlayer.addProgressListener(_progressListener);
-      _globalPlayer.addGuidanceListener(_guidanceListener);
-      _listenersAdded = true;
+    if (_isListenerOperationInProgress) return;
+    _isListenerOperationInProgress = true;
+    
+    try {
+      if (!_listenersAdded) {
+        _globalPlayer.addProgressListener(_progressListener);
+        _globalPlayer.addGuidanceListener(_guidanceListener);
+        _listenersAdded = true;
+      }
+    } finally {
+      _isListenerOperationInProgress = false;
     }
   }
 
@@ -150,58 +187,76 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
     final vodName = widget.shortData['vod_name'] as String? ?? '未知短剧';
     final coverUrl = widget.shortData['vod_pic_vertical'] as String? ?? '';
     final category = widget.shortData['category'] as String? ?? '';
+    
+    // 获取屏幕尺寸用于高质量封面
+    final screenSize = MediaQuery.of(context).size;
+    final pixelRatio = MediaQuery.of(context).devicePixelRatio;
 
-    return GestureDetector(
-      onTap: () {
-        // 🚀 单击：不做任何操作（让用户看到播放/暂停图标）
-      },
-      onDoubleTap: () {
-        // 🚀 双击：切换播放/暂停
-        _globalPlayer.togglePlayPause();
-      },
-      child: Container(
-        width: double.infinity,
-        height: double.infinity,
-        color: Colors.black,
-        child: Stack(
-          fit: StackFit.expand, // 确保Stack填充整个容器
-          children: [
-            // 封面（始终显示作为背景）
-            Positioned.fill(
-              child: NetImage(
-                url: coverUrl,
-                fit: BoxFit.cover,
-              ),
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand, // 确保Stack填充整个容器
+        children: [
+          // 封面（始终显示作为背景，使用高质量设置）
+          Positioned.fill(
+            child: NetImage(
+              url: coverUrl,
+              fit: BoxFit.cover,
+              // 使用屏幕实际像素尺寸确保高质量显示
+              memCacheWidth: (screenSize.width * pixelRatio).toInt(),
+              memCacheHeight: (screenSize.height * pixelRatio).toInt(),
             ),
-            
-            // 视频播放器（覆盖在封面上，只在播放时显示）
-            if (widget.isActive)
-              Positioned.fill(
-                child: Container(
-                  color: Colors.black, // 确保背景是黑色，避免任何意外的颜色
-                  child: Obx(() {
-                    // 只有当contentType为shortsFlow时才显示播放器
-                    final contentType = _globalPlayer.currentState.value.contentType;
-                    if (contentType == ContentType.shortsFlow) {
-                      return GlobalVideoPlayer(
-                        showControls: false, // 短剧流不显示控制栏
-                      );
-                    } else {
-                      // 等待contentType更新为shortsFlow
-                      return const Center(
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
-                          strokeWidth: 3,
-                        ),
-                      );
-                    }
-                  }),
-                ),
-              ),
+          ),
+          
+          // 视频播放器（覆盖在封面上，只在视频真正播放时才遮挡封面）
+          if (widget.isActive)
+            Positioned.fill(
+              child: Obx(() {
+                // 只有当contentType为shortsFlow且视频正在播放时才显示播放器
+                final contentType = _globalPlayer.currentState.value.contentType;
+                final isPlaying = _globalPlayer.currentState.value.isPlaying;
+                final isLoading = _globalPlayer.isLoading.value;
+                final playerInstance = _globalPlayer.playerInstance;
+                final isInitialized = playerInstance?.value.isInitialized ?? false;
+                
+                // 只有视频初始化完成后才显示播放器，否则显示封面+加载指示器
+                if (contentType == ContentType.shortsFlow && isInitialized) {
+                  return GlobalVideoPlayer(
+                    showControls: false, // 短剧流不显示控制栏
+                  );
+                } else if (isLoading) {
+                  // 加载中：显示透明背景+加载指示器（封面可见）
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
+                      strokeWidth: 3,
+                    ),
+                  );
+                } else {
+                  // 等待初始化：显示透明背景（封面可见）
+                  return const SizedBox.shrink();
+                }
+              }),
+            ),
 
-            // 暗色遮罩（底部渐变）- 仅在非活跃时显示
-            if (!widget.isActive)
-              Positioned.fill(
+          // 双击播放/暂停的手势区域（中间区域，不影响上下滑动）
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent, // 允许手势穿透
+              onDoubleTap: () {
+                // 🚀 双击：切换播放/暂停
+                _globalPlayer.togglePlayPause();
+              },
+              child: const SizedBox.expand(),
+            ),
+          ),
+
+          // 暗色遮罩（底部渐变）- 仅在非活跃时显示
+          if (!widget.isActive)
+            Positioned.fill(
+              child: IgnorePointer( // 忽略手势，不影响滑动
                 child: Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -215,56 +270,60 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
                   ),
                 ),
               ),
+            ),
 
-            // 播放/暂停图标
-            Obx(() => !_globalPlayer.currentState.value.isPlaying && 
-                      !_globalPlayer.isLoading.value &&
-                      widget.isActive
-                ? const Center(
+          // 播放/暂停图标
+          Obx(() => !_globalPlayer.currentState.value.isPlaying && 
+                    !_globalPlayer.isLoading.value &&
+                    widget.isActive
+              ? const IgnorePointer( // 忽略手势
+                  child: Center(
                     child: Icon(
                       Icons.play_circle_outline,
                       color: Colors.white,
                       size: 80,
                     ),
-                  )
-                : const SizedBox.shrink()),
-
-            // 右侧操作栏
-            _buildRightActions(vodId, seriesId, vodName),
-
-            // 底部信息栏
-            _buildBottomInfo(vodName, category),
-
-            // 引导提示（播放到30%时显示）
-            if (_hasShownGuidance)
-              _buildGuidance(seriesId),
-
-            // 静音按钮（安全区域内）
-            Positioned(
-              right: 12,
-              top: MediaQuery.of(context).padding.top + 60,
-              child: SafeArea(
-                child: Obx(() => GestureDetector(
-                  onTap: () {
-                    // TODO: 实现静音切换
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.volume_up, // 暂时固定为有声
-                      color: Colors.white,
-                      size: 24,
-                    ),
                   ),
-                )),
-              ),
+                )
+              : const SizedBox.shrink()),
+
+          // 右侧操作栏
+          _buildRightActions(vodId, seriesId, vodName),
+
+          // 底部信息栏
+          _buildBottomInfo(vodName, category),
+
+          // 引导提示（播放到30%时显示）
+          if (_hasShownGuidance)
+            _buildGuidance(seriesId),
+
+          // 静音按钮（安全区域内）
+          Positioned(
+            right: 12,
+            top: MediaQuery.of(context).padding.top + 60,
+            child: SafeArea(
+              child: Obx(() => GestureDetector(
+                onTap: () {
+                  _globalPlayer.toggleMute();
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _globalPlayer.currentState.value.isMuted 
+                        ? Icons.volume_off 
+                        : Icons.volume_up,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              )),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -303,23 +362,37 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
           const SizedBox(height: 24),
 
           // 收藏按钮
-          _buildActionButton(
-            icon: Icons.favorite_border,
-            label: '收藏',
-            onTap: () {
-              // 检查登录状态
-              if (!UserStore.to.requireLoginForFeature('favorites')) {
-                return;
-              }
-              
-              // TODO: 实现收藏功能
-              Get.snackbar(
-                '收藏',
-                '已添加到收藏',
-                snackPosition: SnackPosition.BOTTOM,
-              );
-            },
-          ),
+          Obx(() {
+            final isFavorited = FavoritesService.to.isFavorited(seriesId);
+            return _buildActionButton(
+              icon: isFavorited ? Icons.favorite : Icons.favorite_border,
+              label: isFavorited ? '已收藏' : '收藏',
+              color: isFavorited ? const Color(0xFFFFC107) : Colors.white,
+              onTap: () async {
+                // 检查登录状态
+                if (!UserStore.to.requireLoginForFeature('favorites')) {
+                  return;
+                }
+                
+                final vodPic = widget.shortData['vod_pic_vertical'] as String? ?? '';
+                final result = await FavoritesService.to.toggleFavorite(
+                  vodId: seriesId,
+                  vodName: vodName,
+                  vodPic: vodPic,
+                  vodType: 'shorts',
+                );
+                
+                if (result != null) {
+                  Get.snackbar(
+                    result ? '收藏成功' : '取消收藏',
+                    result ? '已添加到收藏' : '已从收藏中移除',
+                    snackPosition: SnackPosition.BOTTOM,
+                    duration: const Duration(seconds: 2),
+                  );
+                }
+              },
+            );
+          }),
         ],
       ),
     );
@@ -330,6 +403,7 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    Color? color,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -344,15 +418,15 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
             ),
             child: Icon(
               icon,
-              color: Colors.white,
+              color: color ?? Colors.white,
               size: 28,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: color ?? Colors.white,
               fontSize: 12,
             ),
           ),

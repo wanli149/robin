@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import { sendDingTalk, formatCrashReport } from '../utils/notify';
 import { logger } from '../utils/logger';
+import { CACHE_CONFIG } from '../config';
 
 type Bindings = {
   DB: D1Database;
@@ -22,23 +23,20 @@ const system = new Hono<{ Bindings: Bindings }>();
  */
 system.get('/api/version', async (c) => {
   try {
-    // 获取当前版本
-    const versionResult = await c.env.DB.prepare(
-      'SELECT value FROM system_config WHERE key = ?'
-    ).bind('app_version').first();
+    // 批量获取版本相关配置
+    const configResult = await c.env.DB.prepare(`
+      SELECT key, value FROM system_config 
+      WHERE key IN ('app_version', 'force_update_min_ver', 'download_url', 'changelog')
+    `).all();
+    
+    const configMap = new Map(
+      (configResult.results as { key: string; value: string }[]).map(r => [r.key, r.value])
+    );
 
-    // 获取强制更新最低版本
-    const forceUpdateResult = await c.env.DB.prepare(
-      'SELECT value FROM system_config WHERE key = ?'
-    ).bind('force_update_min_ver').first();
-
-    const currentVersion = versionResult?.value || '1.0.0';
-    const forceUpdateVersion = forceUpdateResult?.value || '1.0.0';
-
-    // 这里可以添加下载链接和更新日志
-    // 实际应用中可能需要从数据库或配置中读取
-    const downloadUrl = 'https://example.com/download/robin-latest.apk';
-    const changelog = '1. 新增短剧功能\n2. 优化播放体验\n3. 修复已知问题';
+    const currentVersion = configMap.get('app_version') || '1.0.0';
+    const forceUpdateVersion = configMap.get('force_update_min_ver') || '1.0.0';
+    const downloadUrl = configMap.get('download_url') || '';
+    const changelog = configMap.get('changelog') || '';
 
     return c.json({
       code: 1,
@@ -77,7 +75,9 @@ system.get('/api/config', async (c) => {
         'welfare_enabled', 'welfare_password', 'ads_enabled',
         'marquee_enabled', 'marquee_text', 'marquee_link',
         'hot_search_enabled', 'hot_search_keywords',
-        'permanent_urls', 'customer_service', 'official_group'
+        'permanent_urls', 'customer_service', 'official_group',
+        'terms_url', 'privacy_url', 'app_download_url',
+        'share_title', 'share_description'
       )
     `).all();
 
@@ -272,7 +272,7 @@ system.get('/api/app_wall', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list: result.results,
+      data: result.results,
     });
   } catch (error) {
     logger.admin.error('App wall error', { error: error instanceof Error ? error.message : String(error) });
@@ -471,7 +471,7 @@ system.post('/api/ads/stats', async (c) => {
       const currentCount = await c.env.ROBIN_CACHE.get(statsKey);
       const newCount = (parseInt(currentCount || '0') + 1).toString();
       await c.env.ROBIN_CACHE.put(statsKey, newCount, {
-        expirationTtl: 86400 * 7, // 保留7天
+        expirationTtl: CACHE_CONFIG.securityEventTTL,
       });
     } catch (kvError) {
       logger.admin.error('KV stats error', { error: kvError instanceof Error ? kvError.message : String(kvError) });
@@ -658,9 +658,9 @@ system.get('/api/domains', async (c) => {
       },
     };
     
-    // 缓存 5 分钟
+    // 缓存
     await c.env.ROBIN_CACHE.put('api_domains_list', JSON.stringify(response), {
-      expirationTtl: 300,
+      expirationTtl: CACHE_CONFIG.domainsTTL,
     });
     
     return c.json(response);
@@ -741,9 +741,9 @@ system.get('/api/announcement', async (c) => {
 
       if (result) {
         announcement = result as unknown as AnnouncementData;
-        // 缓存 2 分钟
+        // 缓存
         await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(announcement), {
-          expirationTtl: 120,
+          expirationTtl: CACHE_CONFIG.announcementTTL,
         });
       }
     }

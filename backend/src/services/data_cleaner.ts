@@ -14,6 +14,31 @@ export type CleanedPlayUrls = Record<string, Episode[]>;
 export type RawPlayUrls = Record<string, string>;
 
 /**
+ * 清理HTML标签，提取纯文本
+ * 用于清洗视频简介等字段
+ */
+export function stripHtml(html: string | null | undefined): string {
+  if (!html) return '';
+  
+  return html
+    // 移除所有HTML标签
+    .replace(/<[^>]*>/g, '')
+    // 解码常见HTML实体
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&ldquo;/g, '"')
+    .replace(/&rdquo;/g, '"')
+    .replace(/&hellip;/g, '...')
+    // 移除多余空白
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * 清洗播放地址
  * 输入: { "资源站": "第1集$url#第2集$url" }
  * 输出: { "资源站": [{ name: "第1集", url: "https://..." }] }
@@ -96,11 +121,92 @@ export function cleanImageUrl(url: string): string {
 }
 
 /**
+ * 地区名称标准化映射
+ * 将各种地区别名统一为标准名称
+ */
+const AREA_NORMALIZATION: Record<string, string> = {
+  // 中国大陆
+  '大陆': '中国大陆',
+  '内地': '中国大陆',
+  '国产': '中国大陆',
+  '中国': '中国大陆',
+  // 香港
+  '香港': '中国香港',
+  '港': '中国香港',
+  // 台湾
+  '台湾': '中国台湾',
+  '台': '中国台湾',
+  // 韩国
+  '韩': '韩国',
+  '南韩': '韩国',
+  // 日本
+  '日': '日本',
+  // 美国
+  '美': '美国',
+  // 英国
+  '英': '英国',
+  // 泰国
+  '泰': '泰国',
+  // 欧美（保持不变，因为是复合地区）
+};
+
+/**
+ * 标准化地区名称
+ * 将各种地区别名统一为标准名称
+ */
+export function normalizeArea(area: string): string {
+  if (!area) return area;
+  
+  const trimmed = area.trim();
+  
+  // 精确匹配
+  if (AREA_NORMALIZATION[trimmed]) {
+    return AREA_NORMALIZATION[trimmed];
+  }
+  
+  // 处理复合地区（如"中国大陆,中国香港"）
+  if (trimmed.includes(',') || trimmed.includes('，')) {
+    const parts = trimmed.split(/[,，]/).map(p => p.trim()).filter(Boolean);
+    const normalized = parts.map(p => AREA_NORMALIZATION[p] || p);
+    // 去重
+    return [...new Set(normalized)].join(',');
+  }
+  
+  return trimmed;
+}
+
+/**
  * 确保是清洗后的格式
+ * 如果输入是原始字符串格式，先进行清洗
  */
 export function ensureCleanedFormat(playUrls: unknown): CleanedPlayUrls {
-  if (!playUrls || typeof playUrls !== 'object') return {};
-  return playUrls as CleanedPlayUrls;
+  if (!playUrls) return {};
+  
+  // 如果是字符串（原始格式），需要清洗
+  if (typeof playUrls === 'string') {
+    // 原始格式: "第1集$url#第2集$url"
+    const episodes = parseEpisodes(playUrls);
+    if (episodes.length > 0) {
+      return { '默认': episodes };
+    }
+    return {};
+  }
+  
+  // 如果是对象，检查是否已经是清洗后的格式
+  if (typeof playUrls === 'object') {
+    const obj = playUrls as Record<string, unknown>;
+    const firstValue = Object.values(obj)[0];
+    
+    // 已经是清洗后的格式 { "源名": [{ name, url }] }
+    if (Array.isArray(firstValue)) {
+      return obj as CleanedPlayUrls;
+    }
+    
+    // 旧格式 { "源名": "第1集$url#第2集$url" }
+    return cleanPlayUrls(obj as RawPlayUrls);
+  }
+  
+  return {};
 }
 
 /**

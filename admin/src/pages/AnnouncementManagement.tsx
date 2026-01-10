@@ -6,9 +6,10 @@
 import { useState, useEffect } from 'react';
 import {
   Card, Table, Button, Space, Modal, Form, Input, Select,
-  Switch, InputNumber, DatePicker, message, Tag, Popconfirm,
+  Switch, InputNumber, DatePicker, Tag, Popconfirm,
   Typography, Row, Col, Statistic, Tooltip,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined,
   NotificationOutlined, WarningOutlined, RocketOutlined,
@@ -55,6 +56,7 @@ const AnnouncementManagement: React.FC = () => {
   const [statsModalVisible, setStatsModalVisible] = useState(false);
   const [currentStats, setCurrentStats] = useState<any>(null);
   const [form] = Form.useForm();
+  const { success, error } = useNotification();
 
   const fetchList = async () => {
     setLoading(true);
@@ -62,8 +64,8 @@ const AnnouncementManagement: React.FC = () => {
       const result = await getAnnouncements({ page, limit: 20 });
       setList(result.list);
       setTotal(result.total);
-    } catch (error: any) {
-      message.error(error.message || '获取公告列表失败');
+    } catch (err: any) {
+      error(err.message || '获取公告列表失败');
     } finally {
       setLoading(false);
     }
@@ -102,20 +104,20 @@ const AnnouncementManagement: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await deleteAnnouncement(id);
-      message.success('删除成功');
+      success('删除成功');
       fetchList();
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
   const handleToggle = async (id: number) => {
     try {
       await toggleAnnouncement(id);
-      message.success('状态已切换');
+      success('状态已切换');
       fetchList();
-    } catch (error: any) {
-      message.error(error.message || '切换失败');
+    } catch (err: any) {
+      error(err.message || '切换失败');
     }
   };
 
@@ -124,8 +126,8 @@ const AnnouncementManagement: React.FC = () => {
       const stats = await getAnnouncementStats(record.id);
       setCurrentStats({ ...stats, title: record.title });
       setStatsModalVisible(true);
-    } catch (error: any) {
-      message.error(error.message || '获取统计失败');
+    } catch (err: any) {
+      error(err.message || '获取统计失败');
     }
   };
 
@@ -142,17 +144,17 @@ const AnnouncementManagement: React.FC = () => {
 
       if (editingItem) {
         await updateAnnouncement(editingItem.id, values);
-        message.success('更新成功');
+        success('更新成功');
       } else {
         await createAnnouncement(values);
-        message.success('创建成功');
+        success('创建成功');
       }
       
       setModalVisible(false);
       fetchList();
-    } catch (error: any) {
-      if (error.errorFields) return; // 表单验证错误
-      message.error(error.message || '操作失败');
+    } catch (err: any) {
+      if (err.errorFields) return; // 表单验证错误
+      error(err.message || '操作失败');
     }
   };
 
@@ -321,7 +323,7 @@ const AnnouncementManagement: React.FC = () => {
         onOk={handleSubmit}
         onCancel={() => setModalVisible(false)}
         width={700}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Row gutter={16}>

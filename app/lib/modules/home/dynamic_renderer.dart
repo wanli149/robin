@@ -16,6 +16,7 @@ import 'widgets/actor_list.dart';
 import 'widgets/topic_list.dart';
 import 'widgets/article_list.dart';
 import 'widgets/recommend_list.dart';
+import '../../core/logger.dart';
 
 /// 动态渲染引擎
 /// 
@@ -148,7 +149,7 @@ class DynamicRenderer {
           return _buildUnsupportedWidget(moduleType);
       }
     } catch (e) {
-      print('❌ Error rendering module: $e');
+      Logger.error('[DynamicRenderer] Error rendering module: $e');
       return _buildErrorWidget('渲染失败: $e');
     }
   }
@@ -157,7 +158,7 @@ class DynamicRenderer {
   static Widget _buildCarousel(Map<String, dynamic> module) {
     final data = module['data'];
     
-    print('[Carousel] Raw data type: ${data.runtimeType}');
+    Logger.debug('[Carousel] Raw data type: ${data.runtimeType}');
     
     // 解析轮播图数据
     List<Map<String, dynamic>> rawItems = [];
@@ -171,7 +172,7 @@ class DynamicRenderer {
       }
     }
     
-    print('[Carousel] Parsed items count: ${rawItems.length}');
+    Logger.debug('[Carousel] Parsed items count: ${rawItems.length}');
     
     if (rawItems.isEmpty) {
       return _buildPlaceholder(
@@ -213,8 +214,8 @@ class DynamicRenderer {
   static Widget _buildGridIcons(Map<String, dynamic> module) {
     final data = module['data'];
     
-    print('[GridIcons] Raw data type: ${data.runtimeType}');
-    print('[GridIcons] Raw data: $data');
+    Logger.debug('[GridIcons] Raw data type: ${data.runtimeType}');
+    Logger.debug('[GridIcons] Raw data: $data');
     
     // 金刚区使用 api_params 中的配置，不需要从后端获取数据
     final apiParamsRaw = module['api_params'];
@@ -240,7 +241,7 @@ class DynamicRenderer {
       }
     }
     
-    print('[GridIcons] Parsed items count: ${items.length}');
+    Logger.debug('[GridIcons] Parsed items count: ${items.length}');
     
     if (items.isEmpty) {
       return _buildPlaceholder(
@@ -266,9 +267,9 @@ class DynamicRenderer {
         ? Map<String, dynamic>.from(adConfigRaw as Map)
         : null;
     
-    print('[MixedGrid] Title: $title');
-    print('[MixedGrid] Raw data type: ${data.runtimeType}');
-    print('[MixedGrid] Raw data: $data');
+    Logger.debug('[MixedGrid] Title: $title');
+    Logger.debug('[MixedGrid] Raw data type: ${data.runtimeType}');
+    Logger.debug('[MixedGrid] Raw data: $data');
     
     // 解析视频列表数据
     List<Map<String, dynamic>> items = [];
@@ -282,7 +283,7 @@ class DynamicRenderer {
       }
     }
     
-    print('[MixedGrid] Parsed items count: ${items.length}');
+    Logger.debug('[MixedGrid] Parsed items count: ${items.length}');
     
     if (items.isEmpty) {
       return _buildPlaceholder(
@@ -395,13 +396,13 @@ class DynamicRenderer {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            const Color(0xFFFFC107).withOpacity(0.1),
-            const Color(0xFFFFC107).withOpacity(0.05),
+            const Color(0xFFFFC107).withValues(alpha: 0.1),
+            const Color(0xFFFFC107).withValues(alpha: 0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFFFFC107).withOpacity(0.3),
+          color: const Color(0xFFFFC107).withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -530,8 +531,8 @@ class DynamicRenderer {
         ? Map<String, dynamic>.from(apiParamsRaw as Map)
         : null;
     
-    print('[HorizontalScroll] Title: $title');
-    print('[HorizontalScroll] Raw data type: ${data.runtimeType}');
+    Logger.debug('[HorizontalScroll] Title: $title');
+    Logger.debug('[HorizontalScroll] Raw data type: ${data.runtimeType}');
     
     // 解析视频列表数据
     List<Map<String, dynamic>> items = [];
@@ -544,7 +545,7 @@ class DynamicRenderer {
       }
     }
     
-    print('[HorizontalScroll] Parsed items count: ${items.length}');
+    Logger.debug('[HorizontalScroll] Parsed items count: ${items.length}');
     
     if (items.isEmpty) {
       return _buildPlaceholder(
@@ -577,8 +578,8 @@ class DynamicRenderer {
         ? Map<String, dynamic>.from(apiParamsRaw as Map)
         : null;
     
-    print('[VerticalList] Title: $title');
-    print('[VerticalList] Raw data type: ${data.runtimeType}');
+    Logger.debug('[VerticalList] Title: $title');
+    Logger.debug('[VerticalList] Raw data type: ${data.runtimeType}');
     
     // 解析视频列表数据
     List<Map<String, dynamic>> items = [];
@@ -591,7 +592,7 @@ class DynamicRenderer {
       }
     }
     
-    print('[VerticalList] Parsed items count: ${items.length}');
+    Logger.debug('[VerticalList] Parsed items count: ${items.length}');
     
     if (items.isEmpty) {
       return _buildPlaceholder(
@@ -834,15 +835,15 @@ class DynamicRenderer {
     final data = module['data'];
     final apiParams = module['api_params'] as Map<String, dynamic>? ?? {};
     
-    print('[Recommend] Title: $title, Type: $moduleType');
-    print('[Recommend] Raw data type: ${data.runtimeType}');
+    Logger.debug('[Recommend] Title: $title, Type: $moduleType');
+    Logger.debug('[Recommend] Raw data type: ${data.runtimeType}');
     
     // 解析已有数据（后端可能已经返回了推荐数据）
     List<Map<String, dynamic>> items = [];
     if (data is List) {
       items = data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } else if (data is Map) {
-      final itemsList = data['items'] ?? data['list'];
+      final itemsList = data['items'] ?? data['data'];
       if (itemsList is List) {
         items = itemsList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
       }
@@ -883,10 +884,10 @@ class DynamicRenderer {
     final moduleType = module['module_type'] as String? ?? 'waterfall';
     final data = module['data'];
     
-    print('[Waterfall] Title: $title');
-    print('[Waterfall] Module type: $moduleType');
-    print('[Waterfall] Raw data type: ${data.runtimeType}');
-    print('[Waterfall] Raw data: $data');
+    Logger.debug('[Waterfall] Title: $title');
+    Logger.debug('[Waterfall] Module type: $moduleType');
+    Logger.debug('[Waterfall] Raw data type: ${data.runtimeType}');
+    Logger.debug('[Waterfall] Raw data: $data');
     
     // 解析视频列表数据
     List<Map<String, dynamic>> items = [];
@@ -899,7 +900,7 @@ class DynamicRenderer {
       }
     }
     
-    print('[Waterfall] Parsed items count: ${items.length}');
+    Logger.debug('[Waterfall] Parsed items count: ${items.length}');
     
     if (items.isEmpty) {
       return _buildPlaceholder(
@@ -1039,7 +1040,7 @@ class DynamicRenderer {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.orange.withOpacity(0.3),
+          color: Colors.orange.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -1088,7 +1089,7 @@ class DynamicRenderer {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.red.withOpacity(0.3),
+          color: Colors.red.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -1132,13 +1133,13 @@ class DynamicRenderer {
   static bool validateModule(Map<String, dynamic> module) {
     // 检查必需字段
     if (!module.containsKey('module_type')) {
-      print('⚠️ Module missing module_type');
+      Logger.warning('[DynamicRenderer] Module missing module_type');
       return false;
     }
     
     final moduleType = module['module_type'];
     if (moduleType == null || moduleType.toString().isEmpty) {
-      print('⚠️ Module has empty module_type');
+      Logger.warning('[DynamicRenderer] Module has empty module_type');
       return false;
     }
     
@@ -1164,7 +1165,7 @@ class DynamicRenderer {
           // 这里可以使用 json.decode 解析
           result['api_params'] = apiParams;
         } catch (e) {
-          print('⚠️ Failed to parse api_params: $e');
+          Logger.warning('[DynamicRenderer] Failed to parse api_params: $e');
           result['api_params'] = {};
         }
       } else {
@@ -1179,7 +1180,7 @@ class DynamicRenderer {
         try {
           result['ad_config'] = adConfig;
         } catch (e) {
-          print('⚠️ Failed to parse ad_config: $e');
+          Logger.warning('[DynamicRenderer] Failed to parse ad_config: $e');
           result['ad_config'] = {};
         }
       } else {

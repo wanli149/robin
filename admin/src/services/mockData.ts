@@ -3,7 +3,7 @@
  * 用于开发测试的模拟数据
  */
 
-import { DashboardStats } from './adminApi';
+import type { DashboardStats } from './adminApi';
 
 /**
  * 模拟仪表板数据

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/router.dart';
 import '../../../services/api_service.dart';
+import '../../../core/logger.dart';
 
 /// 演员列表组件
 /// 支持从后端动态加载热门演员
@@ -66,7 +67,7 @@ class _ActorListState extends State<ActorList> {
         setState(() => _loading = false);
       }
     } catch (e) {
-      print('❌ Failed to load actors: $e');
+      Logger.error('[ActorList] Failed to load actors: $e');
       if (mounted) {
         setState(() => _loading = false);
       }
@@ -181,7 +182,7 @@ class _ActorListState extends State<ActorList> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: const Color(0xFFFFC107).withOpacity(0.3),
+                  color: const Color(0xFFFFC107).withValues(alpha: 0.3),
                   width: 2,
                 ),
               ),
@@ -235,7 +236,7 @@ class _ActorListState extends State<ActorList> {
     return Image.network(
       avatar,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, _, _) => Container(
         color: const Color(0xFF2E2E2E),
         child: Center(
           child: Text(

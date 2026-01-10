@@ -38,14 +38,14 @@ const DraggableModule: React.FC<DraggableModuleProps> = ({
 }) => {
   const ref = useRef<HTMLDivElement>(null);
 
-  const [{ handlerId }, drop] = useDrop({
+  const [{ handlerId }, drop] = useDrop<{ index: number }, void, { handlerId: string | symbol | null }>({
     accept: 'module',
     collect(monitor) {
       return {
         handlerId: monitor.getHandlerId(),
       };
     },
-    hover(item: { index: number }, monitor) {
+    hover(item, monitor) {
       if (!ref.current) {
         return;
       }

@@ -10,7 +10,6 @@ import {
   Form,
   Input,
   Button,
-  message,
   Space,
   Switch,
   Select,
@@ -23,6 +22,7 @@ import {
   Divider,
   Popconfirm,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   SaveOutlined,
   CloudSyncOutlined,
@@ -63,6 +63,7 @@ const StorageSettings: React.FC = () => {
   const [testLoading, setTestLoading] = useState(false);
   const [config, setConfig] = useState<StorageConfig | null>(null);
   const [stats, setStats] = useState<StorageStats | null>(null);
+  const { success, error } = useNotification();
 
   // 加载配置
   const loadConfig = async () => {
@@ -72,8 +73,8 @@ const StorageSettings: React.FC = () => {
         setConfig(response.data.data);
         form.setFieldsValue(response.data.data);
       }
-    } catch (error: any) {
-      message.error(error.message || '加载配置失败');
+    } catch (err: any) {
+      error(err.message || '加载配置失败');
     }
   };
 
@@ -97,14 +98,14 @@ const StorageSettings: React.FC = () => {
       
       const response = await apiClient.post('/admin/storage/config', values);
       if (response.data.code === 1) {
-        message.success('存储配置保存成功');
+        success('存储配置保存成功');
         loadConfig();
       } else {
-        message.error(response.data.msg || '保存失败');
+        error(response.data.msg || '保存失败');
       }
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message || '保存失败');
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message || '保存失败');
     } finally {
       setLoading(false);
     }
@@ -118,13 +119,13 @@ const StorageSettings: React.FC = () => {
       
       const response = await apiClient.post('/admin/storage/test', values);
       if (response.data.code === 1) {
-        message.success('连接测试成功');
+        success('连接测试成功');
       } else {
-        message.error(response.data.msg || '连接测试失败');
+        error(response.data.msg || '连接测试失败');
       }
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message || '连接测试失败');
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message || '连接测试失败');
     } finally {
       setTestLoading(false);
     }
@@ -136,13 +137,13 @@ const StorageSettings: React.FC = () => {
       setLoading(true);
       const response = await apiClient.delete('/admin/storage/progress');
       if (response.data.code === 1) {
-        message.success('播放进度数据已清除');
+        success('播放进度数据已清除');
         loadStats();
       } else {
-        message.error(response.data.msg || '清除失败');
+        error(response.data.msg || '清除失败');
       }
-    } catch (error: any) {
-      message.error(error.message || '清除失败');
+    } catch (err: any) {
+      error(err.message || '清除失败');
     } finally {
       setLoading(false);
     }

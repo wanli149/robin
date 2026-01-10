@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/http_client.dart';
 import '../../core/user_store.dart';
+import '../../core/logger.dart';
 
 /// 反馈页面
 class FeedbackPage extends StatefulWidget {
@@ -39,7 +40,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
         '提示',
         '请输入反馈内容',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -50,7 +51,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
         '提示',
         '反馈内容至少10个字',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -69,12 +70,12 @@ class _FeedbackPageState extends State<FeedbackPage> {
         },
       );
 
-      if (response.data['code'] == 200 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         Get.snackbar(
           '成功',
           '感谢您的反馈，我们会尽快处理',
           snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: const Color(0xFFFFC107).withOpacity(0.8),
+          backgroundColor: const Color(0xFFFFC107).withValues(alpha: 0.8),
           colorText: Colors.black,
         );
 
@@ -92,17 +93,17 @@ class _FeedbackPageState extends State<FeedbackPage> {
           '失败',
           response.data['msg'] ?? '提交失败，请稍后重试',
           snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red.withOpacity(0.8),
+          backgroundColor: Colors.red.withValues(alpha: 0.8),
           colorText: Colors.white,
         );
       }
     } catch (e) {
-      print('❌ Failed to submit feedback: $e');
+      Logger.error('Failed to submit feedback: $e');
       Get.snackbar(
         '失败',
         '网络错误，请稍后重试',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
     } finally {
@@ -139,10 +140,10 @@ class _FeedbackPageState extends State<FeedbackPage> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFC107).withOpacity(0.1),
+                color: const Color(0xFFFFC107).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: const Color(0xFFFFC107).withOpacity(0.3),
+                  color: const Color(0xFFFFC107).withValues(alpha: 0.3),
                   width: 1,
                 ),
               ),
@@ -159,7 +160,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                       '您的反馈对我们很重要，我们会认真对待每一条建议',
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                       ),
                     ),
                   ),

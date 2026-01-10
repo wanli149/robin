@@ -1,6 +1,6 @@
 /**
- * 结构化日志工具
- * 替代 console.log，提供统一的日志格式和级别控制
+ * Structured Logging Utility
+ * Replaces console.log with unified log format and level control
  */
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -13,7 +13,7 @@ interface LogEntry {
   data?: Record<string, unknown>;
 }
 
-// 日志级别优先级
+// Log level priority
 const LOG_LEVELS: Record<LogLevel, number> = {
   debug: 0,
   info: 1,
@@ -21,9 +21,9 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   error: 3,
 };
 
-// 当前日志级别（可通过环境变量配置）
-// 生产环境默认 info，开发环境默认 debug
-// 在 Cloudflare Workers 环境中，使用 info 作为默认级别
+// Current log level (configurable via environment variables)
+// Production defaults to info, development defaults to debug
+// In Cloudflare Workers environment, uses info as default
 const currentLevel: LogLevel = 'info';
 
 /**
@@ -90,7 +90,7 @@ export function createLogger(module: string) {
   };
 }
 
-// 预定义的模块 logger
+// Pre-defined module loggers
 export const logger = {
   scheduler: createLogger('Scheduler'),
   collector: createLogger('Collector'),

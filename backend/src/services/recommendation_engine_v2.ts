@@ -21,10 +21,15 @@ import type {
   VodCacheListRow, 
   ShortsListRow,
   WatchHistoryRow,
-  VodRecommendationRow,
   DbQueryParam 
 } from '../types/database';
 import { logger } from '../utils/logger';
+import { CACHE_CONFIG } from '../config';
+
+// Helper function to safely cast D1 query results
+function castResults<T>(results: Record<string, unknown>[]): T[] {
+  return results as unknown as T[];
+}
 
 interface Env {
   DB: D1Database;
@@ -52,7 +57,7 @@ export interface RecommendRequest {
 
 // 推荐结果
 export interface RecommendResult {
-  list: VodCacheListRow[];
+  list: VodCacheListRow[] | ShortsListRow[];
   strategy: RecommendStrategy;
   cached: boolean;
   confidence: number;
@@ -101,6 +106,11 @@ export async function getRecommendationsV2(
 /**
  * 基于内容的推荐
  * 根据视频的分类、演员、标签等属性计算相似度
+ * 
+ * 优化策略：
+ * 1. 优先查找有相同演员的视频
+ * 2. 其次查找同类型+同地区的视频
+ * 3. 最后补充同类型的热门视频
  */
 async function getContentBasedRecommendations(
   env: Env,
@@ -133,7 +143,7 @@ async function getContentBasedRecommendations(
     }
   }
   
-  // 2. 实时计算
+  // 2. 实时计算 - 获取目标视频信息
   const target = await env.DB.prepare(`
     SELECT * FROM vod_cache WHERE vod_id = ? AND is_valid = 1
   `).bind(vodId).first();
@@ -142,47 +152,112 @@ async function getContentBasedRecommendations(
     return { list: [], strategy: 'content_based', cached: false, confidence: 0 };
   }
   
-  // 获取候选视频
-  let candidateQuery = `
-    SELECT vod_id, vod_name, vod_pic, vod_actor, vod_area, vod_year, 
-           vod_tag, type_id, vod_score, vod_hits, vod_remarks
-    FROM vod_cache
-    WHERE vod_id != ? AND is_valid = 1
-  `;
-  const params: DbQueryParam[] = [vodId];
+  const targetTypeId = typeId || (target.type_id as number);
+  const targetActors = parseList(target.vod_actor as string);
+  const targetArea = target.vod_area as string;
+  const allExcludeIds = [vodId, ...excludeIds];
   
-  if (typeId) {
-    candidateQuery += ' AND type_id = ?';
-    params.push(typeId);
-  } else if (target.type_id) {
-    candidateQuery += ' AND type_id = ?';
-    params.push(target.type_id);
+  const results: VodCacheListRow[] = [];
+  const addedIds = new Set<string>();
+  
+  // 策略1: 查找有相同主演的视频（最相关）
+  if (targetActors.length > 0) {
+    // 取前3个主演
+    const mainActors = targetActors.slice(0, 3);
+    const actorConditions = mainActors.map(() => 'vod_actor LIKE ?').join(' OR ');
+    const actorParams = mainActors.map(a => `%${a}%`);
+    
+    const actorQuery = `
+      SELECT vod_id, vod_name, vod_pic, vod_actor, vod_area, vod_year, 
+             vod_tag, type_id, vod_score, vod_hits, vod_remarks
+      FROM vod_cache
+      WHERE vod_id NOT IN (${allExcludeIds.map(() => '?').join(',')})
+        AND is_valid = 1
+        AND (${actorConditions})
+      ORDER BY vod_score DESC, vod_hits DESC
+      LIMIT 20
+    `;
+    
+    const actorResults = await env.DB.prepare(actorQuery)
+      .bind(...allExcludeIds, ...actorParams)
+      .all();
+    
+    for (const video of castResults<VodCacheListRow>(actorResults.results)) {
+      if (!addedIds.has(video.vod_id)) {
+        results.push(video);
+        addedIds.add(video.vod_id);
+      }
+    }
   }
   
-  if (excludeIds.length > 0) {
-    candidateQuery += ` AND vod_id NOT IN (${excludeIds.map(() => '?').join(',')})`;
-    params.push(...excludeIds);
+  // 策略2: 同类型+同地区的视频
+  if (results.length < limit && targetArea) {
+    const areaQuery = `
+      SELECT vod_id, vod_name, vod_pic, vod_actor, vod_area, vod_year, 
+             vod_tag, type_id, vod_score, vod_hits, vod_remarks
+      FROM vod_cache
+      WHERE vod_id NOT IN (${[...allExcludeIds, ...Array.from(addedIds)].map(() => '?').join(',')})
+        AND is_valid = 1
+        AND type_id = ?
+        AND vod_area = ?
+      ORDER BY vod_score DESC, vod_hits DESC
+      LIMIT ?
+    `;
+    
+    const remaining = limit - results.length + 5; // 多取一些用于后续排序
+    const areaResults = await env.DB.prepare(areaQuery)
+      .bind(...allExcludeIds, ...Array.from(addedIds), targetTypeId, targetArea, remaining)
+      .all();
+    
+    for (const video of castResults<VodCacheListRow>(areaResults.results)) {
+      if (!addedIds.has(video.vod_id)) {
+        results.push(video);
+        addedIds.add(video.vod_id);
+      }
+    }
   }
   
-  candidateQuery += ' ORDER BY vod_score DESC, vod_hits DESC LIMIT 100';
-  
-  const candidates = await env.DB.prepare(candidateQuery).bind(...params).all();
+  // 策略3: 补充同类型的热门视频
+  if (results.length < limit) {
+    const fallbackQuery = `
+      SELECT vod_id, vod_name, vod_pic, vod_actor, vod_area, vod_year, 
+             vod_tag, type_id, vod_score, vod_hits, vod_remarks
+      FROM vod_cache
+      WHERE vod_id NOT IN (${[...allExcludeIds, ...Array.from(addedIds)].map(() => '?').join(',')})
+        AND is_valid = 1
+        AND type_id = ?
+      ORDER BY vod_score DESC, vod_hits DESC
+      LIMIT ?
+    `;
+    
+    const remaining = limit - results.length;
+    const fallbackResults = await env.DB.prepare(fallbackQuery)
+      .bind(...allExcludeIds, ...Array.from(addedIds), targetTypeId, remaining)
+      .all();
+    
+    for (const video of castResults<VodCacheListRow>(fallbackResults.results)) {
+      if (!addedIds.has(video.vod_id)) {
+        results.push(video);
+        addedIds.add(video.vod_id);
+      }
+    }
+  }
   
   // 计算相似度并排序
-  const scored = (candidates.results as VodCacheListRow[]).map(candidate => ({
+  const scored = results.map(candidate => ({
     ...candidate,
     similarity: calculateContentSimilarity(target, candidate),
   }));
   
   scored.sort((a, b) => b.similarity - a.similarity);
   
-  const result = scored.slice(0, limit);
-  const avgConfidence = result.length > 0 
-    ? result.reduce((sum, v) => sum + v.similarity, 0) / result.length 
+  const finalResult = scored.slice(0, limit);
+  const avgConfidence = finalResult.length > 0 
+    ? finalResult.reduce((sum, v) => sum + v.similarity, 0) / finalResult.length 
     : 0;
   
   return {
-    list: result,
+    list: finalResult,
     strategy: 'content_based',
     cached: false,
     confidence: avgConfidence,
@@ -206,7 +281,7 @@ async function getCollaborativeRecommendations(
   
   // 1. 获取用户观看历史
   const userHistory = await env.DB.prepare(`
-    SELECT vod_id FROM watch_history 
+    SELECT vod_id FROM history 
     WHERE user_id = ? 
     ORDER BY updated_at DESC 
     LIMIT 50
@@ -222,7 +297,7 @@ async function getCollaborativeRecommendations(
   const placeholders = watchedIds.map(() => '?').join(',');
   const similarUsers = await env.DB.prepare(`
     SELECT user_id, COUNT(*) as overlap
-    FROM watch_history
+    FROM history
     WHERE vod_id IN (${placeholders}) AND user_id != ?
     GROUP BY user_id
     HAVING overlap >= 3
@@ -242,7 +317,7 @@ async function getCollaborativeRecommendations(
   let recQuery = `
     SELECT v.*, COUNT(DISTINCT h.user_id) as rec_score
     FROM vod_cache v
-    JOIN watch_history h ON v.vod_id = h.vod_id
+    JOIN history h ON v.vod_id = h.vod_id
     WHERE h.user_id IN (${userPlaceholders})
       AND v.vod_id NOT IN (${excludePlaceholders})
       AND v.is_valid = 1
@@ -261,7 +336,7 @@ async function getCollaborativeRecommendations(
   const recommendations = await env.DB.prepare(recQuery).bind(...queryParams).all();
   
   return {
-    list: recommendations.results as VodCacheListRow[],
+    list: castResults<VodCacheListRow>(recommendations.results),
     strategy: 'collaborative',
     cached: false,
     confidence: 0.7,
@@ -318,15 +393,15 @@ async function getTrendingRecommendations(
   
   const result = await env.DB.prepare(query).bind(...params).all();
   
-  // 缓存结果（10分钟）
+  // 缓存结果
   if (excludeIds.length === 0 && result.results.length > 0) {
     await env.ROBIN_CACHE.put(cacheKey, JSON.stringify(result.results), {
-      expirationTtl: 600,
+      expirationTtl: CACHE_CONFIG.rankingTTL,
     });
   }
   
   return {
-    list: result.results as VodCacheListRow[],
+    list: castResults<VodCacheListRow>(result.results),
     strategy: 'trending',
     cached: false,
     confidence: 0.9,
@@ -356,7 +431,7 @@ async function getPersonalizedRecommendations(
   
   // 2. 获取用户已看过的视频
   const watchedResult = await env.DB.prepare(`
-    SELECT vod_id FROM watch_history WHERE user_id = ?
+    SELECT vod_id FROM history WHERE user_id = ?
   `).bind(userId).all();
   const watchedIds = (watchedResult.results as Pick<WatchHistoryRow, 'vod_id'>[]).map(r => r.vod_id);
   const allExcludeIds = [...new Set([...watchedIds, ...excludeIds])];
@@ -393,7 +468,7 @@ async function getPersonalizedRecommendations(
   const result = await env.DB.prepare(query).bind(...params).all();
   
   return {
-    list: result.results as VodCacheListRow[],
+    list: castResults<VodCacheListRow>(result.results),
     strategy: 'personalized',
     cached: false,
     confidence: 0.75,
@@ -461,9 +536,10 @@ async function getShortsSimilarRecommendations(
   const result = await env.DB.prepare(query).bind(...params).all();
   
   // 如果同分类不够，补充其他分类
-  if ((result.results as ShortsListRow[]).length < limit) {
-    const remaining = limit - (result.results as ShortsListRow[]).length;
-    const existingIds = (result.results as ShortsListRow[]).map(r => r.vod_id);
+  const resultList = castResults<ShortsListRow>(result.results);
+  if (resultList.length < limit) {
+    const remaining = limit - resultList.length;
+    const existingIds = resultList.map(r => r.vod_id);
     const allExclude = [...excludeIds, vodId, ...existingIds];
     
     const moreResult = await env.DB.prepare(`
@@ -477,7 +553,7 @@ async function getShortsSimilarRecommendations(
     `).bind(...allExclude, remaining).all();
     
     return {
-      list: [...(result.results as ShortsListRow[]), ...(moreResult.results as ShortsListRow[])],
+      list: [...resultList, ...castResults<ShortsListRow>(moreResult.results)],
       strategy: 'shorts_similar',
       cached: false,
       confidence: 0.7,
@@ -485,7 +561,7 @@ async function getShortsSimilarRecommendations(
   }
   
   return {
-    list: result.results as ShortsListRow[],
+    list: resultList,
     strategy: 'shorts_similar',
     cached: false,
     confidence: 0.8,
@@ -520,7 +596,7 @@ async function getShortsTrending(
   const result = await env.DB.prepare(query).bind(...params).all();
   
   return {
-    list: result.results as ShortsListRow[],
+    list: castResults<ShortsListRow>(result.results),
     strategy: 'shorts_similar',
     cached: false,
     confidence: 0.6,
@@ -595,16 +671,16 @@ async function analyzeUserPreferences(
   preferredActors: string[];
 }> {
   // 获取用户最近观看的视频
-  const history = await env.DB.prepare(`
+  const historyData = await env.DB.prepare(`
     SELECT v.type_id, v.vod_area, v.vod_actor
-    FROM watch_history h
+    FROM history h
     JOIN vod_cache v ON h.vod_id = v.vod_id
     WHERE h.user_id = ?
     ORDER BY h.updated_at DESC
     LIMIT 50
   `).bind(userId).all();
   
-  if ((history.results as Pick<VodCacheRow, 'type_id' | 'vod_area' | 'vod_actor'>[]).length === 0) {
+  if ((historyData.results as Pick<VodCacheRow, 'type_id' | 'vod_area' | 'vod_actor'>[]).length === 0) {
     return { hasData: false, preferredTypes: [], preferredAreas: [], preferredActors: [] };
   }
   
@@ -613,7 +689,7 @@ async function analyzeUserPreferences(
   const areaCount = new Map<string, number>();
   const actorCount = new Map<string, number>();
   
-  for (const row of history.results as Pick<VodCacheRow, 'type_id' | 'vod_area' | 'vod_actor'>[]) {
+  for (const row of historyData.results as Pick<VodCacheRow, 'type_id' | 'vod_area' | 'vod_actor'>[]) {
     // 分类
     if (row.type_id) {
       typeCount.set(row.type_id, (typeCount.get(row.type_id) || 0) + 1);
@@ -667,7 +743,7 @@ async function fetchVideosByIds(env: Env, ids: string[]): Promise<VodCacheRow[]>
   
   // 按原始顺序排序
   const idOrder = new Map(ids.map((id, i) => [id, i]));
-  return (result.results as VodCacheRow[]).sort((a, b) => 
+  return castResults<VodCacheRow>(result.results).sort((a, b) => 
     (idOrder.get(a.vod_id) || 0) - (idOrder.get(b.vod_id) || 0)
   );
 }

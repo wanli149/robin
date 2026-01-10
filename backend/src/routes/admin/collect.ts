@@ -56,7 +56,7 @@ collect.get('/admin/articles', async (c) => {
     const { getArticles } = await import('../../services/article_collector');
     const result = await getArticles(c.env, { typeId, page, limit, keyword });
 
-    return c.json({ code: 1, msg: 'success', list: result.list, total: result.total, page, limit });
+    return c.json({ code: 1, msg: 'success', data: { list: result.list, total: result.total, page, limit } });
   } catch (error) {
     logger.admin.error('Get articles error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get articles' }, 500);
@@ -105,9 +105,9 @@ collect.get('/admin/article-categories', async (c) => {
       LEFT JOIN (SELECT type_id, COUNT(*) as article_count FROM articles WHERE is_active = 1 GROUP BY type_id) counts ON ac.id = counts.type_id
       WHERE ac.is_active = 1 ORDER BY ac.sort_order
     `).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
-    return c.json({ code: 1, msg: 'success', list: [] });
+    return c.json({ code: 1, msg: 'success', data: [] });
   }
 });
 
@@ -175,7 +175,7 @@ collect.get('/admin/actors', async (c) => {
       FROM actors WHERE ${whereClause} ORDER BY popularity DESC, works_count DESC LIMIT ? OFFSET ?
     `).bind(...params, limit, offset).all();
 
-    return c.json({ code: 1, msg: 'success', list: result.results, total: (countResult?.total as number) || 0, page, limit });
+    return c.json({ code: 1, msg: 'success', data: { list: result.results, total: (countResult?.total as number) || 0, page, limit } });
   } catch (error) {
     logger.admin.error('Get actors error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get actors' }, 500);

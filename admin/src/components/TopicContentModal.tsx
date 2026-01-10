@@ -10,10 +10,10 @@ import {
   Table,
   Button,
   Space,
-  message,
   Empty,
   Image,
 } from 'antd';
+import { useNotification } from './providers';
 import {
   SearchOutlined,
   PlusOutlined,
@@ -61,6 +61,7 @@ const TopicContentModal: React.FC<TopicContentModalProps> = ({
   const [searchResults, setSearchResults] = useState<Video[]>([]);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedVideos, setSelectedVideos] = useState<string[]>([]);
+  const { success, error, warning } = useNotification();
 
   // 加载专题内容
   const loadTopicItems = async () => {
@@ -69,8 +70,8 @@ const TopicContentModal: React.FC<TopicContentModalProps> = ({
     try {
       const data = await getTopicItems(topicId);
       setTopicItems(data);
-    } catch (error: any) {
-      message.error(error.message || '加载专题内容失败');
+    } catch (err: any) {
+      error(err.message || '加载专题内容失败');
     } finally {
       setLoading(false);
     }
@@ -87,8 +88,8 @@ const TopicContentModal: React.FC<TopicContentModalProps> = ({
     try {
       const data = await searchVideos(keyword);
       setSearchResults(data);
-    } catch (error: any) {
-      message.error(error.message || '搜索失败');
+    } catch (err: any) {
+      error(err.message || '搜索失败');
     } finally {
       setSearchLoading(false);
     }
@@ -97,18 +98,18 @@ const TopicContentModal: React.FC<TopicContentModalProps> = ({
   // 添加视频到专题
   const handleAddVideos = async () => {
     if (selectedVideos.length === 0) {
-      message.warning('请先选择要添加的视频');
+      warning('请先选择要添加的视频');
       return;
     }
     try {
       await addTopicItems(topicId, selectedVideos);
-      message.success(`成功添加 ${selectedVideos.length} 个视频`);
+      success(`成功添加 ${selectedVideos.length} 个视频`);
       setSelectedVideos([]);
       setSearchResults([]);
       setSearchKeyword('');
       loadTopicItems();
-    } catch (error: any) {
-      message.error(error.message || '添加失败');
+    } catch (err: any) {
+      error(err.message || '添加失败');
     }
   };
 
@@ -116,10 +117,10 @@ const TopicContentModal: React.FC<TopicContentModalProps> = ({
   const handleDelete = async (vodId: string) => {
     try {
       await deleteTopicItem(topicId, vodId);
-      message.success('删除成功');
+      success('删除成功');
       loadTopicItems();
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
@@ -145,9 +146,9 @@ const TopicContentModal: React.FC<TopicContentModalProps> = ({
     try {
       await updateTopicItemsOrder(topicId, vodIds);
       setTopicItems(newItems);
-      message.success('排序已更新');
-    } catch (error: any) {
-      message.error(error.message || '更新排序失败');
+      success('排序已更新');
+    } catch (err: any) {
+      error(err.message || '更新排序失败');
     }
   };
 

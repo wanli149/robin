@@ -2,67 +2,66 @@
 
 一个现代化的视频聚合平台，支持多端同步和智能推荐。
 
-## 🏗️ 项目架构
+## 项目架构
 
 ```
 robin-video-platform/
-├── backend/          # Cloudflare Workers 后端 API
-├── admin/           # Vue 3 管理后台
-├── app/             # Flutter 移动应用
-└── docs/            # 项目文档
+├── backend/    # Cloudflare Workers 后端 API
+├── admin/      # Vue 3 管理后台
+└── app/        # Flutter 移动应用
 ```
 
-## ✨ 核心特性
+## 技术栈
 
-- **🎬 多源聚合**: 整合多个视频资源站点
-- **📱 跨平台**: Flutter 应用支持 Android/iOS
-- **🎯 智能推荐**: 基于用户行为的个性化推荐
-- **🔄 动态布局**: 后端驱动的首页布局系统
-- **📺 短剧引擎**: 抖音模式的竖屏无限流播放
-- **⚡ 高性能**: Cloudflare Workers + D1 + KV 架构
+| 模块 | 技术 |
+|------|------|
+| 后端 | Cloudflare Workers + Hono + D1 + KV |
+| 管理后台 | React 19 + TypeScript + Ant Design 5 + Vite |
+| 移动端 | Flutter 3.x + GetX + Dio |
 
-## 🚀 快速开始
+## 快速开始
 
-详细的部署和开发指南请参考：
+### 1. 后端
 
-- [快速启动指南](QUICK_START.md)
+```bash
+cd backend
+npm install
+npm run db:init          # 初始化本地数据库
+npm run dev              # 启动开发服务器 http://localhost:8787
+```
+
+### 2. 管理后台
+
+```bash
+cd admin
+npm install
+npm run dev              # 启动开发服务器 http://localhost:5173
+```
+
+### 3. 移动端
+
+```bash
+cd app
+flutter pub get
+flutter run
+```
+
+## 核心功能
+
+- 多源视频聚合
+- 动态首页布局系统
+- 短剧引擎
+- 用户系统（登录、收藏、历史）
+- 管理后台（布局编辑、广告管理、专题管理）
+
+## 文档
+
+- [API 接口规范](API_REQUIREMENTS.md)
 - [部署检查清单](DEPLOYMENT_CHECKLIST.md)
-- [分布式数据库架构](DISTRIBUTED_DATABASE_ARCHITECTURE.md)
+- [后端开发指南](backend/README.md)
+- [管理后台指南](admin/README_CN.md)
+- [APP 构建指南](app/快速构建指南.md)
 
-## 📁 子项目说明
+## 许可证
 
-### Backend (Cloudflare Workers)
-- 基于 Hono 框架的高性能 API
-- 支持多数据源聚合和智能缓存
-- 完整的用户认证和权限管理
-
-### Admin (Vue 3)
-- 现代化的管理后台界面
-- 支持内容管理、用户管理、系统配置
-- 响应式设计，支持移动端访问
-
-### App (Flutter)
-- 跨平台移动应用
-- 支持视频播放、用户中心、离线缓存
-- 原生性能，流畅的用户体验
-
-## 🛠️ 技术栈
-
-- **后端**: Cloudflare Workers, Hono, D1, KV
-- **前端**: Vue 3, TypeScript, Vite
-- **移动端**: Flutter, Dart
-- **数据库**: Cloudflare D1 (SQLite)
-- **缓存**: Cloudflare KV
-- **部署**: Cloudflare Pages, Workers
-
-## 📄 许可证
-
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 📞 联系
-
-如有问题或建议，请通过 GitHub Issues 联系我们。
+MIT License

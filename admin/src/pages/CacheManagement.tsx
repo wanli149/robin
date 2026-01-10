@@ -9,11 +9,11 @@ import {
   Card,
   Button,
   Space,
-  message,
   Popconfirm,
   Alert,
   Descriptions,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   DeleteOutlined,
   ReloadOutlined,
@@ -26,6 +26,7 @@ const CacheManagement: React.FC = () => {
   const [loading, setLoading] = useState<string | null>(null);
   const [cacheStats, setCacheStats] = useState<any>(null);
   const [loadingStats, setLoadingStats] = useState(false);
+  const { success, error } = useNotification();
 
   // 加载缓存统计
   const loadCacheStats = async () => {
@@ -33,7 +34,7 @@ const CacheManagement: React.FC = () => {
     try {
       const stats = await getCacheStats();
       setCacheStats(stats);
-    } catch (error) {
+    } catch (err) {
       console.log('Cache stats not available');
     } finally {
       setLoadingStats(false);
@@ -44,10 +45,10 @@ const CacheManagement: React.FC = () => {
   const handleDeleteCache = async (key: string) => {
     try {
       await deleteCache(key);
-      message.success('缓存已删除');
+      success('缓存已删除');
       loadCacheStats();
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
@@ -61,9 +62,9 @@ const CacheManagement: React.FC = () => {
     setLoading(type);
     try {
       await purgeCache(type);
-      message.success('缓存清除成功');
-    } catch (error: any) {
-      message.error(error.message || '清除缓存失败');
+      success('缓存清除成功');
+    } catch (err: any) {
+      error(err.message || '清除缓存失败');
     } finally {
       setLoading(null);
     }

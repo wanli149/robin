@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/router.dart';
 import '../../../services/api_service.dart';
+import '../../../core/logger.dart';
 
 /// 排行榜组件 - 支持日榜/周榜/月榜切换
 class Ranking extends StatefulWidget {
@@ -65,7 +66,7 @@ class _RankingState extends State<Ranking> {
         });
       }
     } catch (e) {
-      print('❌ Failed to load ranking: $e');
+      Logger.error('[Ranking] Failed to load ranking: $e');
       if (mounted) {
         setState(() => _loading = false);
       }
@@ -245,7 +246,7 @@ class _RankingState extends State<Ranking> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFC107).withOpacity(0.2),
+                            color: const Color(0xFFFFC107).withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(3),
                           ),
                           child: Text(
@@ -332,7 +333,7 @@ class _RankingState extends State<Ranking> {
     return Image.network(
       imageUrl,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, _, _) => Container(
         color: const Color(0xFF2E2E2E),
         child: const Icon(Icons.broken_image, size: 24, color: Colors.white24),
       ),

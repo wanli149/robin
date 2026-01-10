@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/sync_service.dart';
+import '../../core/logger.dart';
 import '../../widgets/net_image.dart';
 import '../../services/share_service.dart';
 
@@ -62,7 +63,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
         _currentPage++;
       }
     } catch (e) {
-      print('❌ Failed to load favorites: $e');
+      Logger.error('Failed to load favorites: $e');
       Get.snackbar('错误', '加载失败，请重试');
     } finally {
       _isLoading.value = false;
@@ -124,7 +125,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                 Icon(
                   Icons.favorite_border,
                   size: 80,
-                  color: Colors.white.withOpacity(0.3),
+                  color: Colors.white.withValues(alpha: 0.3),
                 ),
                 const SizedBox(height: 24),
                 const Text(
@@ -157,7 +158,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
               crossAxisCount: 3,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: 0.65,
+              childAspectRatio: 0.58, // 与首页模块保持一致
             ),
             itemCount: _favoritesList.length + (_hasMore.value ? 1 : 0),
             itemBuilder: (context, index) {
@@ -214,7 +215,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -229,15 +230,18 @@ class _FavoritesPageState extends State<FavoritesPage> {
           ),
           const SizedBox(height: 8),
 
-          // 标题
-          Text(
-            item.vodName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.white,
-              height: 1.3,
+          // 标题 - 固定高度，与首页模块保持一致
+          SizedBox(
+            height: 36,
+            child: Text(
+              item.vodName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+                height: 1.3,
+              ),
             ),
           ),
         ],

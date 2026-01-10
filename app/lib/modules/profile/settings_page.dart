@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/user_store.dart';
 import '../../core/settings_store.dart';
+import 'profile_controller.dart';
 
 /// 设置页面
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
   
   SettingsStore get _settings => SettingsStore.to;
+  ProfileController get _profileController => Get.find<ProfileController>();
 
   @override
   Widget build(BuildContext context) {
@@ -105,32 +107,49 @@ class SettingsPage extends StatelessWidget {
           )),
 
           // 关于
-          _buildSection(
-            title: '关于',
-            items: [
-              _SettingItem(
-                icon: Icons.info_outline,
-                title: '版本号',
-                subtitle: '1.0.0',
-              ),
-              _SettingItem(
-                icon: Icons.description,
-                title: '用户协议',
-                onTap: () => Get.toNamed('/webview', arguments: {
-                  'url': 'https://robin.com/terms',
-                  'title': '用户协议',
-                }),
-              ),
-              _SettingItem(
-                icon: Icons.privacy_tip,
-                title: '隐私政策',
-                onTap: () => Get.toNamed('/webview', arguments: {
-                  'url': 'https://robin.com/privacy',
-                  'title': '隐私政策',
-                }),
-              ),
-            ],
-          ),
+          Obx(() {
+            final config = _profileController.systemConfig.value;
+            return _buildSection(
+              title: '关于',
+              items: [
+                _SettingItem(
+                  icon: Icons.info_outline,
+                  title: '版本号',
+                  subtitle: '1.0.0',
+                ),
+                _SettingItem(
+                  icon: Icons.description,
+                  title: '用户协议',
+                  onTap: () {
+                    final url = config?.termsUrl;
+                    if (url != null && url.isNotEmpty) {
+                      Get.toNamed('/webview', arguments: {
+                        'url': url,
+                        'title': '用户协议',
+                      });
+                    } else {
+                      Get.snackbar('提示', '用户协议暂未配置');
+                    }
+                  },
+                ),
+                _SettingItem(
+                  icon: Icons.privacy_tip,
+                  title: '隐私政策',
+                  onTap: () {
+                    final url = config?.privacyUrl;
+                    if (url != null && url.isNotEmpty) {
+                      Get.toNamed('/webview', arguments: {
+                        'url': url,
+                        'title': '隐私政策',
+                      });
+                    } else {
+                      Get.snackbar('提示', '隐私政策暂未配置');
+                    }
+                  },
+                ),
+              ],
+            );
+          }),
 
           // 退出登录
           Obx(() {
@@ -140,7 +159,7 @@ class SettingsPage extends StatelessWidget {
                 child: ElevatedButton(
                   onPressed: _showLogoutDialog,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.withOpacity(0.2),
+                    backgroundColor: Colors.red.withValues(alpha: 0.2),
                     foregroundColor: Colors.red,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -234,7 +253,13 @@ class SettingsPage extends StatelessWidget {
     return Switch(
       value: value,
       onChanged: onChanged,
-      activeColor: const Color(0xFFFFC107),
+      activeTrackColor: const Color(0xFFFFC107),
+      thumbColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return Colors.white;
+        }
+        return Colors.grey;
+      }),
     );
   }
 

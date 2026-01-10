@@ -3,7 +3,7 @@
  * 聚合多个资源站的视频数据
  */
 
-import { RESOURCE_SITES, WELFARE_SITES, type ResourceSite } from '../config';
+import { TIMEOUT_CONFIG, type ResourceSite } from '../config';
 import { parseXmlResponse, parseJsonResponse, detectFormat } from './response_parser';
 import { logger } from '../utils/logger';
 import type { VodCacheRow, VideoSourceRow, DbQueryParam } from '../types/database';
@@ -12,6 +12,7 @@ interface AggregatorOptions {
   includeWelfare?: boolean; // 是否包含福利源
   timeout?: number; // 请求超时时间（毫秒）
   maxRetries?: number; // 最大重试次数
+  cacheOnly?: boolean; // 是否只从缓存读取，不降级到实时获取
 }
 
 interface VideoItem {
@@ -189,32 +190,57 @@ interface VideoSourceDbRow {
   weight: number;
   is_active: number;
   response_format: string | null;
+  is_welfare: number | null;
 }
 
 /**
  * 从数据库加载资源站配置
+ * @param includeWelfare - 是否包含福利资源站
  */
-async function loadSourcesFromDB(env: Env): Promise<(ResourceSite & { responseFormat?: string })[]> {
+async function loadSourcesFromDB(env: Env, includeWelfare: boolean = false): Promise<(ResourceSite & { responseFormat?: string })[]> {
   try {
-    const result = await env.DB.prepare(`
-      SELECT name, api_url, weight, is_active, response_format
-      FROM video_sources
-      WHERE is_active = 1
-      ORDER BY weight DESC, sort_order ASC
-    `).all();
+    // 根据 includeWelfare 参数决定查询条件
+    const query = includeWelfare
+      ? `SELECT name, api_url, weight, is_active, response_format, is_welfare
+         FROM video_sources
+         WHERE is_active = 1
+         ORDER BY weight DESC, sort_order ASC`
+      : `SELECT name, api_url, weight, is_active, response_format, is_welfare
+         FROM video_sources
+         WHERE is_active = 1 AND (is_welfare = 0 OR is_welfare IS NULL)
+         ORDER BY weight DESC, sort_order ASC`;
+    
+    const result = await env.DB.prepare(query).all();
 
     return (result.results as VideoSourceDbRow[]).map((row) => ({
       name: row.name,
       url: row.api_url,
       weight: row.weight,
       enabled: row.is_active === 1,
-      timeout: 5000,
+      timeout: TIMEOUT_CONFIG.defaultRequest,
       responseFormat: row.response_format || 'json',
+      isWelfare: row.is_welfare === 1,
     }));
   } catch (error) {
-    logger.aggregator.error('Failed to load sources from DB, using fallback', { error: String(error) });
-    // 降级到配置文件
-    return RESOURCE_SITES.filter(site => site.enabled);
+    logger.aggregator.error('Failed to load sources from DB', { error: String(error) });
+    // 不再降级到硬编码配置，返回空数组
+    return [];
+  }
+}
+
+/**
+ * 检查是否有福利资源站配置
+ */
+export async function hasWelfareSources(env: Env): Promise<boolean> {
+  try {
+    const result = await env.DB.prepare(`
+      SELECT COUNT(*) as count FROM video_sources 
+      WHERE is_active = 1 AND is_welfare = 1
+    `).first();
+    return (result?.count as number) > 0;
+  } catch (error) {
+    logger.aggregator.error('Failed to check welfare sources', { error: String(error) });
+    return false;
   }
 }
 
@@ -240,7 +266,8 @@ export async function aggregateVideos(
 ): Promise<AggregatorResult> {
   const {
     includeWelfare = false,
-    timeout = 3000,
+    timeout = TIMEOUT_CONFIG.aggregatorDefault,
+    cacheOnly = false,
   } = options;
 
   // 🚀 优化1：优先从缓存读取
@@ -260,22 +287,37 @@ export async function aggregateVideos(
       }
     } catch (error) {
       logger.aggregator.error('Cache read failed', { error: error instanceof Error ? error.message : String(error) });
-      // 降级到实时聚合
+      // 降级到实时聚合（除非是 cacheOnly 模式）
     }
   }
 
-  // 从数据库加载资源站配置
-  let sites = await loadSourcesFromDB(env);
-  
-  // 如果数据库为空，使用配置文件作为降级
-  if (sites.length === 0) {
-    logger.aggregator.warn('No sources in DB, using config file');
-    sites = RESOURCE_SITES.filter(site => site.enabled);
+  // 🚀 cacheOnly 模式：缓存没有数据就返回空结果，不实时获取
+  if (cacheOnly) {
+    logger.aggregator.info('Cache miss in cacheOnly mode, returning empty');
+    return {
+      list: [],
+      total: 0,
+      page: Number(params.pg) || 1,
+      pagecount: 0,
+      sources: ['cache'],
+      failed: [],
+    };
   }
+
+  // 从数据库加载资源站配置（根据 includeWelfare 参数决定是否包含福利站）
+  const sites = await loadSourcesFromDB(env, includeWelfare);
   
-  // 如果需要福利源，添加福利站
-  if (includeWelfare) {
-    sites = [...sites, ...WELFARE_SITES.filter(site => site.enabled)];
+  // 如果没有配置资源站，返回空结果
+  if (sites.length === 0) {
+    logger.aggregator.warn('No sources configured in database');
+    return {
+      list: [],
+      total: 0,
+      page: 1,
+      pagecount: 0,
+      sources: [],
+      failed: [],
+    };
   }
 
   // 按权重排序
@@ -378,12 +420,18 @@ export async function shouldIncludeWelfare(
 ): Promise<boolean> {
   // 检查是否明确请求福利内容
   if (params.type === 'welfare') {
-    // 查询数据库配置
+    // 1. 检查系统配置是否启用福利功能
     const config = await env.DB.prepare(
       'SELECT value FROM system_config WHERE key = ?'
     ).bind('welfare_enabled').first();
 
-    return config?.value === 'true';
+    if (config?.value !== 'true') {
+      return false;
+    }
+    
+    // 2. 检查是否有配置福利资源站
+    const hasWelfare = await hasWelfareSources(env);
+    return hasWelfare;
   }
 
   return false;
@@ -405,17 +453,17 @@ async function getFromCache(
     bindings.push(parseInt(params.t));
   }
 
-  // 视频分类筛选（新增）
+  // 视频分类筛选（检查 sub_type_name, vod_tag, vod_content）
   if (params.class) {
-    query += ' AND (vod_tag LIKE ? OR vod_content LIKE ?)';
+    query += ' AND (sub_type_name LIKE ? OR vod_tag LIKE ? OR vod_content LIKE ?)';
     const classPattern = `%${params.class}%`;
-    bindings.push(classPattern, classPattern);
+    bindings.push(classPattern, classPattern, classPattern);
   }
 
-  // 地区筛选
+  // 地区筛选（使用模糊匹配，因为数据可能是"大陆"或"中国大陆"）
   if (params.area) {
-    query += ' AND vod_area = ?';
-    bindings.push(params.area);
+    query += ' AND vod_area LIKE ?';
+    bindings.push(`%${params.area}%`);
   }
 
   // 年份筛选

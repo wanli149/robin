@@ -5,9 +5,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Table, Button, Tag, Space, Modal, message, Form, Input, InputNumber,
+  Card, Table, Button, Tag, Space, Modal, Form, Input, InputNumber,
   Switch, Typography, Row, Col, Statistic, Tooltip, Popconfirm, Alert
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined,
   CloseCircleOutlined, QuestionCircleOutlined, ReloadOutlined,
@@ -32,6 +33,7 @@ const DomainManagement: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingDomain, setEditingDomain] = useState<ApiDomain | null>(null);
   const [form] = Form.useForm();
+  const { success, error, warning } = useNotification();
 
   // 加载域名列表
   const loadDomains = useCallback(async () => {
@@ -39,12 +41,12 @@ const DomainManagement: React.FC = () => {
     try {
       const data = await getDomains();
       setDomains(data.domains);
-    } catch (error: any) {
-      message.error(error.message || '加载域名列表失败');
+    } catch (err: any) {
+      error(err.message || '加载域名列表失败');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [error]);
 
   useEffect(() => {
     loadDomains();
@@ -75,17 +77,17 @@ const DomainManagement: React.FC = () => {
       
       if (editingDomain) {
         await updateDomain(editingDomain.id, values);
-        message.success('域名更新成功');
+        success('域名更新成功');
       } else {
         await addDomain(values);
-        message.success('域名添加成功');
+        success('域名添加成功');
       }
       
       setModalVisible(false);
       loadDomains();
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message);
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message);
     }
   };
 
@@ -93,10 +95,10 @@ const DomainManagement: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await deleteDomain(id);
-      message.success('域名已删除');
+      success('域名已删除');
       loadDomains();
-    } catch (error: any) {
-      message.error(error.message);
+    } catch (err: any) {
+      error(err.message);
     }
   };
 
@@ -104,10 +106,10 @@ const DomainManagement: React.FC = () => {
   const handleSetPrimary = async (id: number) => {
     try {
       await setDomainPrimary(id);
-      message.success('已设为主域名');
+      success('已设为主域名');
       loadDomains();
-    } catch (error: any) {
-      message.error(error.message);
+    } catch (err: any) {
+      error(err.message);
     }
   };
 
@@ -117,13 +119,13 @@ const DomainManagement: React.FC = () => {
     try {
       const result = await checkDomain(id);
       if (result.data?.healthy) {
-        message.success(`域名可用，响应时间 ${result.data.responseTime}ms`);
+        success(`域名可用，响应时间 ${result.data.responseTime}ms`);
       } else {
-        message.warning(`域名不可用: ${result.data?.error || '未知错误'}`);
+        warning(`域名不可用: ${result.data?.error || '未知错误'}`);
       }
       loadDomains();
-    } catch (error: any) {
-      message.error(error.message);
+    } catch (err: any) {
+      error(err.message);
     } finally {
       setCheckingId(null);
     }
@@ -134,10 +136,10 @@ const DomainManagement: React.FC = () => {
     setCheckingAll(true);
     try {
       const result = await checkAllDomains();
-      message.success(result.msg);
+      success(result.msg);
       loadDomains();
-    } catch (error: any) {
-      message.error(error.message);
+    } catch (err: any) {
+      error(err.message);
     } finally {
       setCheckingAll(false);
     }

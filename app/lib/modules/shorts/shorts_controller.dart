@@ -2,6 +2,8 @@ import 'package:get/get.dart';
 import '../../core/http_client.dart';
 import '../../core/global_player_manager.dart';
 import '../../core/url_parser.dart';
+import '../../core/logger.dart';
+import '../../core/cache_service.dart';
 
 /// 短剧播放器控制器
 /// 
@@ -84,10 +86,67 @@ class ShortsController extends GetxController {
   /// 为 false 时停止加载更多
   final RxBool hasMore = true.obs;
 
+  /// 🚀 缓存服务引用
+  CacheService? _cacheService;
+  CacheService get _cache {
+    _cacheService ??= Get.find<CacheService>();
+    return _cacheService!;
+  }
+
   @override
   void onInit() {
     super.onInit();
-    loadRandomShorts();
+    // 🚀 先尝试恢复状态，再加载数据
+    _restoreState().then((_) {
+      if (shortsList.isEmpty) {
+        loadRandomShorts();
+      }
+    });
+  }
+
+  @override
+  void onClose() {
+    // 🚀 保存状态
+    _saveState();
+    super.onClose();
+  }
+
+  /// 🚀 保存短剧流状态
+  Future<void> _saveState() async {
+    if (shortsList.isEmpty) return;
+    
+    final state = {
+      'currentIndex': currentIndex.value,
+      'shortsList': shortsList.toList(),
+      'hasMore': hasMore.value,
+    };
+    
+    await _cache.set(
+      CacheKeys.shortsFlowState,
+      state,
+      type: CacheType.shortsFlowState,
+    );
+    
+    Logger.debug('[ShortsController] State saved: index=${currentIndex.value}');
+  }
+
+  /// 🚀 恢复短剧流状态
+  Future<void> _restoreState() async {
+    final state = await _cache.get<Map<String, dynamic>>(CacheKeys.shortsFlowState);
+    
+    if (state != null) {
+      final savedList = state['shortsList'] as List?;
+      final savedIndex = state['currentIndex'] as int?;
+      final savedHasMore = state['hasMore'] as bool?;
+      
+      if (savedList != null && savedList.isNotEmpty) {
+        shortsList.value = savedList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        currentIndex.value = savedIndex ?? 0;
+        hasMore.value = savedHasMore ?? true;
+        
+        Logger.success('[ShortsController] State restored: index=${currentIndex.value}, count=${shortsList.length}');
+      }
+    }
   }
 
   /// 加载随机短剧列表
@@ -127,7 +186,7 @@ class ShortsController extends GetxController {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        final List<dynamic> newShorts = data['list'] ?? [];
+        final List<dynamic> newShorts = data['data'] ?? [];
 
         if (newShorts.isEmpty) {
           hasMore.value = false;
@@ -217,7 +276,7 @@ class ShortsController extends GetxController {
       GlobalPlayerManager.to.pause();
     } catch (e) {
       // 暂停失败，忽略错误
-      print('❌ Failed to pause global player: $e');
+      Logger.error('Failed to pause global player: $e');
     }
   }
 
@@ -244,7 +303,7 @@ class ShortsController extends GetxController {
           autoPlay: true,
         );
       } catch (e) {
-        print('❌ Failed to resume global player: $e');
+        Logger.error('Failed to resume global player: $e');
       }
     }
   }

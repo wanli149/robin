@@ -4,9 +4,17 @@
  */
 
 import { Hono } from 'hono';
+import { validateQuery, ValidationSchemas, getValidatedQuery, sanitizeQueryParams } from '../middleware/input_validator';
 import { aggregateVideos, shouldIncludeWelfare } from '../services/spider_aggregator';
-import { ensureCleanedFormat, toPlaySources } from '../services/data_cleaner';
+import { toPlaySources, ensureCleanedFormat, cleanPlayUrls, cleanImageUrl, normalizeArea, type CleanedPlayUrls } from '../services/data_cleaner';
 import { logger } from '../utils/logger';
+import { trackHit } from '../services/hits_tracker';
+import { searchVideos } from '../services/collector_v2';
+import { getRecommendationsV2 } from '../services/recommendation_engine_v2';
+import { getActorDetail, getPopularActors, searchActors } from '../services/actor_manager';
+import { getArticles, getArticleDetail } from '../services/article_collector';
+import { CACHE_CONFIG, TIMEOUT_CONFIG } from '../config';
+import { getMergedVideoDetail, getDeduplicatedLibrary } from '../services/language_merger';
 
 type Bindings = {
   DB: D1Database;
@@ -20,16 +28,19 @@ interface VodCacheData {
   vod_id: string;
   vod_name: string;
   vod_pic?: string;
+  vod_pic_thumb?: string;
   vod_play_url?: string;
   type_id?: number;
   type_name?: string;
   vod_year?: string;
   vod_area?: string;
+  vod_lang?: string;
   vod_actor?: string;
   vod_director?: string;
   vod_content?: string;
   vod_remarks?: string;
   vod_score?: string;
+  vod_tag?: string;
   vod_hits?: number;
   vod_hits_day?: number;
   vod_hits_week?: number;
@@ -64,18 +75,9 @@ const vod = new Hono<{ Bindings: Bindings }>();
  * - ids: 视频 ID（用于详情查询）
  * - wd: 搜索关键词
  */
-vod.get('/api/vod', async (c) => {
+vod.get('/api/vod', validateQuery(ValidationSchemas.vodList), async (c) => {
   try {
-    const params = {
-      ac: c.req.query('ac') || 'list',
-      t: c.req.query('t'),
-      area: c.req.query('area'),
-      year: c.req.query('year'),
-      sort: c.req.query('sort'),
-      pg: c.req.query('pg') || '1',
-      ids: c.req.query('ids'),
-      wd: c.req.query('wd'),
-    };
+    const params = getValidatedQuery(c);
 
     logger.vod.info('Request params', { params });
 
@@ -84,7 +86,7 @@ vod.get('/api/vod', async (c) => {
 
     const result = await aggregateVideos(c.env, '', params, {
       includeWelfare,
-      timeout: 5000,
+      timeout: TIMEOUT_CONFIG.defaultRequest,
     });
 
     return c.json({
@@ -93,7 +95,7 @@ vod.get('/api/vod', async (c) => {
       page: result.page,
       pagecount: result.pagecount,
       total: result.total,
-      list: result.list,
+      data: result.list,
       sources: result.sources,
       failed: result.failed,
     });
@@ -118,19 +120,9 @@ vod.get('/api/vod', async (c) => {
  * Query params:
  * - ids: 视频 ID（必需）
  */
-vod.get('/api/vod/detail', async (c) => {
+vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c) => {
   try {
-    const ids = c.req.query('ids');
-
-    if (!ids) {
-      return c.json(
-        {
-          code: 0,
-          msg: 'Missing required parameter: ids',
-        },
-        400
-      );
-    }
+    const { ids } = getValidatedQuery(c);
 
     // 🚀 优先从 KV 缓存读取
     const cacheKey = `vod:${ids}`;
@@ -141,23 +133,14 @@ vod.get('/api/vod/detail', async (c) => {
       if (kvCached) {
         video = kvCached as VodCacheData;
         // 异步记录访问（不阻塞响应）
-        c.executionCtx.waitUntil(
-          (async () => {
-            const { trackHit } = await import('../services/hits_tracker');
-            await trackHit(c.env, ids);
-          })()
-        );
+        c.executionCtx.waitUntil(trackHit(c.env, ids));
         
-        // 🆕 解析播放源
+        // 解析播放源（数据库已存储清洗后的格式）
         let playSources: PlaySource[] = [];
         try {
-          const playUrls = typeof video.vod_play_url === 'string' 
-            ? JSON.parse(video.vod_play_url || '{}')
-            : video.vod_play_url || {};
-          const cleanedUrls = ensureCleanedFormat(playUrls);
+          const cleanedUrls = JSON.parse(video.vod_play_url || '{}') as CleanedPlayUrls;
           playSources = toPlaySources(cleanedUrls);
         } catch {
-          // 播放地址解析失败，使用空数组，不影响视频详情返回
           logger.vod.warn('Failed to parse play_sources from cache');
         }
         
@@ -167,7 +150,7 @@ vod.get('/api/vod/detail', async (c) => {
           msg: 'success',
           data: {
             ...video,
-            play_sources: playSources,  // 新增：清洗后的播放源
+            play_sources: playSources,
           },
           recommendations: [], // 前端可以单独请求推荐
         });
@@ -185,29 +168,25 @@ vod.get('/api/vod/detail', async (c) => {
       if (cached) {
         video = cached as VodCacheData;
         
-        // 🚀 写入 KV 缓存（1 小时）
+        // 🚀 写入 KV 缓存
         c.executionCtx.waitUntil(
-          c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(cached), { expirationTtl: 3600 })
+          c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(cached), { expirationTtl: CACHE_CONFIG.vodDetailTTL })
         );
         
         // 异步记录访问
-        c.executionCtx.waitUntil(
-          (async () => {
-            const { trackHit } = await import('../services/hits_tracker');
-            await trackHit(c.env, ids);
-          })()
-        );
+        c.executionCtx.waitUntil(trackHit(c.env, ids));
       }
     } catch (error) {
       logger.vod.error('Cache read failed', { error: String(error) });
     }
 
-    // 降级：实时获取
+    // 降级：实时获取并存储
+    let isFromRealtime = false;
     if (!video) {
       const includeWelfare = await shouldIncludeWelfare(c.env, { ids });
       const result = await aggregateVideos(c.env, '', { ac: 'detail', ids }, {
         includeWelfare,
-        timeout: 5000,
+        timeout: TIMEOUT_CONFIG.defaultRequest,
       });
 
       if (result.list.length === 0) {
@@ -221,24 +200,35 @@ vod.get('/api/vod/detail', async (c) => {
       }
 
       video = result.list[0] as VodCacheData;
+      isFromRealtime = true;
+      
+      // 🆕 实时获取的数据需要清洗并存储到数据库
+      c.executionCtx.waitUntil(
+        saveRealtimeVideo(c.env, video, result.sources[0] || 'unknown')
+      );
     }
 
-    // 🆕 解析播放源
+    // 解析播放源
     let playSources: PlaySource[] = [];
-    try {
-      const playUrls = typeof video.vod_play_url === 'string' 
-        ? JSON.parse(video.vod_play_url || '{}')
-        : video.vod_play_url || {};
-      const cleanedUrls = ensureCleanedFormat(playUrls);
+    if (isFromRealtime) {
+      // 实时获取的数据是原始格式，需要清洗
+      const cleanedUrls = ensureCleanedFormat(video.vod_play_url);
       playSources = toPlaySources(cleanedUrls);
-    } catch {
-      logger.vod.error('Failed to parse play_sources');
+    } else {
+      // 缓存数据已是清洗后的JSON格式
+      try {
+        const parsed = JSON.parse(video.vod_play_url || '{}') as CleanedPlayUrls;
+        playSources = toPlaySources(parsed);
+      } catch {
+        // JSON解析失败，说明是原始字符串格式，需要清洗
+        const cleanedUrls = ensureCleanedFormat(video.vod_play_url);
+        playSources = toPlaySources(cleanedUrls);
+      }
     }
 
     // 🆕 获取智能推荐（使用推荐引擎 V2）
     let recommendations: VodCacheData[] = [];
     try {
-      const { getRecommendationsV2 } = await import('../services/recommendation_engine_v2');
       const recResult = await getRecommendationsV2(c.env, {
         strategy: 'similar',
         vodId: ids,
@@ -257,7 +247,7 @@ vod.get('/api/vod/detail', async (c) => {
         pg: '1',
       }, {
         includeWelfare: false,
-        timeout: 3000,
+        timeout: TIMEOUT_CONFIG.fastRequest,
       });
       recommendations = recResult.list.slice(0, 10) as VodCacheData[];
     }
@@ -285,6 +275,112 @@ vod.get('/api/vod/detail', async (c) => {
 });
 
 /**
+ * GET /api/vod/detail/merged
+ * 获取合并后的视频详情（多语言版本合并）
+ * 
+ * 将同一影片的不同语言版本（国语、粤语、原声等）合并为一条记录
+ * 返回所有可用的语言版本和播放线路
+ * 
+ * Query params:
+ * - ids: 视频 ID（必需）
+ */
+vod.get('/api/vod/detail/merged', validateQuery(ValidationSchemas.vodDetail), async (c) => {
+  try {
+    const { ids } = getValidatedQuery(c);
+
+    // 异步记录访问
+    c.executionCtx.waitUntil(trackHit(c.env, ids));
+
+    // 获取合并后的详情
+    const merged = await getMergedVideoDetail(c.env, ids);
+
+    if (!merged) {
+      return c.json({
+        code: 0,
+        msg: 'Video not found',
+      }, 404);
+    }
+
+    // 获取推荐
+    let recommendations: VodCacheData[] = [];
+    try {
+      const recResult = await getRecommendationsV2(c.env, {
+        strategy: 'similar',
+        vodId: ids,
+        limit: 10,
+      });
+      recommendations = recResult.list as VodCacheData[];
+    } catch (error) {
+      logger.vod.error('Recommendation failed', { error: String(error) });
+    }
+
+    return c.json({
+      code: 1,
+      msg: 'success',
+      data: merged,
+      recommendations,
+    });
+  } catch (error) {
+    logger.vod.error('Merged detail error', { error: String(error) });
+    return c.json({
+      code: 0,
+      msg: 'Failed to fetch video detail',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * GET /api/library
+ * 获取片库列表（去重后）
+ * 
+ * 同一影片的多个语言版本只返回一条记录
+ * 
+ * Query params:
+ * - t: 分类 ID
+ * - area: 地区
+ * - year: 年份
+ * - sort: 排序方式（time, hits, score）
+ * - pg: 页码
+ * - limit: 每页数量
+ */
+vod.get('/api/library', async (c) => {
+  try {
+    const typeId = c.req.query('t') ? parseInt(c.req.query('t')!) : undefined;
+    const area = c.req.query('area');
+    const year = c.req.query('year');
+    const sort = c.req.query('sort') || 'time';
+    const page = parseInt(c.req.query('pg') || '1');
+    const limit = Math.min(parseInt(c.req.query('limit') || '20'), 50);
+
+    const result = await getDeduplicatedLibrary(c.env, {
+      typeId,
+      area,
+      year,
+      page,
+      limit,
+      sort,
+    });
+
+    return c.json({
+      code: 1,
+      msg: 'success',
+      page,
+      pagecount: Math.ceil(result.total / limit),
+      total: result.total,
+      data: result.list,
+    });
+  } catch (error) {
+    logger.vod.error('Library error', { error: String(error) });
+    return c.json({
+      code: 0,
+      msg: 'Failed to fetch library',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
  * GET /api/search_cache
  * 搜索视频（仅搜索缓存，使用FTS5全文索引）
  * 
@@ -292,26 +388,14 @@ vod.get('/api/vod/detail', async (c) => {
  * - wd: 搜索关键词（必需）
  * - limit: 返回数量（默认20）
  */
-vod.get('/api/search_cache', async (c) => {
+vod.get('/api/search_cache', validateQuery(ValidationSchemas.search), async (c) => {
   try {
-    const wd = c.req.query('wd');
-    const limit = parseInt(c.req.query('limit') || '20');
-
-    if (!wd) {
-      return c.json(
-        {
-          code: 0,
-          msg: 'Missing required parameter: wd',
-        },
-        400
-      );
-    }
+    const { wd, limit } = getValidatedQuery(c);
 
     logger.search.info('Keyword', { keyword: wd });
 
     // 使用FTS5全文搜索（V2引擎）
     try {
-      const { searchVideos } = await import('../services/collector_v2');
       const results = await searchVideos(c.env, wd, limit);
       
       logger.search.info('Found results', { count: results.length });
@@ -321,14 +405,14 @@ vod.get('/api/search_cache', async (c) => {
         msg: 'success',
         keyword: wd,
         total: results.length,
-        list: results,
+        data: results,
       });
     } catch (error) {
       logger.search.error('Error', { error: error instanceof Error ? error.message : String(error) });
       return c.json({
         code: 0,
         msg: 'Cache search failed',
-        list: [],
+        data: [],
       });
     }
   } catch (error) {
@@ -352,22 +436,11 @@ vod.get('/api/search_cache', async (c) => {
  * - wd: 搜索关键词（必需）
  * - pg: 页码
  */
-vod.get('/api/search', async (c) => {
+vod.get('/api/search', validateQuery(ValidationSchemas.search), async (c) => {
   try {
-    const wd = c.req.query('wd');
-    const pg = c.req.query('pg') || '1';
+    const { wd, pg } = getValidatedQuery(c);
     const userId = c.req.header('x-user-id');
     const deviceId = c.req.header('x-device-id');
-
-    if (!wd) {
-      return c.json(
-        {
-          code: 0,
-          msg: 'Missing required parameter: wd',
-        },
-        400
-      );
-    }
 
     logger.search.info('Keyword', { keyword: wd });
 
@@ -400,7 +473,6 @@ vod.get('/api/search', async (c) => {
 
     // 🚀 优化：优先使用FTS5搜索缓存（V2引擎）
     try {
-      const { searchVideos } = await import('../services/collector_v2');
       const cached = await searchVideos(c.env, wd, 20);
       
       if (cached.length > 0) {
@@ -412,7 +484,7 @@ vod.get('/api/search', async (c) => {
           page: 1,
           pagecount: 1,
           total: cached.length,
-          list: cached,
+          data: cached,
           sources: ['cache'],
           failed: [],
         });
@@ -428,7 +500,7 @@ vod.get('/api/search', async (c) => {
       pg,
     }, {
       includeWelfare: false,
-      timeout: 5000,
+      timeout: TIMEOUT_CONFIG.aggregatorSearch,
     });
 
     return c.json({
@@ -438,7 +510,7 @@ vod.get('/api/search', async (c) => {
       page: result.page,
       pagecount: result.pagecount,
       total: result.total,
-      list: result.list,
+      data: result.list,
       sources: result.sources,
       failed: result.failed,
     });
@@ -470,7 +542,7 @@ vod.get('/api/hot_search', async (c) => {
       return c.json({
         code: 1,
         msg: 'success',
-        keywords: cached.keywords,
+        data: cached.keywords,
       });
     }
 
@@ -484,11 +556,11 @@ vod.get('/api/hot_search', async (c) => {
     
     // 如果开关关闭，返回空数组并缓存
     if (configMap.get('hot_search_enabled') !== 'true') {
-      await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify({ keywords: [] }), { expirationTtl: 600 });
+      await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify({ keywords: [] }), { expirationTtl: CACHE_CONFIG.hotSearchTTL });
       return c.json({
         code: 1,
         msg: 'success',
-        keywords: [],
+        data: [],
       });
     }
 
@@ -512,13 +584,13 @@ vod.get('/api/hot_search', async (c) => {
       keywords = result?.value ? JSON.parse(result.value as string) : [];
     }
 
-    // 缓存结果 10 分钟
-    await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify({ keywords }), { expirationTtl: 600 });
+    // 缓存结果
+    await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify({ keywords }), { expirationTtl: CACHE_CONFIG.hotSearchTTL });
 
     return c.json({
       code: 1,
       msg: 'success',
-      keywords,
+      data: keywords,
     });
   } catch (error) {
     logger.vod.error('HotSearch Error', { error: String(error) });
@@ -541,7 +613,6 @@ vod.get('/api/actor/:id', async (c) => {
   try {
     const actorId = parseInt(c.req.param('id'));
 
-    const { getActorDetail } = await import('../services/actor_manager');
     const actor = await getActorDetail(c.env, actorId);
 
     if (!actor) {
@@ -580,13 +651,12 @@ vod.get('/api/actors/popular', async (c) => {
   try {
     const limit = parseInt(c.req.query('limit') || '50');
 
-    const { getPopularActors } = await import('../services/actor_manager');
     const actors = await getPopularActors(c.env, limit);
 
     return c.json({
       code: 1,
       msg: 'success',
-      list: actors,
+      data: actors,
     });
   } catch (error) {
     logger.actorManager.error('Get popular actors error', { error: error instanceof Error ? error.message : String(error) });
@@ -620,13 +690,12 @@ vod.get('/api/actors/search', async (c) => {
       );
     }
 
-    const { searchActors } = await import('../services/actor_manager');
     const actors = await searchActors(c.env, keyword, limit);
 
     return c.json({
       code: 1,
       msg: 'success',
-      list: actors,
+      data: actors,
     });
   } catch (error) {
     logger.actorManager.error('Search error', { error: error instanceof Error ? error.message : String(error) });
@@ -728,7 +797,7 @@ vod.get('/api/ranking', async (c) => {
         return c.json({
           code: 1,
           msg: 'success',
-          list: cached,
+          data: cached,
           period,
         });
       }
@@ -737,13 +806,13 @@ vod.get('/api/ranking', async (c) => {
       logger.vod.warn('Ranking cache read failed');
     }
 
-    // 根据时间段确定排序字段
-    let orderBy = 'COALESCE(vod_hits_day, 0) DESC';
-    if (period === 'week') {
-      orderBy = 'COALESCE(vod_hits_week, vod_hits_day * 7, 0) DESC';
-    } else if (period === 'month') {
-      orderBy = 'COALESCE(vod_hits_month, vod_hits_day * 30, 0) DESC';
-    }
+    // 根据时间段确定排序字段（白名单验证，防止SQL注入）
+    const allowedOrderBy: Record<string, string> = {
+      'day': 'COALESCE(vod_hits_day, 0) DESC',
+      'week': 'COALESCE(vod_hits_week, vod_hits_day * 7, 0) DESC',
+      'month': 'COALESCE(vod_hits_month, vod_hits_day * 30, 0) DESC',
+    };
+    const orderBy = allowedOrderBy[period] || allowedOrderBy['day'];
 
     // 🚀 优化：只查询必要字段
     let sql = `
@@ -797,9 +866,9 @@ vod.get('/api/ranking', async (c) => {
       };
     });
 
-    // 🚀 写入缓存（10 分钟）
+    // 🚀 写入缓存
     try {
-      await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(list), { expirationTtl: 600 });
+      await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(list), { expirationTtl: CACHE_CONFIG.rankingTTL });
     } catch (e) {
       // 缓存写入失败不影响主流程，仅记录警告
       logger.vod.warn('Ranking cache write failed', { error: e instanceof Error ? e.message : 'Unknown' });
@@ -808,7 +877,7 @@ vod.get('/api/ranking', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list,
+      data: list,
       period,
     });
   } catch (error) {
@@ -839,7 +908,7 @@ vod.get('/api/categories/:id/subs', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list: result.results || [],
+      data: result.results || [],
     });
   } catch (error) {
     logger.vod.error('Get sub categories error', { error: error instanceof Error ? error.message : String(error) });
@@ -868,13 +937,12 @@ vod.get('/api/articles', async (c) => {
     const limit = parseInt(c.req.query('limit') || '20');
     const keyword = c.req.query('keyword');
 
-    const { getArticles } = await import('../services/article_collector');
     const result = await getArticles(c.env, { typeId, page, limit, keyword });
 
     return c.json({
       code: 1,
       msg: 'success',
-      list: result.list,
+      data: result.list,
       total: result.total,
       page,
       limit,
@@ -897,7 +965,6 @@ vod.get('/api/articles/:id', async (c) => {
   try {
     const id = parseInt(c.req.param('id'));
 
-    const { getArticleDetail } = await import('../services/article_collector');
     const article = await getArticleDetail(c.env, id);
 
     if (!article) {
@@ -938,7 +1005,7 @@ vod.get('/api/article-categories', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list: result.results || [],
+      data: result.results || [],
     });
   } catch (error) {
     logger.vod.error('Get article categories error', { error: error instanceof Error ? error.message : String(error) });
@@ -949,5 +1016,102 @@ vod.get('/api/article-categories', async (c) => {
     }, 500);
   }
 });
+
+// ============================================
+// 辅助函数
+// ============================================
+
+/**
+ * 保存实时获取的视频到数据库
+ * 清洗数据后存储，下次访问直接从缓存读取
+ */
+async function saveRealtimeVideo(
+  env: { DB: D1Database; ROBIN_CACHE: KVNamespace },
+  video: VodCacheData,
+  sourceName: string
+): Promise<void> {
+  try {
+    const vodName = video.vod_name || '';
+    const vodYear = video.vod_year || '';
+    const vodArea = normalizeArea(video.vod_area || '');
+    
+    // 检查是否已存在
+    const existing = await env.DB.prepare(`
+      SELECT vod_id FROM vod_cache WHERE vod_name = ? AND vod_year = ? LIMIT 1
+    `).bind(vodName, vodYear).first();
+    
+    if (existing) {
+      logger.vod.debug('Video already exists in cache', { vodName });
+      return;
+    }
+    
+    // 生成唯一ID
+    const vodId = generateVodId(vodName, vodYear, vodArea);
+    
+    // 清洗播放地址
+    const rawPlayUrls: Record<string, string> = {};
+    if (video.vod_play_url) {
+      rawPlayUrls[sourceName] = video.vod_play_url;
+    }
+    const cleanedPlayUrls = cleanPlayUrls(rawPlayUrls);
+    
+    // 清洗图片地址
+    const cleanedPic = cleanImageUrl(video.vod_pic || '');
+    
+    const now = Math.floor(Date.now() / 1000);
+    
+    await env.DB.prepare(`
+      INSERT INTO vod_cache (
+        vod_id, vod_name, vod_pic, vod_pic_thumb, vod_remarks,
+        vod_year, vod_area, vod_lang, vod_actor, vod_director,
+        vod_content, vod_play_url, vod_score, vod_tag,
+        type_id, type_name, source_name, quality_score,
+        is_valid, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+    `).bind(
+      vodId,
+      vodName,
+      cleanedPic,
+      cleanImageUrl(video.vod_pic_thumb || video.vod_pic || ''),
+      video.vod_remarks || '',
+      vodYear,
+      vodArea,
+      video.vod_lang || '',
+      video.vod_actor || '',
+      video.vod_director || '',
+      video.vod_content || '',
+      JSON.stringify(cleanedPlayUrls),
+      parseFloat(video.vod_score || '0'),
+      video.vod_tag || '',
+      video.type_id || 1,
+      video.type_name || '',
+      sourceName,
+      50, // 默认质量分
+      now,
+      now
+    ).run();
+    
+    logger.vod.info('Saved realtime video to cache', { vodId, vodName });
+    
+  } catch (error) {
+    logger.vod.error('Failed to save realtime video', { 
+      vodName: video.vod_name, 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+  }
+}
+
+/**
+ * 生成视频唯一ID
+ */
+function generateVodId(name: string, year: string, area: string): string {
+  const key = `${name}-${year}-${area}`.toLowerCase().replace(/\s+/g, '');
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash) + key.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(36).substring(0, 50);
+}
 
 export default vod;

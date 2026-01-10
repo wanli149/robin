@@ -32,8 +32,8 @@ const ApiParamsEditor: React.FC<ApiParamsEditorProps> = ({ moduleType, value, on
         setCategories(data.categories || []);
       } catch (error) {
         console.error('Failed to load categories:', error);
-        // 使用默认分类作为降级
-        setCategories(getDefaultCategories());
+        // 不使用硬编码降级，显示空列表让用户知道需要配置分类
+        setCategories([]);
       } finally {
         setLoading(false);
       }
@@ -814,85 +814,5 @@ const ApiParamsEditor: React.FC<ApiParamsEditorProps> = ({ moduleType, value, on
     </div>
   );
 };
-
-// 默认分类数据（作为降级方案）
-function getDefaultCategories(): CategoryWithSubs[] {
-  return [
-    {
-      id: 1, name: '电影', name_en: 'movie', sort_order: 1, is_active: true,
-      subCategories: [
-        { id: 1, parent_id: 1, name: '动作', name_en: 'action', sort_order: 1, is_active: true },
-        { id: 2, parent_id: 1, name: '喜剧', name_en: 'comedy', sort_order: 2, is_active: true },
-        { id: 3, parent_id: 1, name: '爱情', name_en: 'romance', sort_order: 3, is_active: true },
-        { id: 4, parent_id: 1, name: '科幻', name_en: 'scifi', sort_order: 4, is_active: true },
-        { id: 5, parent_id: 1, name: '恐怖', name_en: 'horror', sort_order: 5, is_active: true },
-        { id: 6, parent_id: 1, name: '悬疑', name_en: 'mystery', sort_order: 6, is_active: true },
-        { id: 7, parent_id: 1, name: '战争', name_en: 'war', sort_order: 7, is_active: true },
-        { id: 8, parent_id: 1, name: '剧情', name_en: 'drama', sort_order: 8, is_active: true },
-        { id: 9, parent_id: 1, name: '伦理', name_en: 'ethics', sort_order: 9, is_active: true },
-      ],
-    },
-    {
-      id: 2, name: '电视剧', name_en: 'series', sort_order: 2, is_active: true,
-      subCategories: [
-        { id: 10, parent_id: 2, name: '国产剧', name_en: 'chinese', sort_order: 1, is_active: true },
-        { id: 11, parent_id: 2, name: '韩剧', name_en: 'korean', sort_order: 2, is_active: true },
-        { id: 12, parent_id: 2, name: '日剧', name_en: 'japanese', sort_order: 3, is_active: true },
-        { id: 13, parent_id: 2, name: '美剧', name_en: 'american', sort_order: 4, is_active: true },
-        { id: 14, parent_id: 2, name: '港台剧', name_en: 'hktw', sort_order: 5, is_active: true },
-        { id: 15, parent_id: 2, name: '泰剧', name_en: 'thai', sort_order: 6, is_active: true },
-      ],
-    },
-    {
-      id: 3, name: '综艺', name_en: 'variety', sort_order: 3, is_active: true,
-      subCategories: [
-        { id: 20, parent_id: 3, name: '真人秀', name_en: 'reality', sort_order: 1, is_active: true },
-        { id: 21, parent_id: 3, name: '访谈', name_en: 'talk', sort_order: 2, is_active: true },
-        { id: 22, parent_id: 3, name: '选秀', name_en: 'talent', sort_order: 3, is_active: true },
-        { id: 23, parent_id: 3, name: '晚会', name_en: 'gala', sort_order: 4, is_active: true },
-      ],
-    },
-    {
-      id: 4, name: '动漫', name_en: 'anime', sort_order: 4, is_active: true,
-      subCategories: [
-        { id: 30, parent_id: 4, name: '国产动漫', name_en: 'chinese', sort_order: 1, is_active: true },
-        { id: 31, parent_id: 4, name: '日本动漫', name_en: 'japanese', sort_order: 2, is_active: true },
-        { id: 32, parent_id: 4, name: '欧美动漫', name_en: 'western', sort_order: 3, is_active: true },
-      ],
-    },
-    {
-      id: 5, name: '短剧', name_en: 'shorts', sort_order: 5, is_active: true,
-      subCategories: [
-        { id: 40, parent_id: 5, name: '霸总', name_en: 'ceo', sort_order: 1, is_active: true },
-        { id: 41, parent_id: 5, name: '战神', name_en: 'warrior', sort_order: 2, is_active: true },
-        { id: 42, parent_id: 5, name: '古装', name_en: 'costume', sort_order: 3, is_active: true },
-        { id: 43, parent_id: 5, name: '甜宠', name_en: 'sweet', sort_order: 4, is_active: true },
-      ],
-    },
-    {
-      id: 6, name: '体育', name_en: 'sports', sort_order: 6, is_active: true,
-      subCategories: [
-        { id: 50, parent_id: 6, name: '足球', name_en: 'football', sort_order: 1, is_active: true },
-        { id: 51, parent_id: 6, name: '篮球', name_en: 'basketball', sort_order: 2, is_active: true },
-        { id: 52, parent_id: 6, name: '电竞', name_en: 'esports', sort_order: 3, is_active: true },
-      ],
-    },
-    {
-      id: 7, name: '纪录片', name_en: 'documentary', sort_order: 7, is_active: true,
-      subCategories: [
-        { id: 60, parent_id: 7, name: '历史', name_en: 'history', sort_order: 1, is_active: true },
-        { id: 61, parent_id: 7, name: '自然', name_en: 'nature', sort_order: 2, is_active: true },
-        { id: 62, parent_id: 7, name: '科技', name_en: 'technology', sort_order: 3, is_active: true },
-      ],
-    },
-    {
-      id: 8, name: '预告片', name_en: 'trailer', sort_order: 8, is_active: true,
-      subCategories: [
-        { id: 70, parent_id: 8, name: '电影预告', name_en: 'movie', sort_order: 1, is_active: true },
-        { id: 71, parent_id: 8, name: '剧集预告', name_en: 'series', sort_order: 2, is_active: true },
-      ],
-    },
-  ];
-}
 
 export default ApiParamsEditor;

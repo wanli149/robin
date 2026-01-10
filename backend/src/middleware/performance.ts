@@ -5,6 +5,7 @@
 
 import { Context, Next } from 'hono';
 import { createLogger } from '../utils/logger';
+import { CACHE_CONFIG } from '../config';
 
 const logger = createLogger('Performance');
 
@@ -82,7 +83,7 @@ async function recordPerformance(
     await env.ROBIN_CACHE.put(
       key,
       JSON.stringify(data),
-      { expirationTtl: 86400 } // 保留24小时
+      { expirationTtl: CACHE_CONFIG.performanceDataTTL }
     );
   } catch (error) {
     logger.error('Failed to record', { error: error instanceof Error ? error.message : 'Unknown' });

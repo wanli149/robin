@@ -20,7 +20,7 @@ abstract class PlayerControlsBase {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: backgroundColor ?? Colors.black.withOpacity(0.5),
+          color: backgroundColor ?? Colors.black.withValues(alpha: 0.5),
           shape: BoxShape.circle,
         ),
         child: Icon(
@@ -69,7 +69,7 @@ abstract class PlayerControlsBase {
           begin: isTop ? Alignment.topCenter : Alignment.bottomCenter,
           end: isTop ? Alignment.bottomCenter : Alignment.topCenter,
           colors: [
-            Colors.black.withOpacity(0.7),
+            Colors.black.withValues(alpha: 0.7),
             Colors.transparent,
           ],
         ),
@@ -80,15 +80,17 @@ abstract class PlayerControlsBase {
 
   /// 获取内容类型对应的标题
   static String getTitle(PlayerState state) {
+    final name = state.contentName.isNotEmpty ? state.contentName : '未知视频';
+    
     switch (state.contentType) {
       case ContentType.shorts:
-        return '短剧 - 第${state.episodeIndex}集';
+        return '$name - 第${state.episodeIndex}集';
       case ContentType.tv:
-        return '电视剧 - 第${state.episodeIndex}集';
+        return '$name - 第${state.episodeIndex}集';
       case ContentType.movie:
-        return '电影';
+        return name;
       case ContentType.shortsFlow:
-        return '短剧';
+        return name;
     }
   }
 
@@ -121,7 +123,7 @@ abstract class PlayerControlsBase {
 
   /// 获取选集标签
   static String getEpisodeLabel(int episodeIndex) {
-    return '第${episodeIndex}集';
+    return '第$episodeIndex集';
   }
 
   /// 处理返回按钮

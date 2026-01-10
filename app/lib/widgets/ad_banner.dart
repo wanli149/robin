@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../core/router.dart';
+import '../core/logger.dart';
 import 'net_image.dart';
 
 /// 横幅广告组件
 /// 支持图片和视频广告，实现点击跳转逻辑
-class AdBanner extends StatelessWidget {
+class AdBanner extends StatefulWidget {
   final AdBannerData data;
   final double? height;
   final EdgeInsetsGeometry? margin;
@@ -18,10 +20,70 @@ class AdBanner extends StatelessWidget {
   });
 
   @override
+  State<AdBanner> createState() => _AdBannerState();
+}
+
+class _AdBannerState extends State<AdBanner> {
+  VideoPlayerController? _videoController;
+  bool _isVideoInitialized = false;
+  bool _isVideoPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.data.contentType == 'video') {
+      _initVideoPlayer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  /// 初始化视频播放器
+  Future<void> _initVideoPlayer() async {
+    if (widget.data.mediaUrl.isEmpty) return;
+
+    try {
+      _videoController = VideoPlayerController.networkUrl(
+        Uri.parse(widget.data.mediaUrl),
+      );
+
+      await _videoController!.initialize();
+      _videoController!.setLooping(true);
+      _videoController!.setVolume(0); // 默认静音
+
+      if (mounted) {
+        setState(() {
+          _isVideoInitialized = true;
+        });
+      }
+    } catch (e) {
+      Logger.error('[AdBanner] Failed to init video: $e');
+    }
+  }
+
+  /// 切换视频播放状态
+  void _toggleVideoPlay() {
+    if (_videoController == null || !_isVideoInitialized) return;
+
+    setState(() {
+      if (_isVideoPlaying) {
+        _videoController!.pause();
+      } else {
+        _videoController!.play();
+      }
+      _isVideoPlaying = !_isVideoPlaying;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      height: height ?? 120,
-      margin: margin ?? const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      height: widget.height ?? 120,
+      margin: widget.margin ?? const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -42,7 +104,7 @@ class AdBanner extends StatelessWidget {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.5),
+                    color: Colors.black.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: const Text(
@@ -63,38 +125,20 @@ class AdBanner extends StatelessWidget {
 
   /// 构建广告内容
   Widget _buildAdContent() {
-    if (data.contentType == 'image') {
+    if (widget.data.contentType == 'image') {
       return ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: NetImage(
-          url: data.mediaUrl,
+          url: widget.data.mediaUrl,
           width: double.infinity,
           height: double.infinity,
           fit: BoxFit.cover,
         ),
       );
-    } else if (data.contentType == 'video') {
-      // TODO: 实现视频广告播放
-      // 目前先显示视频封面
+    } else if (widget.data.contentType == 'video') {
       return ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          children: [
-            NetImage(
-              url: data.mediaUrl,
-              width: double.infinity,
-              height: double.infinity,
-              fit: BoxFit.cover,
-            ),
-            const Center(
-              child: Icon(
-                Icons.play_circle_outline,
-                size: 48,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
+        child: _buildVideoAd(),
       );
     } else {
       return Container(
@@ -112,15 +156,104 @@ class AdBanner extends StatelessWidget {
     }
   }
 
+  /// 构建视频广告
+  Widget _buildVideoAd() {
+    if (!_isVideoInitialized || _videoController == null) {
+      // 视频未初始化，显示加载状态
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 视频播放器
+        FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: _videoController!.value.size.width,
+            height: _videoController!.value.size.height,
+            child: VideoPlayer(_videoController!),
+          ),
+        ),
+
+        // 播放/暂停按钮
+        Center(
+          child: GestureDetector(
+            onTap: _toggleVideoPlay,
+            child: AnimatedOpacity(
+              opacity: _isVideoPlaying ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 200),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _isVideoPlaying ? Icons.pause : Icons.play_arrow,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // 静音/取消静音按钮
+        Positioned(
+          bottom: 8,
+          right: 8,
+          child: GestureDetector(
+            onTap: () {
+              final currentVolume = _videoController!.value.volume;
+              _videoController!.setVolume(currentVolume > 0 ? 0 : 1);
+              setState(() {});
+            },
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _videoController!.value.volume > 0
+                    ? Icons.volume_up
+                    : Icons.volume_off,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// 处理广告点击
   Future<void> _handleAdClick(BuildContext context) async {
-    if (data.actionUrl.isEmpty) return;
+    if (widget.data.actionUrl.isEmpty) return;
 
     try {
+      // 暂停视频广告
+      if (_isVideoPlaying) {
+        _videoController?.pause();
+        setState(() {
+          _isVideoPlaying = false;
+        });
+      }
+
       // 使用通用路由处理跳转
-      await UniversalRouter.handleRoute(data.actionUrl);
+      await UniversalRouter.handleRoute(widget.data.actionUrl);
     } catch (e) {
-      print('❌ Failed to handle ad click: $e');
+      Logger.error('Failed to handle ad click: $e');
     }
   }
 }

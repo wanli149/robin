@@ -75,7 +75,7 @@ class AppTheme {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      primaryColor.withOpacity(0.2),
+      primaryColor.withValues(alpha: 0.2),
       backgroundColor,
     ],
   );
@@ -94,12 +94,10 @@ class AppTheme {
         primary: primaryColor,
         secondary: primaryColor,
         surface: surfaceColor,
-        background: backgroundColor,
         error: errorColor,
         onPrimary: Colors.black,
         onSecondary: Colors.black,
         onSurface: textPrimaryColor,
-        onBackground: textPrimaryColor,
         onError: Colors.white,
       ),
       
@@ -323,10 +321,10 @@ class AppTheme {
         filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
         child: Container(
           decoration: BoxDecoration(
-            color: color ?? surfaceColor.withOpacity(0.7),
+            color: color ?? surfaceColor.withValues(alpha: 0.7),
             borderRadius: borderRadius ?? BorderRadius.circular(12),
             border: Border.all(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withValues(alpha: 0.1),
               width: 1,
             ),
           ),
@@ -346,10 +344,10 @@ class AppTheme {
         filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
         child: Container(
           decoration: BoxDecoration(
-            color: surfaceColor.withOpacity(0.8),
+            color: surfaceColor.withValues(alpha: 0.8),
             border: Border(
               top: BorderSide(
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
                 width: 1,
               ),
             ),
@@ -365,7 +363,7 @@ class AppTheme {
   /// 卡片阴影
   static List<BoxShadow> get cardShadow => [
         BoxShadow(
-          color: Colors.black.withOpacity(0.2),
+          color: Colors.black.withValues(alpha: 0.2),
           blurRadius: 8,
           offset: const Offset(0, 2),
         ),
@@ -374,7 +372,7 @@ class AppTheme {
   /// 浮动阴影
   static List<BoxShadow> get floatingShadow => [
         BoxShadow(
-          color: Colors.black.withOpacity(0.3),
+          color: Colors.black.withValues(alpha: 0.3),
           blurRadius: 12,
           offset: const Offset(0, 4),
         ),

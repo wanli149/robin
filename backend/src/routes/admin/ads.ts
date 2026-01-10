@@ -33,7 +33,7 @@ ads.get('/admin/ads', async (c) => {
              weight, sort_order, is_active, start_time, end_time, daily_limit, remark, created_at
       FROM ads_inventory ORDER BY location, sort_order ASC
     `).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
     logger.admin.error('Get ads error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get ads' }, 500);
@@ -154,7 +154,7 @@ ads.get('/admin/ads/list-simple', async (c) => {
     query += ` ORDER BY name ASC`;
     
     const result = await c.env.DB.prepare(query).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
     logger.admin.error('Get ads list error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get ads list' }, 500);

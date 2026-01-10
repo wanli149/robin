@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart' as getx;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import '../core/logger.dart';
 
 /// 公告数据模型
 class Announcement {
@@ -109,7 +110,7 @@ class AnnouncementService extends getx.GetxService {
         await _showAnnouncementDialog(context, announcement);
       }
     } catch (e) {
-      print('❌ Check announcement error: $e');
+      Logger.error('Check announcement error: $e');
     }
   }
 
@@ -138,7 +139,7 @@ class AnnouncementService extends getx.GetxService {
       }
       return null;
     } catch (e) {
-      print('❌ Fetch announcement error: $e');
+      Logger.error('Fetch announcement error: $e');
       return null;
     }
   }
@@ -176,7 +177,7 @@ class AnnouncementService extends getx.GetxService {
                   child: Image.network(
                     announcement.imageUrl!,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -221,12 +222,12 @@ class AnnouncementService extends getx.GetxService {
       case 'url':
         if (announcement.actionUrl != null) {
           // 打开链接（可以使用 url_launcher）
-          print('🔗 Open URL: ${announcement.actionUrl}');
+          Logger.info('Open URL: ${announcement.actionUrl}');
         }
         break;
       case 'update':
         // 跳转到更新页面
-        print('🚀 Navigate to update page');
+        Logger.info('Navigate to update page');
         break;
     }
     
@@ -247,7 +248,7 @@ class AnnouncementService extends getx.GetxService {
         },
       );
     } catch (e) {
-      print('❌ Mark announcement read error: $e');
+      Logger.error('Mark announcement read error: $e');
     }
   }
 
@@ -260,7 +261,7 @@ class AnnouncementService extends getx.GetxService {
         data: {'announcement_id': announcement.id},
       );
     } catch (e) {
-      print('❌ Record announcement click error: $e');
+      Logger.error('Record announcement click error: $e');
     }
   }
 }

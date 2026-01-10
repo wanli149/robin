@@ -55,7 +55,13 @@ dashboard.get('/admin/stats/hot-videos', async (c) => {
     const limit = parseInt(c.req.query('limit') || '20');
     const period = c.req.query('period') || 'day';
 
-    const orderField = period === 'week' ? 'vod_hits_week' : period === 'month' ? 'vod_hits_month' : 'vod_hits_day';
+    // ORDER BY 白名单验证，防止SQL注入
+    const allowedOrderFields: Record<string, string> = {
+      'day': 'vod_hits_day',
+      'week': 'vod_hits_week',
+      'month': 'vod_hits_month',
+    };
+    const orderField = allowedOrderFields[period] || 'vod_hits_day';
 
     const result = await c.env.DB.prepare(`
       SELECT vod_id, vod_name, vod_pic, vod_score, vod_hits, vod_hits_day, vod_hits_week, vod_hits_month
@@ -68,7 +74,7 @@ dashboard.get('/admin/stats/hot-videos', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list: result.results,
+      data: result.results,
     });
   } catch (error) {
     logger.admin.error('[Admin] Hot videos error', { error: error instanceof Error ? error.message : 'Unknown' });

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/router.dart';
 import '../../../services/api_service.dart';
+import '../../../core/logger.dart';
 
 /// 分类标签页组件
 /// 快速切换子分类，支持动态加载数据
@@ -101,7 +102,7 @@ class _CategoryTabsState extends State<CategoryTabs> {
         });
       }
     } catch (e) {
-      print('❌ Failed to load category data: $e');
+      Logger.error('[CategoryTabs] Failed to load category data: $e');
       if (mounted) {
         setState(() {
           _currentItems = _filterItems(widget.items);
@@ -310,7 +311,7 @@ class _CategoryTabsState extends State<CategoryTabs> {
     return Image.network(
       imageUrl,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, _, _) => Container(
         color: const Color(0xFF2E2E2E),
         child: const Icon(Icons.broken_image, size: 32, color: Colors.white24),
       ),

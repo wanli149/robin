@@ -15,28 +15,55 @@ type Bindings = {
 const auth = new Hono<{ Bindings: Bindings }>();
 
 /**
- * 简单的密码哈希函数（使用 Web Crypto API）
- * 注意：这是简化版本，生产环境建议使用 bcrypt
+ * 生成随机盐值
+ */
+function generateSalt(length: number = 16): string {
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 密码哈希函数（使用 Web Crypto API + 盐值）
+ * 格式：salt:hash
  */
 async function hashPassword(password: string): Promise<string> {
+  const salt = generateSalt();
   const encoder = new TextEncoder();
-  const data = encoder.encode(password);
+  const data = encoder.encode(salt + password);
   const hash = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hash));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
+  return `${salt}:${hashHex}`;
 }
 
 /**
  * 验证密码
+ * 支持新格式（salt:hash）和旧格式（纯hash）的兼容
  */
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const passwordHash = await hashPassword(password);
-  return passwordHash === hash;
+async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  
+  // 检查是否为新格式（包含盐值）
+  if (storedHash.includes(':')) {
+    const [salt, hash] = storedHash.split(':');
+    const data = encoder.encode(salt + password);
+    const computedHash = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(computedHash));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex === hash;
+  }
+  
+  // 兼容旧格式（无盐值）
+  const data = encoder.encode(password);
+  const computedHash = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(computedHash));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex === storedHash;
 }
 
 /**
- * POST /auth/register
+ * POST /api/auth/register
  * 用户注册
  * 
  * Body:
@@ -44,7 +71,7 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
  * - password: 密码（必需）
  * - device_id: 设备 ID（可选）
  */
-auth.post('/auth/register', async (c) => {
+auth.post('/api/auth/register', async (c) => {
   try {
     const body = await c.req.json();
     const { username, password, device_id } = body;
@@ -128,14 +155,14 @@ auth.post('/auth/register', async (c) => {
 });
 
 /**
- * POST /auth/login
+ * POST /api/auth/login
  * 用户登录
  * 
  * Body:
  * - username: 用户名（必需）
  * - password: 密码（必需）
  */
-auth.post('/auth/login', async (c) => {
+auth.post('/api/auth/login', async (c) => {
   try {
     const body = await c.req.json();
     const { username, password } = body;
@@ -213,13 +240,13 @@ auth.post('/auth/login', async (c) => {
 });
 
 /**
- * GET /auth/me
+ * GET /api/auth/me
  * 获取当前用户信息
  * 
  * Headers:
  * - Authorization: Bearer <token>
  */
-auth.get('/auth/me', async (c) => {
+auth.get('/api/auth/me', async (c) => {
   try {
     const authHeader = c.req.header('Authorization') || null;
     const token = extractToken(authHeader);
@@ -408,7 +435,7 @@ auth.get('/api/user/history', async (c) => {
       msg: 'success',
       page,
       total,
-      list: result.results,
+      data: result.results,
     });
   } catch (error) {
     logger.admin.error('History error', { error: error instanceof Error ? error.message : String(error) });
@@ -454,7 +481,7 @@ auth.get('/api/user/favorites', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list: result.results,
+      data: result.results,
     });
   } catch (error) {
     logger.admin.error('Favorites error', { error: error instanceof Error ? error.message : String(error) });
@@ -675,7 +702,7 @@ auth.get('/api/user/appointments', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      list: result.results,
+      data: result.results,
     });
   } catch (error) {
     logger.admin.error('Appointments error', { error: error instanceof Error ? error.message : String(error) });

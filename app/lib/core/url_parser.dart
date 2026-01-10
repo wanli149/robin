@@ -1,3 +1,5 @@
+import 'logger.dart';
+
 /// 统一的URL解析服务
 /// 处理各种视频URL格式的解析和兼容性
 class UrlParser {
@@ -38,7 +40,7 @@ class UrlParser {
         }
       }
     } catch (e) {
-      print('❌ [UrlParser] Failed to parse CMS URL: $e');
+      Logger.error('[UrlParser] Failed to parse CMS URL: $e');
     }
     
     return playUrl.trim();
@@ -76,7 +78,7 @@ class UrlParser {
         }
       }
     } catch (e) {
-      print('❌ [UrlParser] Failed to parse CMS URL by episode: $e');
+      Logger.error('[UrlParser] Failed to parse CMS URL by episode: $e');
     }
     
     return '';
@@ -125,7 +127,7 @@ class UrlParser {
         }
       }
     } catch (e) {
-      print('❌ [UrlParser] Failed to parse all episodes: $e');
+      Logger.error('[UrlParser] Failed to parse all episodes: $e');
     }
     
     return episodes;
@@ -168,7 +170,7 @@ class UrlParser {
         return path.substring(lastDot + 1).toLowerCase();
       }
     } catch (e) {
-      print('❌ [UrlParser] Failed to get URL extension: $e');
+      Logger.error('[UrlParser] Failed to get URL extension: $e');
     }
     
     return '';

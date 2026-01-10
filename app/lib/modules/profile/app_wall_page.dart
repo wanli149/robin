@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/http_client.dart';
+import '../../core/logger.dart';
 import '../../widgets/net_image.dart';
 
 /// 应用中心页面
@@ -32,9 +33,9 @@ class _AppWallPageState extends State<AppWallPage> {
 
       final response = await _httpClient.get('/api/app_wall');
 
-      if (response.data['code'] == 200 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         final data = response.data['data'] ?? response.data;
-        final List<dynamic> appList = data['list'] ?? data;
+        final List<dynamic> appList = data is List ? data : [];
 
         _apps.value = appList
             .map((json) => AppWallItem.fromJson(json))
@@ -44,7 +45,7 @@ class _AppWallPageState extends State<AppWallPage> {
         _errorMessage.value = '加载失败';
       }
     } catch (e) {
-      print('❌ Failed to load app wall: $e');
+      Logger.error('Failed to load app wall: $e');
       _errorMessage.value = '加载失败，请稍后重试';
     } finally {
       _isLoading.value = false;
@@ -146,7 +147,7 @@ class _AppWallPageState extends State<AppWallPage> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFC107).withOpacity(0.2),
+                            color: const Color(0xFFFFC107).withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -265,17 +266,17 @@ class _AppWallPageState extends State<AppWallPage> {
           '错误',
           '无法打开下载链接',
           snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red.withOpacity(0.8),
+          backgroundColor: Colors.red.withValues(alpha: 0.8),
           colorText: Colors.white,
         );
       }
     } catch (e) {
-      print('❌ Failed to launch download URL: $e');
+      Logger.error('Failed to launch download URL: $e');
       Get.snackbar(
         '错误',
         '打开下载链接失败',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
     }

@@ -5,10 +5,11 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Card, Form, Input, Switch, Button, Space, message, Tag,
+  Card, Form, Input, Switch, Button, Space, Tag,
   InputNumber, Typography, Row, Col, Statistic, Alert,
   Tooltip, Popconfirm, List,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   SafetyCertificateOutlined, KeyOutlined, ReloadOutlined,
   PlusOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined,
@@ -31,19 +32,23 @@ const SecuritySettings: React.FC = () => {
   const [newWhitelistPath, setNewWhitelistPath] = useState('');
   const [generatedKey, setGeneratedKey] = useState('');
   const [form] = Form.useForm();
+  const { success, error, warning } = useNotification();
 
   const fetchConfig = async () => {
     setLoading(true);
     try {
       const result = await getSecurityConfig();
       setConfig(result);
-      form.setFieldsValue({
-        secretKey: result.secretKey,
-        timestampTolerance: result.timestampTolerance,
-        nonceTtl: result.nonceTtl,
-      });
-    } catch (error: any) {
-      message.error(error.message || '获取配置失败');
+      // 延迟设置表单值，确保 Form 已挂载
+      setTimeout(() => {
+        form.setFieldsValue({
+          secretKey: result.secretKey,
+          timestampTolerance: result.timestampTolerance,
+          nonceTtl: result.nonceTtl,
+        });
+      }, 0);
+    } catch (err: any) {
+      error(err.message || '获取配置失败');
     } finally {
       setLoading(false);
     }
@@ -66,10 +71,10 @@ const SecuritySettings: React.FC = () => {
   const handleToggle = async (enabled: boolean) => {
     try {
       await toggleSecurityEnabled(enabled);
-      message.success(enabled ? 'API 安全已启用' : 'API 安全已关闭');
+      success(enabled ? 'API 安全已启用' : 'API 安全已关闭');
       fetchConfig();
-    } catch (error: any) {
-      message.error(error.message || '切换失败');
+    } catch (err: any) {
+      error(err.message || '切换失败');
     }
   };
 
@@ -84,12 +89,12 @@ const SecuritySettings: React.FC = () => {
         timestampTolerance: values.timestampTolerance,
         nonceTtl: values.nonceTtl,
       });
-      message.success('配置已保存');
+      success('配置已保存');
       setGeneratedKey('');
       fetchConfig();
-    } catch (error: any) {
-      if (error.errorFields) return;
-      message.error(error.message || '保存失败');
+    } catch (err: any) {
+      if (err.errorFields) return;
+      error(err.message || '保存失败');
     } finally {
       setSaving(false);
     }
@@ -100,23 +105,23 @@ const SecuritySettings: React.FC = () => {
       const result = await generateSecurityKey();
       setGeneratedKey(result.key);
       form.setFieldValue('secretKey', result.key);
-      message.success('密钥已生成，请保存配置');
-    } catch (error: any) {
-      message.error(error.message || '生成失败');
+      success('密钥已生成，请保存配置');
+    } catch (err: any) {
+      error(err.message || '生成失败');
     }
   };
 
   const handleCopyKey = () => {
     if (generatedKey) {
       navigator.clipboard.writeText(generatedKey);
-      message.success('密钥已复制到剪贴板');
+      success('密钥已复制到剪贴板');
     }
   };
 
   const handleAddPackage = () => {
     if (!newPackage || !config) return;
     if (config.allowedPackages.includes(newPackage)) {
-      message.warning('包名已存在');
+      warning('包名已存在');
       return;
     }
     setConfig({
@@ -137,7 +142,7 @@ const SecuritySettings: React.FC = () => {
   const handleAddProtectedPath = () => {
     if (!newProtectedPath || !config) return;
     if (config.protectedPaths.includes(newProtectedPath)) {
-      message.warning('路径已存在');
+      warning('路径已存在');
       return;
     }
     setConfig({
@@ -158,7 +163,7 @@ const SecuritySettings: React.FC = () => {
   const handleAddWhitelistPath = () => {
     if (!newWhitelistPath || !config) return;
     if (config.whitelistPaths.includes(newWhitelistPath)) {
-      message.warning('路径已存在');
+      warning('路径已存在');
       return;
     }
     setConfig({
@@ -185,9 +190,9 @@ const SecuritySettings: React.FC = () => {
         protectedPaths: config.protectedPaths,
         whitelistPaths: config.whitelistPaths,
       });
-      message.success('配置已保存');
-    } catch (error: any) {
-      message.error(error.message || '保存失败');
+      success('配置已保存');
+    } catch (err: any) {
+      error(err.message || '保存失败');
     } finally {
       setSaving(false);
     }
@@ -419,7 +424,7 @@ const SecuritySettings: React.FC = () => {
                 保存
               </Button>
             }
-            bodyStyle={{ maxHeight: 300, overflow: 'auto' }}
+            styles={{ body: { maxHeight: 300, overflow: 'auto' } }}
           >
             <Space style={{ marginBottom: 16 }}>
               <Input
@@ -471,7 +476,7 @@ const SecuritySettings: React.FC = () => {
                 保存
               </Button>
             }
-            bodyStyle={{ maxHeight: 300, overflow: 'auto' }}
+            styles={{ body: { maxHeight: 300, overflow: 'auto' } }}
           >
             <Space style={{ marginBottom: 16 }}>
               <Input

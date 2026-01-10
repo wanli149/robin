@@ -5,14 +5,15 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Table, Button, Space, Tag, message, Popconfirm, Switch,
+  Table, Button, Space, Tag, Popconfirm, Switch,
   Typography, Card,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, WarningOutlined,
   DatabaseOutlined,
 } from '@ant-design/icons';
-import { getAds, deleteAd, toggleAdsGlobalSwitch, saveAd, type Ad } from '../services/adminApi';
+import { getAds, deleteAd, toggleAdsGlobalSwitch, saveAd, migrateAds, type Ad } from '../services/adminApi';
 import AdModal from '../components/AdModal';
 import type { ColumnsType } from 'antd/es/table';
 
@@ -38,47 +39,40 @@ const AdManagement: React.FC = () => {
   const [adsEnabled, setAdsEnabled] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingAd, setEditingAd] = useState<Ad | null>(null);
+  const { success, error, loading: showLoading } = useNotification();
 
   const loadAds = async () => {
     setLoading(true);
     try {
       const data = await getAds();
       setAds(data);
-    } catch (error: any) {
-      message.error(error.message || '加载广告列表失败');
+    } catch (err: any) {
+      error(err.message || '加载广告列表失败');
     } finally {
       setLoading(false);
     }
   };
 
   const handleMigrate = async () => {
+    const hide = showLoading('正在迁移数据库...');
     try {
-      message.loading('正在迁移数据库...', 0);
-      const response = await fetch('/admin/ads/migrate', {
-        method: 'POST',
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const result = await response.json();
-      message.destroy();
-      if (result.code === 1) {
-        message.success(`迁移成功！${result.data?.changes?.length || 0} 项更改`);
-        loadAds();
-      } else {
-        message.error(result.msg || '迁移失败');
-      }
-    } catch {
-      message.destroy();
-      message.error('迁移失败');
+      await migrateAds();
+      hide();
+      success('迁移成功！');
+      loadAds();
+    } catch (err: any) {
+      hide();
+      error(err.message || '迁移失败');
     }
   };
 
   const handleDelete = async (id: number) => {
     try {
       await deleteAd(id);
-      message.success('删除成功');
+      success('删除成功');
       loadAds();
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
@@ -86,9 +80,9 @@ const AdManagement: React.FC = () => {
     try {
       await toggleAdsGlobalSwitch(enabled);
       setAdsEnabled(enabled);
-      message.success(enabled ? '广告已启用' : '广告已熔断');
-    } catch (error: any) {
-      message.error(error.message || '操作失败');
+      success(enabled ? '广告已启用' : '广告已熔断');
+    } catch (err: any) {
+      error(err.message || '操作失败');
     }
   };
 
@@ -105,12 +99,12 @@ const AdManagement: React.FC = () => {
   const handleSave = async (values: any) => {
     try {
       await saveAd(values);
-      message.success(values.id ? '更新成功' : '添加成功');
+      success(values.id ? '更新成功' : '添加成功');
       setModalVisible(false);
       loadAds();
-    } catch (error: any) {
-      message.error(error.message || '保存失败');
-      throw error;
+    } catch (err: any) {
+      error(err.message || '保存失败');
+      throw err;
     }
   };
 

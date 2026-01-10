@@ -6,6 +6,9 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createLogger } from './utils/logger';
+import { createRateLimiter, RateLimitPresets } from './middleware/rate_limiter';
+import { apiSecurity } from './middleware/security';
+import { performanceMonitor } from './middleware/performance';
 
 const appLogger = createLogger('App');
 const cronLogger = createLogger('Cron');
@@ -45,11 +48,24 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.use('/*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'x-admin-key'],
+  allowHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-timestamp', 'x-nonce', 'x-signature', 'x-package-name'],
   exposeHeaders: ['Content-Length'],
   maxAge: 600,
   credentials: true,
 }));
+
+// Performance monitoring middleware
+app.use('/*', performanceMonitor);
+
+// API Security middleware (signature validation)
+app.use('/api/*', apiSecurity());
+
+// Rate limiting middleware for different API endpoints
+app.use('/api/search*', createRateLimiter(RateLimitPresets.search));
+app.use('/api/vod/detail*', createRateLimiter(RateLimitPresets.detail));
+app.use('/api/vod*', createRateLimiter(RateLimitPresets.moderate));
+app.use('/api/shorts*', createRateLimiter(RateLimitPresets.moderate));
+app.use('/api/*', createRateLimiter(RateLimitPresets.lenient));
 
 // Health check
 app.get('/', (c) => {

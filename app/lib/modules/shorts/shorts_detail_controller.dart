@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import '../../core/http_client.dart';
 import '../../core/global_player_manager.dart';
 import '../../core/url_parser.dart';
+import '../../core/logger.dart';
 
 /// 短剧详情控制器
 class ShortsDetailController extends GetxController {
@@ -84,7 +85,7 @@ class ShortsDetailController extends GetxController {
               [];
           episodes.value = episodeList;
 
-          print('✅ Loaded short detail: ${shortDetail.value!['name']}, ${episodes.length} episodes');
+          Logger.success('Loaded short detail: ${shortDetail.value!['name']}, ${episodes.length} episodes');
           
           // 加载推荐短剧
           _loadRecommendations();
@@ -95,7 +96,7 @@ class ShortsDetailController extends GetxController {
         error.value = '网络请求失败';
       }
     } catch (e) {
-      print('❌ Failed to load short detail: $e');
+      Logger.error('Failed to load short detail: $e');
       error.value = '加载失败，请重试';
     } finally {
       isLoading.value = false;
@@ -126,7 +127,7 @@ class ShortsDetailController extends GetxController {
         autoPlay: true,
       );
       
-      print('✅ Switched to episode: ${index + 1}');
+      Logger.success('Switched to episode: ${index + 1}');
     }
   }
 
@@ -189,7 +190,7 @@ class ShortsDetailController extends GetxController {
     try {
       final response = await _httpClient.get(
         '/api/recommend/shorts/$shortId',
-        queryParameters: {'limit': '10'},
+        queryParameters: {'limit': '9'}, // 3x3 网格需要 9 个
       );
 
       if (response.statusCode == 200 && response.data != null) {
@@ -200,11 +201,11 @@ class ShortsDetailController extends GetxController {
               .toList() ?? [];
           
           recommendations.value = list;
-          print('✅ Loaded ${list.length} short recommendations');
+          Logger.success('Loaded ${list.length} short recommendations');
         }
       }
     } catch (e) {
-      print('❌ Failed to load short recommendations: $e');
+      Logger.error('Failed to load short recommendations: $e');
     }
   }
 

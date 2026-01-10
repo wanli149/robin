@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/router.dart';
 import '../../../services/api_service.dart';
+import '../../../core/logger.dart';
 
 /// 文章列表组件
 /// 支持从后端动态加载文章
@@ -57,7 +58,7 @@ class _ArticleListState extends State<ArticleList> {
         setState(() => _loading = false);
       }
     } catch (e) {
-      print('❌ Failed to load articles: $e');
+      Logger.error('[ArticleList] Failed to load articles: $e');
       if (mounted) {
         setState(() => _loading = false);
       }
@@ -172,7 +173,7 @@ class _ArticleListState extends State<ArticleList> {
     final title = article['title'] as String? ?? '';
     final cover = article['cover'] as String? ?? '';
     final articleId = article['id']?.toString() ?? '';
-    final summary = article['summary'] as String? ?? '';
+    // final summary = article['summary'] as String? ?? ''; // 暂未使用
 
     return GestureDetector(
       onTap: () {
@@ -228,7 +229,7 @@ class _ArticleListState extends State<ArticleList> {
     final title = article['title'] as String? ?? '';
     final cover = article['cover'] as String? ?? '';
     final articleId = article['id']?.toString() ?? '';
-    final summary = article['summary'] as String? ?? '';
+    // final summary = article['summary'] as String? ?? ''; // 暂未使用
     final author = article['author'] as String? ?? '';
     final hits = article['hits'] as int? ?? 0;
 
@@ -321,7 +322,7 @@ class _ArticleListState extends State<ArticleList> {
     return Image.network(
       cover,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, _, _) => Container(
         color: const Color(0xFF2E2E2E),
         child: const Center(
           child: Icon(

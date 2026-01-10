@@ -1,8 +1,8 @@
 /// 全局播放器管理器 - 兼容性导出文件
-/// 
+///
 /// 此文件保留用于向后兼容，实际实现已拆分到 player/ 目录。
 /// 新代码请直接导入 'package:robin_video/core/player/player.dart'
-/// 
+///
 /// ## 拆分后的文件结构
 /// ```
 /// lib/core/player/
@@ -19,6 +19,7 @@
 ///     ├── player_pip_mixin.dart
 ///     └── player_listeners_mixin.dart
 /// ```
+library;
 
 // 重新导出所有播放器相关类，保持向后兼容
 export 'player/player.dart';

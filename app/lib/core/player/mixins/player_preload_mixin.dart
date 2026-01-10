@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import '../player_enums.dart';
 import '../player_state.dart';
+import '../../logger.dart';
 
 /// 预加载管理 Mixin
 /// 
@@ -60,7 +61,7 @@ mixin PlayerPreloadMixin on GetxController {
 
       // 如果已经预加载过，跳过
       if (_preloadedUrls.containsKey(preloadKey)) {
-        print('📦 [Preload] Already preloaded: $preloadKey');
+        Logger.debug('Already preloaded: $preloadKey');
         return;
       }
 
@@ -73,12 +74,12 @@ mixin PlayerPreloadMixin on GetxController {
 
       if (nextUrl.isNotEmpty) {
         _preloadedUrls[preloadKey] = nextUrl;
-        print('✅ [Preload] Preloaded episode $nextEpisodeIndex: $preloadKey');
+        Logger.success('Preloaded episode $nextEpisodeIndex: $preloadKey');
       } else {
-        print('⚠️ [Preload] No URL for episode $nextEpisodeIndex');
+        Logger.warning('No URL for episode $nextEpisodeIndex');
       }
     } catch (e) {
-      print('❌ [Preload] Failed to preload: $e');
+      Logger.error('Failed to preload: $e');
     } finally {
       isPreloading.value = false;
     }
@@ -97,13 +98,13 @@ mixin PlayerPreloadMixin on GetxController {
   /// 在切换到不同内容时调用，避免缓存过多无用数据
   void clearPreloadCache() {
     _preloadedUrls.clear();
-    print('🗑️ [Preload] Cache cleared');
+    Logger.debug('Cache cleared');
   }
 
   /// 清理指定内容的预加载缓存
   void clearPreloadCacheForContent(String contentId) {
     _preloadedUrls.removeWhere((key, value) => key.startsWith('${contentId}_'));
-    print('🗑️ [Preload] Cache cleared for: $contentId');
+    Logger.debug('Cache cleared for: $contentId');
   }
 
   /// 生成预加载缓存键

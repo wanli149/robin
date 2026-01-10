@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'logger.dart';
 
 /// 性能优化配置
 /// 配置缓存大小、图片懒加载等性能优化策略
@@ -80,9 +81,9 @@ class PerformanceConfig {
     // 清理过期缓存
     await _cleanExpiredCache();
 
-    print('⚡ Performance config initialized');
-    print('📦 Image cache size: ${imageCacheSize ~/ (1024 * 1024)}MB');
-    print('🖼️ Max cache objects: $maxCacheObjects');
+    Logger.info('[PerformanceConfig] Performance config initialized');
+    Logger.info('[PerformanceConfig] Image cache size: ${imageCacheSize ~/ (1024 * 1024)}MB');
+    Logger.info('[PerformanceConfig] Max cache objects: $maxCacheObjects');
   }
 
   /// 配置图片缓存
@@ -96,9 +97,9 @@ class PerformanceConfig {
   static Future<void> _cleanExpiredCache() async {
     try {
       await customCacheManager.emptyCache();
-      print('🧹 Expired cache cleaned');
+      Logger.info('[PerformanceConfig] Expired cache cleaned');
     } catch (e) {
-      print('❌ Failed to clean cache: $e');
+      Logger.error('[PerformanceConfig] Failed to clean cache: $e');
     }
   }
 
@@ -111,7 +112,7 @@ class PerformanceConfig {
 
       return imageCacheSize;
     } catch (e) {
-      print('❌ Failed to get cache size: $e');
+      Logger.error('[PerformanceConfig] Failed to get cache size: $e');
       return 0;
     }
   }
@@ -129,9 +130,9 @@ class PerformanceConfig {
       // 清除 CachedNetworkImage 缓存
       await CachedNetworkImage.evictFromCache('');
 
-      print('🧹 All cache cleared');
+      Logger.info('[PerformanceConfig] All cache cleared');
     } catch (e) {
-      print('❌ Failed to clear cache: $e');
+      Logger.error('[PerformanceConfig] Failed to clear cache: $e');
     }
   }
 
@@ -166,7 +167,7 @@ class PerformanceMonitor {
   static void startPageLoad(String pageName) {
     if (PerformanceConfig.enablePerformanceMonitoring) {
       _pageLoadTimes[pageName] = DateTime.now();
-      print('⏱️ Page load started: $pageName');
+      Logger.debug('[PerformanceConfig] Page load started: $pageName');
     }
   }
 
@@ -176,7 +177,7 @@ class PerformanceMonitor {
       final startTime = _pageLoadTimes[pageName];
       if (startTime != null) {
         final duration = DateTime.now().difference(startTime);
-        print('⏱️ Page load completed: $pageName (${duration.inMilliseconds}ms)');
+        Logger.debug('[PerformanceConfig] Page load completed: $pageName (${duration.inMilliseconds}ms)');
         _pageLoadTimes.remove(pageName);
       }
     }
@@ -189,18 +190,16 @@ class PerformanceMonitor {
   }) async {
     if (PerformanceConfig.enablePerformanceMonitoring) {
       final startTime = DateTime.now();
-      print('⏱️ Operation started: $operationName');
+      Logger.debug('[PerformanceConfig] Operation started: $operationName');
 
       try {
         final result = await operation();
         final duration = DateTime.now().difference(startTime);
-        print(
-            '⏱️ Operation completed: $operationName (${duration.inMilliseconds}ms)');
+        Logger.debug('[PerformanceConfig] Operation completed: $operationName (${duration.inMilliseconds}ms)');
         return result;
       } catch (e) {
         final duration = DateTime.now().difference(startTime);
-        print(
-            '❌ Operation failed: $operationName (${duration.inMilliseconds}ms) - $e');
+        Logger.error('[PerformanceConfig] Operation failed: $operationName (${duration.inMilliseconds}ms) - $e');
         rethrow;
       }
     } else {
@@ -218,10 +217,9 @@ class PerformanceMonitor {
       final currentCount = imageCache.currentSize;
       final maxCount = imageCache.maximumSize;
 
-      print('📊 Memory Usage:');
-      print(
-          '   Image Cache: ${currentSize ~/ (1024 * 1024)}MB / ${maxSize ~/ (1024 * 1024)}MB');
-      print('   Image Count: $currentCount / $maxCount');
+      Logger.debug('[PerformanceConfig] Memory Usage:');
+      Logger.debug('[PerformanceConfig]    Image Cache: ${currentSize ~/ (1024 * 1024)}MB / ${maxSize ~/ (1024 * 1024)}MB');
+      Logger.debug('[PerformanceConfig]    Image Count: $currentCount / $maxCount');
     }
   }
 }

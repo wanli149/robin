@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/http_client.dart';
+import '../../core/logger.dart';
 import '../../widgets/net_image.dart';
 
 /// 预约页面
@@ -29,17 +30,15 @@ class _AppointmentsPageState extends State<AppointmentsPage> {
     try {
       final response = await _httpClient.get('/api/user/appointments');
 
-      if (response.data['code'] == 200 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         final data = response.data['data'] ?? response.data;
-        final list = data['list'] ?? data;
+        final list = data is List ? data : [];
 
-        if (list is List) {
-          _appointmentsList.value =
-              list.map((item) => AppointmentItem.fromJson(item)).toList();
-        }
+        _appointmentsList.value =
+            list.map((item) => AppointmentItem.fromJson(item)).toList();
       }
     } catch (e) {
-      print('❌ Failed to load appointments: $e');
+      Logger.error('Failed to load appointments: $e');
       Get.snackbar('错误', '加载失败，请重试');
     } finally {
       _isLoading.value = false;
@@ -72,13 +71,12 @@ class _AppointmentsPageState extends State<AppointmentsPage> {
                 final response = await _httpClient
                     .delete('/api/appointment/${item.vodId}');
 
-                if (response.data['code'] == 200 ||
-                    response.statusCode == 200) {
+                if (response.data['code'] == 1) {
                   _appointmentsList.remove(item);
                   Get.snackbar('成功', '已取消预约');
                 }
               } catch (e) {
-                print('❌ Failed to cancel appointment: $e');
+                Logger.error('Failed to cancel appointment: $e');
                 Get.snackbar('失败', '取消预约失败');
               }
             },
@@ -129,7 +127,7 @@ class _AppointmentsPageState extends State<AppointmentsPage> {
                 Icon(
                   Icons.notifications_none,
                   size: 80,
-                  color: Colors.white.withOpacity(0.3),
+                  color: Colors.white.withValues(alpha: 0.3),
                 ),
                 const SizedBox(height: 24),
                 const Text(

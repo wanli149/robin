@@ -5,9 +5,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Table, Switch, Button, Tag, Space, Modal, message, Tabs, Tooltip,
+  Card, Table, Switch, Button, Tag, Space, Modal, Tabs, Tooltip,
   Typography, Row, Col, Statistic, Progress, Popconfirm, Form, Input, Select
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   PlayCircleOutlined, ClockCircleOutlined, CheckCircleOutlined,
   CloseCircleOutlined, DeleteOutlined, ReloadOutlined, HistoryOutlined,
@@ -32,6 +33,7 @@ const SchedulerManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
+  const { success, error } = useNotification();
   
   // 编辑弹窗
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -54,12 +56,12 @@ const SchedulerManagement: React.FC = () => {
     try {
       const data = await getSchedulerTasks();
       setTasks(data.tasks);
-    } catch (error: any) {
-      message.error(error.message || '加载任务列表失败');
+    } catch (err: any) {
+      error(err.message || '加载任务列表失败');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [error]);
 
   // 加载执行历史
   const loadHistory = useCallback(async () => {
@@ -67,12 +69,12 @@ const SchedulerManagement: React.FC = () => {
     try {
       const data = await getSchedulerHistory();
       setHistory(data.history);
-    } catch (error: any) {
-      message.error(error.message || '加载执行历史失败');
+    } catch (err: any) {
+      error(err.message || '加载执行历史失败');
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [error]);
 
   useEffect(() => {
     loadTaskTypes();
@@ -84,10 +86,10 @@ const SchedulerManagement: React.FC = () => {
   const handleToggle = async (taskId: string, enabled: boolean) => {
     try {
       await toggleSchedulerTask(taskId, enabled);
-      message.success(enabled ? '任务已启用' : '任务已禁用');
+      success(enabled ? '任务已启用' : '任务已禁用');
       loadTasks();
-    } catch (error: any) {
-      message.error(error.message);
+    } catch (err: any) {
+      error(err.message);
     }
   };
 
@@ -97,14 +99,14 @@ const SchedulerManagement: React.FC = () => {
     try {
       const result = await runSchedulerTask(taskId);
       if (result.code === 1) {
-        message.success(`执行成功，耗时 ${result.data?.duration || 0}ms`);
+        success(`执行成功，耗时 ${result.data?.duration || 0}ms`);
       } else {
-        message.error(result.msg || '执行失败');
+        error(result.msg || '执行失败');
       }
       loadTasks();
       loadHistory();
-    } catch (error: any) {
-      message.error(error.message);
+    } catch (err: any) {
+      error(err.message);
     } finally {
       setRunningTaskId(null);
     }
@@ -139,7 +141,7 @@ const SchedulerManagement: React.FC = () => {
         try {
           task_params = JSON.parse(values.task_params);
         } catch {
-          message.error('任务参数必须是有效的 JSON 格式');
+          error('任务参数必须是有效的 JSON 格式');
           return;
         }
       }
@@ -151,17 +153,17 @@ const SchedulerManagement: React.FC = () => {
       
       if (editingTask) {
         await updateSchedulerTask(editingTask.id, data);
-        message.success('任务更新成功');
+        success('任务更新成功');
       } else {
         await createSchedulerTask(data);
-        message.success('任务创建成功');
+        success('任务创建成功');
       }
       
       setEditModalVisible(false);
       loadTasks();
-    } catch (error: any) {
-      if (error.errorFields) return; // 表单验证错误
-      message.error(error.message);
+    } catch (err: any) {
+      if (err.errorFields) return; // 表单验证错误
+      error(err.message);
     }
   };
 
@@ -169,10 +171,10 @@ const SchedulerManagement: React.FC = () => {
   const handleDelete = async (taskId: string) => {
     try {
       await deleteSchedulerTask(taskId);
-      message.success('任务已删除');
+      success('任务已删除');
       loadTasks();
-    } catch (error: any) {
-      message.error(error.message);
+    } catch (err: any) {
+      error(err.message);
     }
   };
 
@@ -180,10 +182,10 @@ const SchedulerManagement: React.FC = () => {
   const handleReset = async (taskId: string) => {
     try {
       await resetSchedulerTask(taskId);
-      message.success('任务已重置为默认配置');
+      success('任务已重置为默认配置');
       loadTasks();
-    } catch (error: any) {
-      message.error(error.message);
+    } catch (err: any) {
+      error(err.message);
     }
   };
 
@@ -191,10 +193,10 @@ const SchedulerManagement: React.FC = () => {
   const handleClearHistory = async () => {
     try {
       await clearSchedulerHistory(30);
-      message.success('历史记录已清理');
+      success('历史记录已清理');
       loadHistory();
-    } catch (error: any) {
-      message.error(error.message);
+    } catch (err: any) {
+      error(err.message);
     }
   };
 

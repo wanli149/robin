@@ -4,7 +4,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Modal, Form, Input, Select, InputNumber, message, DatePicker, Switch, Row, Col } from 'antd';
+import { Modal, Form, Input, Select, InputNumber, DatePicker, Switch, Row, Col } from 'antd';
+import { useNotification } from './providers';
 import dayjs from 'dayjs';
 
 interface AdModalProps {
@@ -30,6 +31,7 @@ const AdModal: React.FC<AdModalProps> = ({ visible, ad, onCancel, onSave }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [previewImage, setPreviewImage] = useState<string>('');
+  const { warning } = useNotification();
 
   useEffect(() => {
     if (visible && ad) {
@@ -126,7 +128,7 @@ const AdModal: React.FC<AdModalProps> = ({ visible, ad, onCancel, onSave }) => {
               src={previewImage}
               alt="预览"
               style={{ maxWidth: '100%', maxHeight: 150, objectFit: 'contain', border: '1px solid #d9d9d9', borderRadius: 4 }}
-              onError={() => { message.warning('图片加载失败'); setPreviewImage(''); }}
+              onError={() => { warning('图片加载失败'); setPreviewImage(''); }}
             />
           </Form.Item>
         )}

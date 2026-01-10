@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import type { Bindings } from './types';
 import { logger } from '../../utils/logger';
+import { CACHE_CONFIG } from '../../config';
 
 const security = new Hono<{ Bindings: Bindings }>();
 
@@ -51,7 +52,7 @@ security.get('/admin/security/config', async (c) => {
 
       // 缓存配置
       await c.env.ROBIN_CACHE.put(SECURITY_CONFIG_KEY, JSON.stringify(config), {
-        expirationTtl: 3600,
+        expirationTtl: CACHE_CONFIG.securityConfigTTL,
       });
     }
 
@@ -120,7 +121,7 @@ security.post('/admin/security/config', async (c) => {
 
     // 更新缓存
     await c.env.ROBIN_CACHE.put(SECURITY_CONFIG_KEY, JSON.stringify(config), {
-      expirationTtl: 3600,
+      expirationTtl: CACHE_CONFIG.securityConfigTTL,
     });
 
     return c.json({ code: 1, msg: '配置已更新' });
@@ -169,7 +170,7 @@ security.post('/admin/security/toggle', async (c) => {
 
     // 更新缓存
     await c.env.ROBIN_CACHE.put(SECURITY_CONFIG_KEY, JSON.stringify(config), {
-      expirationTtl: 3600,
+      expirationTtl: CACHE_CONFIG.securityConfigTTL,
     });
 
     return c.json({
@@ -299,6 +300,36 @@ security.get('/admin/security/stats', async (c) => {
 });
 
 /**
+ * GET /admin/security/stats
+ * 获取安全统计
+ */
+security.get('/admin/security/stats', async (c) => {
+  try {
+    const days = parseInt(c.req.query('days') || '7');
+    
+    // 获取安全统计
+    const { getSecurityStats } = await import('../../middleware/security');
+    const securityStats = await getSecurityStats(c.env, days);
+    
+    // 获取速率限制统计
+    const { getRateLimitStats } = await import('../../middleware/rate_limiter');
+    const rateLimitStats = await getRateLimitStats(c.env, days);
+
+    return c.json({
+      code: 1,
+      data: {
+        security: securityStats,
+        rate_limit: rateLimitStats,
+        period_days: days
+      }
+    });
+  } catch (error) {
+    logger.admin.error('Security stats error', { error: error instanceof Error ? error.message : 'Unknown' });
+    return c.json({ code: 0, msg: '获取统计失败' }, 500);
+  }
+});
+
+/**
  * 生成 HMAC-SHA256 签名
  */
 async function generateHmacSha256(data: string, secretKey: string): Promise<string> {
@@ -336,7 +367,7 @@ export async function getSecurityConfig(env: { DB: D1Database; ROBIN_CACHE: KVNa
 
   // 缓存
   await env.ROBIN_CACHE.put(SECURITY_CONFIG_KEY, JSON.stringify(config), {
-    expirationTtl: 3600,
+    expirationTtl: CACHE_CONFIG.securityConfigTTL,
   });
 
   return config;

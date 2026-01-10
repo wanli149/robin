@@ -15,7 +15,6 @@ import {
   Tag,
   Modal,
   Form,
-  message,
   Image,
   Popconfirm,
   Tooltip,
@@ -26,6 +25,7 @@ import {
   Drawer,
   Spin,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   SearchOutlined,
   EditOutlined,
@@ -61,6 +61,13 @@ import {
   repairVideo,
   repairInvalidVideos,
   quickCategoryCollect,
+  getCategories,
+  getCategoryStats,
+  getVideos,
+  updateVideo,
+  deleteVideo,
+  toggleVideoValid,
+  fixCovers,
   type SubCategory,
 } from '../services/adminApi';
 
@@ -134,6 +141,7 @@ const SHORTS_CATEGORY_COLORS: Record<string, string> = {
 const VideoManagement: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { success, error, warning, loading: showLoading } = useNotification();
   
   // 从URL获取初始分类ID
   const initialCategoryId = searchParams.get('category') || '';
@@ -172,13 +180,8 @@ const VideoManagement: React.FC = () => {
   // 加载分类列表
   const loadCategories = useCallback(async () => {
     try {
-      const response = await fetch('/admin/categories', {
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setCategories(data.list || []);
-      }
+      const data = await getCategories();
+      setCategories(data);
     } catch (error) {
       console.error('Failed to load categories:', error);
     }
@@ -187,13 +190,8 @@ const VideoManagement: React.FC = () => {
   // 加载分类统计
   const loadCategoryStats = useCallback(async () => {
     try {
-      const response = await fetch('/admin/categories/stats', {
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setCategoryStats(data.list || []);
-      }
+      const data = await getCategoryStats();
+      setCategoryStats(data);
     } catch (error) {
       console.error('Failed to load category stats:', error);
     }
@@ -213,34 +211,30 @@ const VideoManagement: React.FC = () => {
   const loadVideos = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page) });
-      if (keyword) params.append('keyword', keyword);
-      if (selectedCategoryId) params.append('type_id', selectedCategoryId);
-      if (selectedSubCategoryId) params.append('sub_type_id', selectedSubCategoryId);
-      if (isValid) params.append('is_valid', isValid);
-
-      const response = await fetch(`/admin/videos?${params}`, {
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
+      const result = await getVideos({
+        page,
+        keyword: keyword || undefined,
+        type_id: selectedCategoryId || undefined,
+        sub_type_id: selectedSubCategoryId || undefined,
+        is_valid: isValid || undefined,
       });
-      const data = await response.json();
-      if (data.code === 1) {
-        let filteredList = data.list;
-        // 前端筛选年份和地区
-        if (yearFilter) {
-          filteredList = filteredList.filter((v: Video) => v.vod_year === yearFilter);
-        }
-        if (areaFilter) {
-          filteredList = filteredList.filter((v: Video) => v.vod_area?.includes(areaFilter));
-        }
-        setVideos(filteredList);
-        setTotal(data.total);
+      
+      let filteredList = result.list;
+      // 前端筛选年份和地区
+      if (yearFilter) {
+        filteredList = filteredList.filter((v) => v.vod_year === yearFilter);
       }
-    } catch (error) {
-      message.error('加载视频列表失败');
+      if (areaFilter) {
+        filteredList = filteredList.filter((v) => v.vod_area?.includes(areaFilter));
+      }
+      setVideos(filteredList as Video[]);
+      setTotal(result.total);
+    } catch (err) {
+      error('加载视频列表失败');
     } finally {
       setLoading(false);
     }
-  }, [page, keyword, selectedCategoryId, selectedSubCategoryId, isValid, yearFilter, areaFilter]);
+  }, [page, keyword, selectedCategoryId, selectedSubCategoryId, isValid, yearFilter, areaFilter, error]);
 
   // 选择分类
   const handleSelectCategory = (categoryId: string) => {
@@ -286,83 +280,51 @@ const VideoManagement: React.FC = () => {
       };
       const payload = { ...values, type_name: typeNames[values.type_id] || '电影' };
       
-      const response = await fetch(`/admin/video/${currentVideo?.vod_id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('保存成功');
-        setEditModalVisible(false);
-        loadVideos();
-      } else {
-        message.error(data.msg || '保存失败');
-      }
-    } catch (error) {
-      message.error('保存失败');
+      await updateVideo(currentVideo!.vod_id, payload);
+      success('保存成功');
+      setEditModalVisible(false);
+      loadVideos();
+    } catch (err: any) {
+      error(err.message || '保存失败');
     }
   };
 
   // 删除视频
   const handleDelete = async (vodId: string) => {
     try {
-      const response = await fetch(`/admin/video/${vodId}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('删除成功');
-        loadVideos();
-      } else {
-        message.error(data.msg || '删除失败');
-      }
-    } catch (error) {
-      message.error('删除失败');
+      await deleteVideo(vodId);
+      success('删除成功');
+      loadVideos();
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
   // 切换有效状态
   const toggleValid = async (vodId: string, newIsValid: boolean) => {
     try {
-      const response = await fetch(`/admin/video/${vodId}/valid`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-        body: JSON.stringify({ is_valid: newIsValid }),
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('状态更新成功');
-        loadVideos();
-      } else {
-        message.error(data.msg || '更新失败');
-      }
-    } catch (error) {
-      message.error('更新失败');
+      await toggleVideoValid(vodId, newIsValid);
+      success('状态更新成功');
+      loadVideos();
+    } catch (err: any) {
+      error(err.message || '更新失败');
     }
   };
 
   // 批量操作
   const handleBatchAction = async (action: string, data?: any) => {
     if (selectedRowKeys.length === 0) {
-      message.warning('请先选择要操作的视频');
+      warning('请先选择要操作的视频');
       return;
     }
 
     try {
       const result = await batchVideos(selectedRowKeys, action as any, data);
-      message.success(`已${action === 'delete' ? '删除' : '更新'} ${result.affected} 个视频`);
+      success(`已${action === 'delete' ? '删除' : '更新'} ${result.affected} 个视频`);
       setSelectedRowKeys([]);
       loadVideos();
-    } catch (error: any) {
-      message.error(error.message || '批量操作失败');
+    } catch (err: any) {
+      error(err.message || '批量操作失败');
     }
   };
 
@@ -387,9 +349,9 @@ const VideoManagement: React.FC = () => {
       link.download = `videos_${new Date().toISOString().split('T')[0]}.csv`;
       link.click();
       
-      message.success(`已导出 ${result.total} 个视频`);
-    } catch (error: any) {
-      message.error(error.message || '导出失败');
+      success(`已导出 ${result.total} 个视频`);
+    } catch (err: any) {
+      error(err.message || '导出失败');
     }
   };
 
@@ -400,8 +362,8 @@ const VideoManagement: React.FC = () => {
       const result = await getVideoSources(video.vod_id);
       setVideoSources(result.sources);
       setSourcesDrawerVisible(true);
-    } catch (error: any) {
-      message.error(error.message || '获取播放源失败');
+    } catch (err: any) {
+      error(err.message || '获取播放源失败');
     }
   };
 
@@ -415,83 +377,25 @@ const VideoManagement: React.FC = () => {
   const handlePin = async (video: Video) => {
     try {
       await pinShort(video.vod_id);
-      message.success('置顶成功');
+      success('置顶成功');
       loadVideos();
-    } catch (error: any) {
-      message.error(error.message || '置顶失败');
+    } catch (err: any) {
+      error(err.message || '置顶失败');
     }
   };
 
   // 修复视频数据
   const fixVideoData = async () => {
     try {
-      const response = await fetch('/admin/collect/fix-covers', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-        body: JSON.stringify({ limit: 100 }),
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('数据修复任务已触发');
-        setTimeout(loadVideos, 3000);
-      } else {
-        message.error(data.msg || '触发失败');
-      }
-    } catch (error) {
-      message.error('触发修复失败');
+      await fixCovers(100);
+      success('数据修复任务已触发');
+      setTimeout(loadVideos, 3000);
+    } catch (err: any) {
+      error(err.message || '触发修复失败');
     }
   };
 
-  // 重新分类视频
-  const reclassifyVideos = async () => {
-    try {
-      message.loading('正在重新分类...', 0);
-      const response = await fetch('/admin/videos/reclassify', {
-        method: 'POST',
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      message.destroy();
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success(`重新分类完成！更新: ${data.data.updated}, 未变: ${data.data.unchanged}`);
-        loadVideos();
-        loadCategoryStats();
-      } else {
-        message.error(data.msg || '重新分类失败');
-      }
-    } catch (error) {
-      message.destroy();
-      message.error('重新分类失败');
-    }
-  };
 
-  // 合并重复视频
-  const migrateVideos = async () => {
-    try {
-      message.loading('正在合并重复视频...', 0);
-      const response = await fetch('/admin/collect/migrate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-      });
-      message.destroy();
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('合并任务已触发');
-        setTimeout(loadVideos, 3000);
-      } else {
-        message.error(data.msg || '触发失败');
-      }
-    } catch (error) {
-      message.destroy();
-      message.error('触发合并失败');
-    }
-  };
 
   // ========== 短剧专用功能 ==========
   
@@ -500,11 +404,11 @@ const VideoManagement: React.FC = () => {
     setLoading(true);
     try {
       const result = await triggerShortsFetch();
-      message.success(`抓取完成！成功获取 ${result.fetched} 个短剧`);
+      success(`抓取完成！成功获取 ${result.fetched} 个短剧`);
       loadVideos();
       loadCategoryStats();
-    } catch (error: any) {
-      message.error(error.message || '抓取失败');
+    } catch (err: any) {
+      error(err.message || '抓取失败');
     } finally {
       setLoading(false);
     }
@@ -515,10 +419,10 @@ const VideoManagement: React.FC = () => {
     setLoading(true);
     try {
       await migrateShorts();
-      message.success('表结构迁移成功！');
+      success('表结构迁移成功！');
       loadVideos();
-    } catch (error: any) {
-      message.error(error.message || '迁移失败');
+    } catch (err: any) {
+      error(err.message || '迁移失败');
     } finally {
       setLoading(false);
     }
@@ -529,10 +433,10 @@ const VideoManagement: React.FC = () => {
     setLoading(true);
     try {
       const result = await reclassifyShorts();
-      message.success(`重新分类完成！已更新 ${result.updated} 个短剧`);
+      success(`重新分类完成！已更新 ${result.updated} 个短剧`);
       loadVideos();
-    } catch (error: any) {
-      message.error(error.message || '重新分类失败');
+    } catch (err: any) {
+      error(err.message || '重新分类失败');
     } finally {
       setLoading(false);
     }
@@ -543,11 +447,11 @@ const VideoManagement: React.FC = () => {
     setLoading(true);
     try {
       const result = await clearShorts();
-      message.success(`清空完成！已删除 ${result.deleted} 个短剧`);
+      success(`清空完成！已删除 ${result.deleted} 个短剧`);
       loadVideos();
       loadCategoryStats();
-    } catch (error: any) {
-      message.error(error.message || '清空失败');
+    } catch (err: any) {
+      error(err.message || '清空失败');
     } finally {
       setLoading(false);
     }
@@ -556,17 +460,17 @@ const VideoManagement: React.FC = () => {
   // 清空当前分类视频
   const handleClearCategory = async () => {
     if (!selectedCategoryId) {
-      message.warning('请先选择一个分类');
+      warning('请先选择一个分类');
       return;
     }
     setLoading(true);
     try {
       const result = await clearVideos(parseInt(selectedCategoryId));
-      message.success(`清空完成！已删除 ${result.deleted} 个视频`);
+      success(`清空完成！已删除 ${result.deleted} 个视频`);
       loadVideos();
       loadCategoryStats();
-    } catch (error: any) {
-      message.error(error.message || '清空失败');
+    } catch (err: any) {
+      error(err.message || '清空失败');
     } finally {
       setLoading(false);
     }
@@ -576,21 +480,21 @@ const VideoManagement: React.FC = () => {
 
   // 修复单个视频
   const handleRepairVideo = async (video: Video) => {
-    const hide = message.loading(`正在修复 ${video.vod_name}...`, 0);
+    const hide = showLoading(`正在修复 ${video.vod_name}...`);
     try {
       const result = await repairVideo(video.vod_id);
       hide();
-      message.success(`修复成功！从 ${result.foundCount} 个资源站获取到播放源`);
+      success(`修复成功！从 ${result.foundCount} 个资源站获取到播放源`);
       loadVideos();
-    } catch (error: any) {
+    } catch (err: any) {
       hide();
-      message.error(error.message || '修复失败');
+      error(err.message || '修复失败');
     }
   };
 
   // 批量修复失效视频
   const handleRepairInvalid = async () => {
-    const hide = message.loading('正在批量修复失效视频...', 0);
+    const hide = showLoading('正在批量修复失效视频...');
     try {
       const result = await repairInvalidVideos({
         type_id: selectedCategoryId ? parseInt(selectedCategoryId) : undefined,
@@ -598,26 +502,26 @@ const VideoManagement: React.FC = () => {
         limit: 20,
       });
       hide();
-      message.success(`修复完成！成功: ${result.repaired}, 失败: ${result.failed}`);
+      success(`修复完成！成功: ${result.repaired}, 失败: ${result.failed}`);
       loadVideos();
-    } catch (error: any) {
+    } catch (err: any) {
       hide();
-      message.error(error.message || '批量修复失败');
+      error(err.message || '批量修复失败');
     }
   };
 
   // 获取新内容（分类采集）
   const handleFetchNew = async () => {
     if (!selectedCategoryId) {
-      message.warning('请先选择一个分类');
+      warning('请先选择一个分类');
       return;
     }
     setLoading(true);
     try {
       const result = await quickCategoryCollect(parseInt(selectedCategoryId), { maxPages: 5 });
-      message.success(`采集任务已启动，任务ID: ${result.taskId}`);
-    } catch (error: any) {
-      message.error(error.message || '启动采集失败');
+      success(`采集任务已启动，任务ID: ${result.taskId}`);
+    } catch (err: any) {
+      error(err.message || '启动采集失败');
     } finally {
       setLoading(false);
     }
@@ -819,7 +723,7 @@ const VideoManagement: React.FC = () => {
               borderColor: !selectedCategoryId ? '#1890ff' : undefined,
               background: !selectedCategoryId ? '#e6f7ff' : undefined,
             }}
-            bodyStyle={{ padding: '12px 16px' }}
+            styles={{ body: { padding: '12px 16px' } }}
             onClick={() => handleSelectCategory('')}
           >
             <Statistic title="全部" value={categoryStats.reduce((sum, s) => sum + s.video_count, 0)} valueStyle={{ fontSize: 18 }} />
@@ -836,7 +740,7 @@ const VideoManagement: React.FC = () => {
                 borderColor: selectedCategoryId === String(cat.id) ? '#1890ff' : undefined,
                 background: selectedCategoryId === String(cat.id) ? '#e6f7ff' : undefined,
               }}
-              bodyStyle={{ padding: '12px 16px' }}
+              styles={{ body: { padding: '12px 16px' } }}
               onClick={() => handleSelectCategory(String(cat.id))}
             >
               <Statistic 
@@ -948,15 +852,9 @@ const VideoManagement: React.FC = () => {
             
             {/* 普通视频专用操作 */}
             {!isShorts && (
-              <>
-                <Tooltip title="为缺少信息的视频补充数据">
-                  <Button icon={<PictureOutlined />} onClick={fixVideoData}>修复数据</Button>
-                </Tooltip>
-                <Popconfirm title="确定重新分类所有视频？" onConfirm={reclassifyVideos}>
-                  <Button icon={<SyncOutlined />}>重新分类</Button>
-                </Popconfirm>
-                <Button danger onClick={migrateVideos}>合并重复</Button>
-              </>
+              <Tooltip title="为缺少信息的视频补充数据">
+                <Button icon={<PictureOutlined />} onClick={fixVideoData}>修复数据</Button>
+              </Tooltip>
             )}
           </Space>
         </Card>

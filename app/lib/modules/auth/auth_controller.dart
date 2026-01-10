@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/http_client.dart';
 import '../../core/user_store.dart';
+import '../../core/logger.dart';
 
 /// 认证控制器
 /// 处理登录和注册逻辑
@@ -59,7 +60,7 @@ class AuthController extends GetxController {
         '提示',
         '请输入用户名',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -70,7 +71,7 @@ class AuthController extends GetxController {
         '提示',
         '请输入密码',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -81,7 +82,7 @@ class AuthController extends GetxController {
         '提示',
         '密码长度不能少于6位',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -100,7 +101,7 @@ class AuthController extends GetxController {
       );
       
       // 解析响应
-      if (response.data['code'] == 1 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         final data = response.data['data'] ?? response.data;
         final token = data['token'];
         final userInfo = UserInfo.fromJson(data['user'] ?? data);
@@ -112,7 +113,7 @@ class AuthController extends GetxController {
           '登录成功',
           '欢迎回来，${userInfo.username}',
           snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: const Color(0xFFFFC107).withOpacity(0.8),
+          backgroundColor: const Color(0xFFFFC107).withValues(alpha: 0.8),
           colorText: Colors.black,
         );
         
@@ -123,12 +124,12 @@ class AuthController extends GetxController {
           '登录失败',
           response.data['msg'] ?? '用户名或密码错误',
           snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red.withOpacity(0.8),
+          backgroundColor: Colors.red.withValues(alpha: 0.8),
           colorText: Colors.white,
         );
       }
     } catch (e) {
-      print('❌ Login error: $e');
+      Logger.error('[AuthController] Login error: $e');
       
       // 提取更详细的错误信息
       String errorMsg = '网络错误，请稍后重试';
@@ -142,7 +143,7 @@ class AuthController extends GetxController {
         '登录失败',
         errorMsg,
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
     } finally {
@@ -162,7 +163,7 @@ class AuthController extends GetxController {
         '提示',
         '请输入用户名',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -173,7 +174,7 @@ class AuthController extends GetxController {
         '提示',
         '用户名长度不能少于3位',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -184,7 +185,7 @@ class AuthController extends GetxController {
         '提示',
         '请输入密码',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -195,7 +196,7 @@ class AuthController extends GetxController {
         '提示',
         '密码长度不能少于6位',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -206,7 +207,7 @@ class AuthController extends GetxController {
         '提示',
         '请确认密码',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -217,7 +218,7 @@ class AuthController extends GetxController {
         '提示',
         '两次输入的密码不一致',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
       return;
@@ -236,12 +237,12 @@ class AuthController extends GetxController {
       );
       
       // 解析响应
-      if (response.data['code'] == 1 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         Get.snackbar(
           '注册成功',
           '请使用新账号登录',
           snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: const Color(0xFFFFC107).withOpacity(0.8),
+          backgroundColor: const Color(0xFFFFC107).withValues(alpha: 0.8),
           colorText: Colors.black,
         );
         
@@ -252,17 +253,17 @@ class AuthController extends GetxController {
           '注册失败',
           response.data['msg'] ?? '用户名已存在',
           snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.red.withOpacity(0.8),
+          backgroundColor: Colors.red.withValues(alpha: 0.8),
           colorText: Colors.white,
         );
       }
     } catch (e) {
-      print('❌ Register error: $e');
+      Logger.error('[AuthController] Register error: $e');
       Get.snackbar(
         '注册失败',
         '网络错误，请稍后重试',
         snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.withOpacity(0.8),
+        backgroundColor: Colors.red.withValues(alpha: 0.8),
         colorText: Colors.white,
       );
     } finally {

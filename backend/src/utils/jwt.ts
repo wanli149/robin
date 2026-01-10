@@ -1,6 +1,6 @@
 /**
  * JWT Authentication Utilities
- * 使用 Web Crypto API 实现 JWT 令牌生成和验证
+ * Implements JWT token generation and verification using Web Crypto API
  */
 
 import { logger } from './logger';
@@ -115,7 +115,7 @@ export async function verifyToken(
 
     const [headerB64, payloadB64, signatureB64] = parts;
     
-    // 验证签名
+    // Verify signature
     const data = `${headerB64}.${payloadB64}`;
     const expectedSignature = await sign(data, secret);
     
@@ -124,12 +124,12 @@ export async function verifyToken(
       return null;
     }
 
-    // 解码载荷
+    // Decode payload
     const decoder = new TextDecoder();
     const payloadBytes = base64UrlDecode(payloadB64);
     const payload = JSON.parse(decoder.decode(payloadBytes)) as JWTPayload;
 
-    // 检查过期时间
+    // Check expiration time
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
       logger.admin.error('JWT Token expired');

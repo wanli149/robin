@@ -1,6 +1,6 @@
 /**
  * Statistics Tracking Service
- * 记录 API 访问统计和用户活跃度
+ * Records API access statistics and user activity
  */
 
 import { logger } from './logger';
@@ -10,19 +10,19 @@ interface Env {
 }
 
 /**
- * 记录访问统计
- * 使用 INSERT ... ON CONFLICT DO UPDATE 语法更新当日统计
- * 异步执行，不阻塞主请求
+ * Record visit statistics
+ * Uses INSERT ... ON CONFLICT DO UPDATE syntax to update daily stats
+ * Executes asynchronously without blocking the main request
  * 
- * @param env - Cloudflare Workers 环境变量
- * @param userId - 可选的用户 ID，用于统计唯一用户数
+ * @param env - Cloudflare Workers environment variables
+ * @param userId - Optional user ID for unique user counting
  */
 export async function recordVisit(env: Env, userId?: number): Promise<void> {
   try {
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
-    // 使用 SQLite 的 INSERT OR REPLACE 语法
-    // 如果记录存在则更新，不存在则插入
+    // Use SQLite INSERT OR REPLACE syntax
+    // Updates if record exists, inserts if not
     await env.DB.prepare(`
       INSERT INTO daily_stats (date, api_calls, unique_users)
       VALUES (?, 1, ?)
@@ -36,7 +36,7 @@ export async function recordVisit(env: Env, userId?: number): Promise<void> {
 
     logger.stats.info(`Recorded visit for ${today}`);
   } catch (error) {
-    // 统计失败不影响主流程
+    // Stats failure should not affect main flow
     logger.stats.error('Failed to record visit', { error: error instanceof Error ? error.message : String(error) });
   }
 }

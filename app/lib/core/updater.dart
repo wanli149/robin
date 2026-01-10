@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'http_client.dart';
+import 'logger.dart';
 
 /// 版本信息模型
 class VersionInfo {
@@ -41,32 +42,36 @@ class Updater {
   /// 检查更新
   static Future<void> checkUpdate(BuildContext context) async {
     try {
-      print('🔍 Checking for updates...');
+      Logger.debug('[Updater] Checking for updates...');
       
       final response = await _httpClient.get('/api/version');
       
       if (response.statusCode == 200 && response.data != null) {
         final versionInfo = VersionInfo.fromJson(response.data);
         
-        print('📦 Current version: $currentVersion');
-        print('📦 Latest version: ${versionInfo.version}');
-        print('⚠️ Force update: ${versionInfo.force}');
+        Logger.info('[Updater] Current version: $currentVersion');
+        Logger.info('[Updater] Latest version: ${versionInfo.version}');
+        Logger.warning('[Updater] Force update: ${versionInfo.force}');
         
         // 比较版本号
         if (_shouldUpdate(currentVersion, versionInfo.version)) {
           if (versionInfo.force) {
             // 强制更新
-            _showForceUpdateDialog(context, versionInfo);
+            if (context.mounted) {
+              _showForceUpdateDialog(context, versionInfo);
+            }
           } else {
             // 可选更新
-            _showOptionalUpdateDialog(context, versionInfo);
+            if (context.mounted) {
+              _showOptionalUpdateDialog(context, versionInfo);
+            }
           }
         } else {
-          print('✅ App is up to date');
+          Logger.success('[Updater] App is up to date');
         }
       }
     } catch (e) {
-      print('❌ Failed to check update: $e');
+      Logger.error('[Updater] Failed to check update: $e');
       // 更新检查失败不影响 APP 启动
     }
   }
@@ -77,7 +82,7 @@ class Updater {
     try {
       // 检查版本号是否为空
       if (latest.isEmpty || current.isEmpty) {
-        print('⚠️ Version string is empty, skipping update check');
+        Logger.warning('[Updater] Version string is empty, skipping update check');
         return false;
       }
       
@@ -87,7 +92,7 @@ class Updater {
       
       // 检查版本号格式是否有效
       if (!_isValidVersion(cleanCurrent) || !_isValidVersion(cleanLatest)) {
-        print('⚠️ Invalid version format: current=$cleanCurrent, latest=$cleanLatest');
+        Logger.warning('[Updater] Invalid version format: current=$cleanCurrent, latest=$cleanLatest');
         return false;
       }
       
@@ -107,7 +112,7 @@ class Updater {
       
       return false;
     } catch (e) {
-      print('❌ Failed to compare versions: $e');
+      Logger.error('[Updater] Failed to compare versions: $e');
       return false;
     }
   }
@@ -127,8 +132,8 @@ class Updater {
     showDialog(
       context: context,
       barrierDismissible: false, // 不可关闭
-      builder: (context) => WillPopScope(
-        onWillPop: () async => false, // 禁止返回键
+      builder: (context) => PopScope(
+        canPop: false, // 禁止返回键
         child: AlertDialog(
           title: const Text('发现新版本'),
           content: SingleChildScrollView(
@@ -250,7 +255,7 @@ class Updater {
         );
       }
     } catch (e) {
-      print('❌ Failed to download update: $e');
+      Logger.error('[Updater] Failed to download update: $e');
       Get.snackbar(
         '错误',
         '下载失败，请稍后重试',

@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import '../player_state.dart';
+import '../../logger.dart';
 
 /// 状态监听器管理 Mixin
 /// 
@@ -43,7 +44,7 @@ mixin PlayerListenersMixin on GetxController {
       try {
         listener(state);
       } catch (e) {
-        print('❌ [Listeners] State listener error: $e');
+        Logger.error('State listener error: $e');
       }
     }
   }
@@ -70,7 +71,7 @@ mixin PlayerListenersMixin on GetxController {
       try {
         listener(error);
       } catch (e) {
-        print('❌ [Listeners] Error listener error: $e');
+        Logger.error('Error listener error: $e');
       }
     }
   }

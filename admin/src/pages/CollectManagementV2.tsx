@@ -12,7 +12,6 @@ import {
   Statistic,
   Row,
   Col,
-  message,
   Tag,
   Modal,
   Select,
@@ -22,7 +21,10 @@ import {
   Descriptions,
   List,
   Typography,
+  Popconfirm,
+  Tooltip,
 } from 'antd';
+import { useNotification, useTaskPolling } from '../components/providers';
 import {
   SyncOutlined,
   CheckCircleOutlined,
@@ -42,6 +44,7 @@ import {
   getCollectTasks,
   getCollectTaskProgress,
   cancelCollectTask,
+  deleteCollectTask,
   pauseCollectTask,
   resumeCollectTask,
   getCollectTaskLogs,
@@ -60,6 +63,8 @@ import {
 const { Text } = Typography;
 
 const CollectManagementV2: React.FC = () => {
+  const { success, error } = useNotification();
+  const { watchTask } = useTaskPolling();
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<any>(null);
   const [tasks, setTasks] = useState<CollectTaskV2[]>([]);
@@ -87,8 +92,8 @@ const CollectManagementV2: React.FC = () => {
       } else {
         setPollingTaskId(null);
       }
-    } catch (error: any) {
-      console.error('Failed to load stats:', error);
+    } catch (err: any) {
+      console.error('Failed to load stats:', err);
     }
   }, []);
 
@@ -98,20 +103,20 @@ const CollectManagementV2: React.FC = () => {
     try {
       const result = await getCollectTasks({ limit: 20 });
       setTasks(result.tasks);
-    } catch (error: any) {
-      message.error(error.message || '加载任务列表失败');
+    } catch (err: any) {
+      error(err.message || '加载任务列表失败');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [error]);
 
   // 加载资源站健康状态
   const loadHealth = useCallback(async () => {
     try {
       const list = await getSourcesHealth();
       setHealthList(list);
-    } catch (error: any) {
-      console.error('Failed to load health:', error);
+    } catch (err: any) {
+      console.error('Failed to load health:', err);
     }
   }, []);
 
@@ -192,12 +197,14 @@ const CollectManagementV2: React.FC = () => {
           throw new Error('Unknown type');
       }
       
-      message.success('采集任务已启动');
+      success('采集任务已启动');
+      // 添加到任务监控
+      watchTask(result.taskId, type, `${type === 'incremental' ? '增量' : type === 'full' ? '全量' : type === 'category' ? '分类' : '资源站'}采集`);
       setPollingTaskId(result.taskId);
       loadTasks();
       loadStats();
-    } catch (error: any) {
-      message.error(error.message || '启动采集失败');
+    } catch (err: any) {
+      error(err.message || '启动采集失败');
     }
   };
 
@@ -218,11 +225,11 @@ const CollectManagementV2: React.FC = () => {
   const handleCancelTask = async (taskId: string) => {
     try {
       await cancelCollectTask(taskId);
-      message.success('任务已取消');
+      success('任务已取消');
       loadTasks();
       loadStats();
-    } catch (error: any) {
-      message.error(error.message || '取消失败');
+    } catch (err: any) {
+      error(err.message || '取消失败');
     }
   };
 
@@ -230,10 +237,10 @@ const CollectManagementV2: React.FC = () => {
   const handlePauseTask = async (taskId: string) => {
     try {
       await pauseCollectTask(taskId);
-      message.success('任务已暂停');
+      success('任务已暂停');
       loadTasks();
-    } catch (error: any) {
-      message.error(error.message || '暂停失败');
+    } catch (err: any) {
+      error(err.message || '暂停失败');
     }
   };
 
@@ -241,11 +248,23 @@ const CollectManagementV2: React.FC = () => {
   const handleResumeTask = async (taskId: string) => {
     try {
       await resumeCollectTask(taskId);
-      message.success('任务已恢复');
+      success('任务已恢复');
       setPollingTaskId(taskId);
       loadTasks();
-    } catch (error: any) {
-      message.error(error.message || '恢复失败');
+    } catch (err: any) {
+      error(err.message || '恢复失败');
+    }
+  };
+
+  // 删除任务
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await deleteCollectTask(taskId);
+      success('任务已删除');
+      loadTasks();
+      loadStats();
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
@@ -254,14 +273,14 @@ const CollectManagementV2: React.FC = () => {
     try {
       if (sourceId) {
         const result = await checkSourceHealthStatus(sourceId);
-        message.success(`检测完成: ${result.status} (${result.responseTime}ms)`);
+        success(`检测完成: ${result.status} (${result.responseTime}ms)`);
       } else {
         await checkAllSourcesHealthStatus();
-        message.success('已开始检测所有资源站');
+        success('已开始检测所有资源站');
       }
       setTimeout(loadHealth, 2000);
-    } catch (error: any) {
-      message.error(error.message || '检测失败');
+    } catch (err: any) {
+      error(err.message || '检测失败');
     }
   };
 
@@ -364,7 +383,7 @@ const CollectManagementV2: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 180,
+      width: 200,
       render: (_, record) => (
         <Space size="small">
           <Button type="link" size="small" onClick={() => handleViewTask(record)}>
@@ -385,6 +404,20 @@ const CollectManagementV2: React.FC = () => {
               取消
             </Button>
           )}
+          {['completed', 'failed', 'cancelled'].includes(record.status) && (
+            <Popconfirm
+              title="确认删除"
+              description="确定要删除这个任务吗？相关日志也会被删除。"
+              onConfirm={() => handleDeleteTask(record.id)}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+            >
+              <Button type="link" size="small" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -395,30 +428,30 @@ const CollectManagementV2: React.FC = () => {
     {
       title: '资源站',
       dataIndex: 'sourceName',
-      width: 150,
+      width: 120,
     },
     {
       title: '状态',
       dataIndex: 'status',
-      width: 100,
+      width: 80,
       render: renderHealthStatus,
     },
     {
       title: '响应时间',
       dataIndex: 'responseTime',
-      width: 120,
+      width: 90,
       render: (time: number) => `${time}ms`,
     },
     {
       title: '平均响应',
       dataIndex: 'avgResponseTime',
-      width: 120,
+      width: 90,
       render: (time: number) => `${time}ms`,
     },
     {
       title: '成功率',
       dataIndex: 'successRate',
-      width: 100,
+      width: 80,
       render: (rate: number) => (
         <span style={{ color: rate < 80 ? '#ff4d4f' : rate < 95 ? '#faad14' : '#52c41a' }}>
           {rate.toFixed(1)}%
@@ -428,35 +461,37 @@ const CollectManagementV2: React.FC = () => {
     {
       title: '视频数',
       dataIndex: 'videoCount',
-      width: 100,
+      width: 80,
     },
     {
       title: '最后检测',
       dataIndex: 'lastCheckAt',
-      width: 160,
+      width: 150,
       render: (time: number) => time ? new Date(time * 1000).toLocaleString() : '-',
     },
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      fixed: 'right',
+      width: 100,
       render: (_, record) => (
-        <Space size="small">
-          <Button 
-            type="link" 
-            size="small" 
-            icon={<ThunderboltOutlined />}
-            onClick={() => handleCheckHealth(record.sourceId)}
-          >
-            检测
-          </Button>
-          <Button 
-            type="link" 
-            size="small"
-            onClick={() => handleQuickCollect('source', { sourceId: record.sourceId })}
-          >
-            采集
-          </Button>
+        <Space size={4}>
+          <Tooltip title="检测健康状态">
+            <Button 
+              type="text" 
+              size="small" 
+              icon={<ThunderboltOutlined />}
+              onClick={() => handleCheckHealth(record.sourceId)}
+            />
+          </Tooltip>
+          <Tooltip title="采集此资源站">
+            <Button 
+              type="text" 
+              size="small"
+              icon={<SyncOutlined />}
+              onClick={() => handleQuickCollect('source', { sourceId: record.sourceId })}
+            />
+          </Tooltip>
         </Space>
       ),
     },
@@ -645,6 +680,7 @@ const CollectManagementV2: React.FC = () => {
                 dataSource={healthList}
                 rowKey="sourceId"
                 pagination={false}
+                scroll={{ x: 830 }}
               />
             </Card>
           ),

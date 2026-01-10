@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'logger.dart';
 
 /// APP 完整性检查服务
 /// 
@@ -36,34 +37,34 @@ class AppIntegrity {
     try {
       // 1. 验证包名
       if (!await _verifyPackageName()) {
-        debugPrint('❌ Package name verification failed');
+        Logger.error('[AppIntegrity] Package name verification failed');
         return false;
       }
       
       // 2. 验证签名（仅 Android）
       if (Platform.isAndroid && !kDebugMode) {
         if (!await _verifySignature()) {
-          debugPrint('❌ Signature verification failed');
+          Logger.error('[AppIntegrity] Signature verification failed');
           return false;
         }
       }
       
       // 3. 检测调试器
       if (!kDebugMode && _isDebuggerAttached()) {
-        debugPrint('❌ Debugger detected');
+        Logger.error('[AppIntegrity] Debugger detected');
         return false;
       }
       
       // 4. 检测 Root/越狱（可选，可能影响正常用户）
       // if (await _isDeviceRooted()) {
-      //   debugPrint('⚠️ Rooted device detected');
+      //   Logger.warning('[AppIntegrity] Rooted device detected');
       // }
       
       _isVerified = true;
-      debugPrint('✅ App integrity verified');
+      Logger.success('[AppIntegrity] App integrity verified');
       return true;
     } catch (e) {
-      debugPrint('❌ Integrity check error: $e');
+      Logger.error('[AppIntegrity] Integrity check error: $e');
       // 出错时默认通过，避免影响正常用户
       return true;
     }

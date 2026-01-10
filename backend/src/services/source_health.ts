@@ -5,6 +5,7 @@
 
 import { parseResponse, detectFormat, type ResponseFormat } from './response_parser';
 import { logger } from '../utils/logger';
+import { HEALTH_THRESHOLDS } from '../config';
 import type { VideoSourceRow, SourceHealthRow } from '../types/database';
 
 interface Env {
@@ -36,13 +37,8 @@ export interface HealthCheckResult {
   error?: string;
 }
 
-// 健康状态阈值
-const THRESHOLDS = {
-  SLOW_RESPONSE_TIME: 3000,      // 超过3秒认为慢
-  ERROR_RESPONSE_TIME: 10000,    // 超过10秒认为超时
-  UNHEALTHY_SUCCESS_RATE: 80,    // 成功率低于80%认为不健康
-  MAX_CONSECUTIVE_FAILURES: 3,   // 连续失败3次标记为错误
-};
+// 健康状态阈值（使用配置常量）
+const THRESHOLDS = HEALTH_THRESHOLDS;
 
 /**
  * 检测单个资源站健康状态
@@ -63,7 +59,7 @@ export async function checkSourceHealth(
     url.searchParams.set('pg', '1');
     
     const response = await fetch(url.toString(), {
-      signal: AbortSignal.timeout(THRESHOLDS.ERROR_RESPONSE_TIME),
+      signal: AbortSignal.timeout(THRESHOLDS.errorResponseTime),
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
@@ -86,7 +82,7 @@ export async function checkSourceHealth(
     
     // 判断状态
     let status: SourceHealth['status'] = 'healthy';
-    if (responseTime > THRESHOLDS.SLOW_RESPONSE_TIME) {
+    if (responseTime > THRESHOLDS.slowResponseTime) {
       status = 'slow';
     }
     
@@ -187,7 +183,7 @@ async function updateHealthRecord(
     
     // 如果连续失败次数过多，强制标记为错误
     let finalStatus = result.status;
-    if (consecutiveFailures >= THRESHOLDS.MAX_CONSECUTIVE_FAILURES) {
+    if (consecutiveFailures >= THRESHOLDS.maxConsecutiveFailures) {
       finalStatus = 'error';
     }
     
@@ -366,7 +362,7 @@ export async function getHealthySources(env: Env): Promise<Array<{
     AND (h.status IS NULL OR h.status IN ('healthy', 'slow', 'unknown'))
     AND (h.consecutive_failures IS NULL OR h.consecutive_failures < ?)
     ORDER BY s.weight DESC
-  `).bind(THRESHOLDS.MAX_CONSECUTIVE_FAILURES).all();
+  `).bind(THRESHOLDS.maxConsecutiveFailures).all();
   
   return result.results.map((row: Pick<VideoSourceRow, 'id' | 'name' | 'api_url' | 'weight'>) => ({
     id: row.id,

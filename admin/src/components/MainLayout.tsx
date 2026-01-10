@@ -4,7 +4,7 @@
  */
 
 import { useState } from 'react';
-import { Layout, Menu, Button, Dropdown, Avatar, Space, Typography } from 'antd';
+import { Layout, Menu, Button, Dropdown, Avatar, Space, Typography, Divider } from 'antd';
 import {
   DashboardOutlined,
   LayoutOutlined,
@@ -18,6 +18,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { logout } from '../services/auth';
+import TaskIndicator from './TaskIndicator';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -158,6 +159,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           />
 
           <Space>
+            <TaskIndicator />
+            <Divider type="vertical" />
             <Text type="secondary">Robin Commander</Text>
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <Avatar

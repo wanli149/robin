@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/http_client.dart';
+import '../../core/logger.dart';
 
 /// 搜索控制器
 class SearchController extends GetxController {
@@ -42,35 +43,27 @@ class SearchController extends GetxController {
   /// 加载热搜词（从后端 hot_search_stats 表获取）
   Future<void> loadHotSearchKeywords() async {
     try {
-      // 尝试新的热搜API
       final response = await _httpClient.get('/api/hot_search');
       
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
         if (data['code'] == 1) {
-          final keywords = data['keywords'] as List<dynamic>?;
+          // 后端返回格式: { code: 1, data: ['keyword1', 'keyword2', ...] }
+          final keywords = data['data'] as List<dynamic>?;
           if (keywords != null && keywords.isNotEmpty) {
             hotSearchKeywords.value = keywords.map((k) => k.toString()).toList();
+            Logger.success('Loaded ${keywords.length} hot search keywords');
             return;
           }
         }
       }
       
-      // 如果新API失败，尝试旧API
-      final fallbackResponse = await _httpClient.get('/api/search/hot');
-      if (fallbackResponse.statusCode == 200 && fallbackResponse.data != null) {
-        final data = fallbackResponse.data;
-        if (data['code'] == 1) {
-          final keywords = data['keywords'] as List<dynamic>?;
-          if (keywords != null && keywords.isNotEmpty) {
-            hotSearchKeywords.value = keywords.map((k) => k.toString()).toList();
-          }
-        }
-      }
+      // 热搜为空或加载失败，保持空列表
+      hotSearchKeywords.value = [];
     } catch (e) {
-      print('❌ Failed to load hot search keywords: $e');
-      // 热搜加载失败时保持空列表，不使用硬编码
-      // 后端数据库已有默认热搜词
+      Logger.error('Failed to load hot search keywords: $e');
+      // 热搜加载失败时保持空列表
+      hotSearchKeywords.value = [];
     }
   }
 
@@ -81,7 +74,7 @@ class SearchController extends GetxController {
       final history = prefs.getStringList('search_history') ?? [];
       searchHistory.value = history;
     } catch (e) {
-      print('❌ Failed to load search history: $e');
+      Logger.error('Failed to load search history: $e');
     }
   }
 
@@ -103,7 +96,7 @@ class SearchController extends GetxController {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('search_history', searchHistory);
     } catch (e) {
-      print('❌ Failed to save search history: $e');
+      Logger.error('Failed to save search history: $e');
     }
   }
 
@@ -120,7 +113,7 @@ class SearchController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      print('❌ Failed to clear search history: $e');
+      Logger.error('Failed to clear search history: $e');
     }
   }
 
@@ -142,36 +135,36 @@ class SearchController extends GetxController {
 
       // 🚀 优化：优先使用缓存搜索（FTS5全文索引，50ms响应）
       var response = await _httpClient.get(
-        '/api/search/cache',
+        '/api/search_cache',
         queryParameters: {'wd': keyword, 'limit': '20'},
       );
 
       // 如果缓存搜索失败或无结果，降级到实时搜索
       if (response.statusCode != 200 || 
           response.data == null || 
-          (response.data['list'] as List?)?.isEmpty == true) {
-        print('⚠️ Cache search failed, fallback to real-time search');
+          (response.data['data'] as List?)?.isEmpty == true) {
+        Logger.warning('Cache search failed, fallback to real-time search');
         response = await _httpClient.get(
           '/api/search',
           queryParameters: {'wd': keyword},
         );
       } else {
-        print('✅ Using cache search (fast)');
+        Logger.success('Using cache search (fast)');
       }
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        final list = (data['list'] as List?)
+        final list = (data['data'] as List?)
                 ?.map((e) => e as Map<String, dynamic>)
                 .toList() ??
             [];
 
         searchResults.value = list;
 
-        print('✅ Search results: ${list.length} items for "$keyword"');
+        Logger.success('Search results: ${list.length} items for "$keyword"');
       }
     } catch (e) {
-      print('❌ Failed to search: $e');
+      Logger.error('Failed to search: $e');
       error.value = '搜索失败，请重试';
     } finally {
       isLoading.value = false;

@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/http_client.dart';
 import '../../core/router.dart';
 import '../../core/updater.dart';
+import '../../core/logger.dart';
 
 /// 启动页控制器
 class SplashController extends GetxController {
@@ -58,7 +58,7 @@ class SplashController extends GetxController {
         _navigateToHome();
       }
     } catch (e) {
-      debugPrint('❌ Startup flow error: $e');
+      Logger.error('[SplashController] Startup flow error: $e');
       // 出错也要进入首页
       _navigateToHome();
     }
@@ -72,7 +72,7 @@ class SplashController extends GetxController {
         await Updater.checkUpdate(Get.context!);
       }
     } catch (e) {
-      debugPrint('❌ Check update error: $e');
+      Logger.error('[SplashController] Check update error: $e');
       // 更新检查失败不影响启动
     }
   }
@@ -82,7 +82,7 @@ class SplashController extends GetxController {
     try {
       // 检查今日是否已显示过开屏广告
       if (await _hasShownAdToday()) {
-        debugPrint('⏭️ Ad already shown today, skipping');
+        Logger.info('[SplashController] Ad already shown today, skipping');
         return;
       }
 
@@ -99,11 +99,11 @@ class SplashController extends GetxController {
           showAd.value = true;
           showLoading.value = false;
 
-          debugPrint('✅ Splash ad loaded');
+          Logger.success('[SplashController] Splash ad loaded');
         }
       }
     } catch (e) {
-      debugPrint('❌ Failed to fetch splash ad: $e');
+      Logger.error('[SplashController] Failed to fetch splash ad: $e');
       // 广告加载失败不影响启动
     }
   }
@@ -128,7 +128,7 @@ class SplashController extends GetxController {
       final today = DateTime.now().toString().substring(0, 10);
       await prefs.setString('last_ad_shown_date', today);
     } catch (e) {
-      debugPrint('❌ Failed to mark ad shown: $e');
+      Logger.error('[SplashController] Failed to mark ad shown: $e');
     }
   }
 

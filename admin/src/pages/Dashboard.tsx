@@ -12,12 +12,12 @@ import {
   Badge,
   Button,
   Space,
-  message,
   Spin,
   Typography,
   Table,
   Tabs,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   UserOutlined,
   TeamOutlined,
@@ -30,7 +30,16 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { Line, Pie } from '@ant-design/charts';
-import { getDashboard, getRealtimeStats, getTrends } from '../services/adminApi';
+import {
+  getDashboard,
+  getRealtimeStats,
+  getTrends,
+  getCollectStatsV1,
+  getHotVideos,
+  getRatingDistribution,
+  getRecommendationPerformance,
+  purgeCache,
+} from '../services/adminApi';
 import type { DashboardStats } from '../services/adminApi';
 
 const { Title } = Typography;
@@ -47,55 +56,39 @@ const Dashboard: React.FC = () => {
   const [autoRefresh, setAutoRefresh] = useState(false);
   // trends 用于未来扩展趋势图表
   const [, setTrends] = useState<any[]>([]);
+  const { success, error } = useNotification();
 
   // 获取仪表板数据
   const fetchDashboard = async () => {
     setLoading(true);
     try {
-      const adminKey = localStorage.getItem('admin_key') || '';
-      
       // 基础统计
       const result = await getDashboard();
       setData(result);
       
       // 采集统计
-      const collectResponse = await fetch('/admin/collect/stats', {
-        headers: { 'x-admin-key': adminKey },
-      });
-      const collectData = await collectResponse.json();
-      if (collectData.code === 1) {
-        setCollectStats(collectData.data);
-      }
+      try {
+        const collectData = await getCollectStatsV1();
+        setCollectStats(collectData);
+      } catch { /* 可能不可用 */ }
 
       // 热门视频
-      const hotResponse = await fetch('/admin/stats/hot-videos?limit=10&period=day', {
-        headers: { 'x-admin-key': adminKey },
-      });
-      const hotData = await hotResponse.json();
-      if (hotData.code === 1) {
-        // 调试：检查热门视频封面数据
-        console.log('热门视频数据示例:', hotData.list[0]);
-        console.log('热门视频封面字段:', hotData.list[0]?.vod_pic);
-        setHotVideos(hotData.list);
-      }
+      try {
+        const hotData = await getHotVideos(10, 'day');
+        setHotVideos(hotData);
+      } catch { /* 可能不可用 */ }
 
       // 评分分布
-      const ratingResponse = await fetch('/admin/stats/rating-distribution', {
-        headers: { 'x-admin-key': adminKey },
-      });
-      const ratingData = await ratingResponse.json();
-      if (ratingData.code === 1) {
-        setRatingDistribution(ratingData.data);
-      }
+      try {
+        const ratingData = await getRatingDistribution();
+        setRatingDistribution(ratingData);
+      } catch { /* 可能不可用 */ }
 
       // 推荐性能
-      const recResponse = await fetch('/admin/stats/recommendation-performance', {
-        headers: { 'x-admin-key': adminKey },
-      });
-      const recData = await recResponse.json();
-      if (recData.code === 1) {
-        setRecPerformance(recData.data);
-      }
+      try {
+        const recData = await getRecommendationPerformance();
+        setRecPerformance(recData);
+      } catch { /* 可能不可用 */ }
 
       // 实时统计
       try {
@@ -108,8 +101,8 @@ const Dashboard: React.FC = () => {
         const trendData = await getTrends(30);
         setTrends(trendData);
       } catch { /* 可能不可用 */ }
-    } catch (error: any) {
-      message.error(error.message || '获取仪表板数据失败');
+    } catch (err: any) {
+      error(err.message || '获取仪表板数据失败');
     } finally {
       setLoading(false);
     }
@@ -483,12 +476,11 @@ const Dashboard: React.FC = () => {
             icon={<ClearOutlined />}
             onClick={async () => {
               try {
-                const { purgeCache } = await import('../services/adminApi');
                 await purgeCache('all');
-                message.success('缓存已清空');
+                success('缓存已清空');
                 fetchDashboard(); // 刷新数据
-              } catch (error: any) {
-                message.error(error.message || '清空缓存失败');
+              } catch (err: any) {
+                error(err.message || '清空缓存失败');
               }
             }}
           >

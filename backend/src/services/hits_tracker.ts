@@ -9,6 +9,7 @@
  */
 
 import { logger } from '../utils/logger';
+import { CACHE_CONFIG } from '../config';
 
 interface Env {
   DB: D1Database;
@@ -30,9 +31,9 @@ export async function trackHit(
     const current = await env.ROBIN_CACHE.get(key);
     const count = current ? parseInt(current) + 1 : 1;
     
-    // 写入KV（24小时过期）
+    // 写入KV
     await env.ROBIN_CACHE.put(key, String(count), {
-      expirationTtl: 86400,
+      expirationTtl: CACHE_CONFIG.hitsTrackerTTL,
     });
   } catch (error) {
     // 静默失败，不影响主流程

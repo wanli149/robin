@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'library_controller.dart';
 import '../../widgets/net_image.dart';
+import '../../core/global_config.dart';
 
 
 /// 片库页面
@@ -18,8 +19,8 @@ class LibraryPage extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            // 顶部筛选器
-            _buildFilters(controller),
+            // 顶部筛选器（可折叠）
+            _buildCollapsibleFilters(controller),
 
             // 视频列表
             Expanded(
@@ -31,18 +32,108 @@ class LibraryPage extends StatelessWidget {
     );
   }
 
-  /// 构建筛选器
-  Widget _buildFilters(LibraryController controller) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFF2E2E2E),
-            width: 0.5,
+  /// 构建可折叠筛选器
+  Widget _buildCollapsibleFilters(LibraryController controller) {
+    return Obx(() {
+      final isExpanded = controller.isFilterExpanded.value;
+      
+      return AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: const BoxDecoration(
+          color: Color(0xFF121212),
+          border: Border(
+            bottom: BorderSide(
+              color: Color(0xFF2E2E2E),
+              width: 0.5,
+            ),
           ),
         ),
+        child: Column(
+          children: [
+            // 当前筛选条件摘要 + 展开/收起按钮
+            _buildFilterHeader(controller, isExpanded),
+            
+            // 展开时显示完整筛选器
+            if (isExpanded) _buildExpandedFilters(controller),
+          ],
+        ),
+      );
+    });
+  }
+
+  /// 构建筛选器头部（摘要）
+  Widget _buildFilterHeader(LibraryController controller, bool isExpanded) {
+    return GestureDetector(
+      onTap: controller.toggleFilterExpanded,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            // 当前筛选摘要
+            Expanded(
+              child: Obx(() => SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildFilterChip(
+                      controller.getSelectedTypeName(),
+                      isActive: controller.selectedType.value.isNotEmpty,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFilterChip(
+                      controller.getSelectedAreaName(),
+                      isActive: controller.selectedArea.value.isNotEmpty,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFilterChip(
+                      controller.getSelectedYearName(),
+                      isActive: controller.selectedYear.value.isNotEmpty,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildFilterChip(
+                      controller.getSelectedSortName(),
+                      isActive: true,
+                    ),
+                  ],
+                ),
+              )),
+            ),
+            
+            // 展开/收起图标
+            Icon(
+              isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+              color: const Color(0xFFFFC107),
+              size: 24,
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  /// 构建筛选标签
+  Widget _buildFilterChip(String label, {bool isActive = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFFFFC107) : const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: isActive ? Colors.black : Colors.white70,
+          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
+  /// 构建展开的筛选器
+  Widget _buildExpandedFilters(LibraryController controller) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Column(
         children: [
           // 类型筛选
@@ -52,7 +143,7 @@ class LibraryPage extends StatelessWidget {
             selectedValue: controller.selectedType,
             onSelect: controller.selectType,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
           // 地区筛选
           _buildFilterRow(
@@ -61,7 +152,7 @@ class LibraryPage extends StatelessWidget {
             selectedValue: controller.selectedArea,
             onSelect: controller.selectArea,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
           // 年份筛选
           _buildFilterRow(
@@ -70,7 +161,7 @@ class LibraryPage extends StatelessWidget {
             selectedValue: controller.selectedYear,
             onSelect: controller.selectYear,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
           // 排序筛选
           _buildFilterRow(
@@ -205,34 +296,44 @@ class LibraryPage extends StatelessWidget {
       child: CustomScrollView(
         controller: controller.scrollController,
         slivers: [
-          // 瀑布流网格
+          // 3列网格布局
           SliverPadding(
-            padding: const EdgeInsets.all(16),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 0.65,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  // 每隔一定数量插入广告
-                  if ((index + 1) % 10 == 0 && index < controller.videoList.length) {
-                    return _buildAdCard();
-                  }
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            sliver: Obx(() {
+              // 响应式监听广告开关
+              final adsEnabled = GlobalConfig.instance.adsEnabled.value;
+              
+              return SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.58, // 与首页模块保持一致
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    // 每隔一定数量插入广告（仅当广告启用时）
+                    if (adsEnabled && (index + 1) % 12 == 0 && index < controller.videoList.length) {
+                      return _buildAdCard();
+                    }
 
-                  final actualIndex = index - (index ~/ 10);
-                  if (actualIndex >= controller.videoList.length) {
-                    return const SizedBox.shrink();
-                  }
+                    // 计算实际索引（考虑广告位）
+                    final actualIndex = adsEnabled 
+                        ? index - (index ~/ 12)
+                        : index;
+                    if (actualIndex >= controller.videoList.length) {
+                      return const SizedBox.shrink();
+                    }
 
-                  final video = controller.videoList[actualIndex];
-                  return _buildVideoCard(video);
-                },
-                childCount: controller.videoList.length + (controller.videoList.length ~/ 10),
-              ),
-            ),
+                    final video = controller.videoList[actualIndex];
+                    return _buildVideoCard(video);
+                  },
+                  childCount: adsEnabled
+                      ? controller.videoList.length + (controller.videoList.length ~/ 12)
+                      : controller.videoList.length,
+                ),
+              );
+            }),
           ),
 
           // 加载更多指示器
@@ -286,6 +387,7 @@ class LibraryPage extends StatelessWidget {
           // 封面
           Expanded(
             child: Stack(
+              fit: StackFit.expand,
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
@@ -296,8 +398,8 @@ class LibraryPage extends StatelessWidget {
                 ),
                 if (vodRemarks.isNotEmpty)
                   Positioned(
-                    top: 4,
-                    right: 4,
+                    top: 6,
+                    right: 6,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -319,15 +421,18 @@ class LibraryPage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // 名称
-          Text(
-            vodName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.white,
-              height: 1.3,
+          // 名称 - 固定高度
+          SizedBox(
+            height: 36,
+            child: Text(
+              vodName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.white,
+                height: 1.3,
+              ),
             ),
           ),
         ],
@@ -342,7 +447,7 @@ class LibraryPage extends StatelessWidget {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: const Color(0xFFFFC107).withOpacity(0.3),
+          color: const Color(0xFFFFC107).withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -366,7 +471,7 @@ class LibraryPage extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFC107).withOpacity(0.2),
+              color: const Color(0xFFFFC107).withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Text(

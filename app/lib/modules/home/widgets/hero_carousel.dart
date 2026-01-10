@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'dart:async';
 import '../../../core/router.dart';
+import '../../../core/logger.dart';
 
 /// 轮播图组件
 /// 支持自动播放、手动滑动、点击跳转、自适应高度
@@ -153,7 +154,7 @@ class _HeroCarouselState extends State<HeroCarousel> {
                 end: Alignment.bottomCenter,
                 colors: [
                   Colors.transparent,
-                  Colors.black.withOpacity(0.7),
+                  Colors.black.withValues(alpha: 0.7),
                 ],
                 stops: const [0.5, 1.0],
               ),
@@ -232,7 +233,7 @@ class _HeroCarouselState extends State<HeroCarousel> {
         );
       },
       errorBuilder: (context, error, stackTrace) {
-        print('❌ Carousel image load error: $error');
+        Logger.error('[HeroCarousel] Carousel image load error: $error');
         return Container(
           color: const Color(0xFF2E2E2E),
           child: Column(
@@ -248,7 +249,7 @@ class _HeroCarouselState extends State<HeroCarousel> {
                 '图片加载失败',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.white.withOpacity(0.3),
+                  color: Colors.white.withValues(alpha: 0.3),
                 ),
               ),
             ],

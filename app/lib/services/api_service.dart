@@ -1,4 +1,5 @@
 import '../core/http_client.dart';
+import '../core/logger.dart';
 
 /// API 服务
 /// 封装常用的 API 调用
@@ -30,15 +31,15 @@ class ApiService {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        if (data['code'] == 1 && data['list'] != null) {
+        if (data['code'] == 1 && data['data'] != null) {
           return List<Map<String, dynamic>>.from(
-            (data['list'] as List).map((e) => Map<String, dynamic>.from(e)),
+            (data['data'] as List).map((e) => Map<String, dynamic>.from(e)),
           );
         }
       }
       return [];
     } catch (e) {
-      print('❌ ApiService.getRanking error: $e');
+      Logger.error('ApiService.getRanking error: $e');
       return [];
     }
   }
@@ -71,15 +72,15 @@ class ApiService {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        if (data['code'] == 1 && data['list'] != null) {
+        if (data['code'] == 1 && data['data'] != null) {
           return List<Map<String, dynamic>>.from(
-            (data['list'] as List).map((e) => Map<String, dynamic>.from(e)),
+            (data['data'] as List).map((e) => Map<String, dynamic>.from(e)),
           );
         }
       }
       return [];
     } catch (e) {
-      print('❌ ApiService.getCategoryVideos error: $e');
+      Logger.error('ApiService.getCategoryVideos error: $e');
       return [];
     }
   }
@@ -97,15 +98,15 @@ class ApiService {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        if (data['code'] == 1 && data['list'] != null) {
+        if (data['code'] == 1 && data['data'] != null) {
           return List<Map<String, dynamic>>.from(
-            (data['list'] as List).map((e) => Map<String, dynamic>.from(e)),
+            (data['data'] as List).map((e) => Map<String, dynamic>.from(e)),
           );
         }
       }
       return [];
     } catch (e) {
-      print('❌ ApiService.getPopularActors error: $e');
+      Logger.error('ApiService.getPopularActors error: $e');
       return [];
     }
   }
@@ -122,15 +123,15 @@ class ApiService {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        if (data['code'] == 1 && data['list'] != null) {
+        if (data['code'] == 1 && data['data'] != null) {
           return List<Map<String, dynamic>>.from(
-            (data['list'] as List).map((e) => Map<String, dynamic>.from(e)),
+            (data['data'] as List).map((e) => Map<String, dynamic>.from(e)),
           );
         }
       }
       return [];
     } catch (e) {
-      print('❌ ApiService.getSubCategories error: $e');
+      Logger.error('ApiService.getSubCategories error: $e');
       return [];
     }
   }
@@ -165,15 +166,15 @@ class ApiService {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        if (data['code'] == 1 && data['list'] != null) {
+        if (data['code'] == 1 && data['data'] != null) {
           return List<Map<String, dynamic>>.from(
-            (data['list'] as List).map((e) => Map<String, dynamic>.from(e)),
+            (data['data'] as List).map((e) => Map<String, dynamic>.from(e)),
           );
         }
       }
       return [];
     } catch (e) {
-      print('❌ ApiService.getArticles error: $e');
+      Logger.error('ApiService.getArticles error: $e');
       return [];
     }
   }
@@ -192,7 +193,7 @@ class ApiService {
       }
       return null;
     } catch (e) {
-      print('❌ ApiService.getArticleDetail error: $e');
+      Logger.error('ApiService.getArticleDetail error: $e');
       return null;
     }
   }

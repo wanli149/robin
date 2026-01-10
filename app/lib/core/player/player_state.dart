@@ -3,9 +3,9 @@ import 'player_enums.dart';
 /// 播放状态类
 /// 
 /// 存储当前播放器的完整状态信息，包括：
-/// - 内容信息（类型、ID、集数）
+/// - 内容信息（类型、ID、名称、集数）
 /// - 播放进度（当前位置、总时长）
-/// - 播放状态（是否播放中、播放速度）
+/// - 播放状态（是否播放中、播放速度、是否静音）
 /// 
 /// 该类是不可变的，使用 [copyWith] 方法创建新状态。
 /// 
@@ -14,6 +14,7 @@ import 'player_enums.dart';
 /// final state = PlayerState(
 ///   contentType: ContentType.tv,
 ///   contentId: '12345',
+///   contentName: '手遮天',
 ///   episodeIndex: 1,
 ///   position: Duration.zero,
 ///   duration: Duration.zero,
@@ -31,6 +32,11 @@ class PlayerState {
   /// 
   /// 对应后端的 vod_id 或 short_id
   final String contentId;
+
+  /// 内容名称
+  /// 
+  /// 视频/剧集的标题，用于播放器顶部显示
+  final String contentName;
 
   /// 当前集数索引
   /// 
@@ -51,14 +57,23 @@ class PlayerState {
   /// 默认 1.0，支持 0.5x ~ 2.0x
   final double playbackSpeed;
 
+  /// 是否静音
+  final bool isMuted;
+
+  /// 音量 (0.0 ~ 1.0)
+  final double volume;
+
   const PlayerState({
     required this.contentType,
     required this.contentId,
+    this.contentName = '',
     required this.episodeIndex,
     required this.position,
     required this.duration,
     required this.isPlaying,
     this.playbackSpeed = 1.0,
+    this.isMuted = false,
+    this.volume = 1.0,
   });
 
   /// 创建初始状态
@@ -68,6 +83,7 @@ class PlayerState {
     return const PlayerState(
       contentType: ContentType.shorts,
       contentId: '',
+      contentName: '',
       episodeIndex: 0,
       position: Duration.zero,
       duration: Duration.zero,
@@ -81,20 +97,26 @@ class PlayerState {
   PlayerState copyWith({
     ContentType? contentType,
     String? contentId,
+    String? contentName,
     int? episodeIndex,
     Duration? position,
     Duration? duration,
     bool? isPlaying,
     double? playbackSpeed,
+    bool? isMuted,
+    double? volume,
   }) {
     return PlayerState(
       contentType: contentType ?? this.contentType,
       contentId: contentId ?? this.contentId,
+      contentName: contentName ?? this.contentName,
       episodeIndex: episodeIndex ?? this.episodeIndex,
       position: position ?? this.position,
       duration: duration ?? this.duration,
       isPlaying: isPlaying ?? this.isPlaying,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
+      isMuted: isMuted ?? this.isMuted,
+      volume: volume ?? this.volume,
     );
   }
 
@@ -138,8 +160,9 @@ class PlayerState {
   @override
   String toString() {
     return 'PlayerState(contentType: $contentType, contentId: $contentId, '
-        'episode: $episodeIndex, position: $positionString/$durationString, '
-        'isPlaying: $isPlaying, speed: ${playbackSpeed}x)';
+        'contentName: $contentName, episode: $episodeIndex, '
+        'position: $positionString/$durationString, '
+        'isPlaying: $isPlaying, speed: ${playbackSpeed}x, muted: $isMuted)';
   }
 
   @override
@@ -148,11 +171,14 @@ class PlayerState {
     return other is PlayerState &&
         other.contentType == contentType &&
         other.contentId == contentId &&
+        other.contentName == contentName &&
         other.episodeIndex == episodeIndex &&
         other.position == position &&
         other.duration == duration &&
         other.isPlaying == isPlaying &&
-        other.playbackSpeed == playbackSpeed;
+        other.playbackSpeed == playbackSpeed &&
+        other.isMuted == isMuted &&
+        other.volume == volume;
   }
 
   @override
@@ -160,11 +186,14 @@ class PlayerState {
     return Object.hash(
       contentType,
       contentId,
+      contentName,
       episodeIndex,
       position,
       duration,
       isPlaying,
       playbackSpeed,
+      isMuted,
+      volume,
     );
   }
 }

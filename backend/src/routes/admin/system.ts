@@ -23,9 +23,9 @@ system.get('/admin/versions', async (c) => {
       SELECT id, version, url, force_update, changelog, platform, download_count, created_at
       FROM app_versions ORDER BY created_at DESC LIMIT 50
     `).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
-    return c.json({ code: 1, msg: 'success', list: [] });
+    return c.json({ code: 1, msg: 'success', data: [] });
   }
 });
 
@@ -351,53 +351,5 @@ system.patch('/admin/invalid-urls/:id/fix', async (c) => {
 // ============================================
 // 视频修复
 // ============================================
-
-/**
- * POST /admin/videos/reclassify
- */
-system.post('/admin/videos/reclassify', async (c) => {
-  try {
-    const { autoClassify } = await import('../../services/auto_classifier');
-    
-    const result = await c.env.DB.prepare(`
-      SELECT vod_id, vod_name, vod_actor, vod_director, type_id, type_name, source_name FROM vod_cache ORDER BY vod_id
-    `).all();
-    
-    // 定义视频行类型
-    interface VideoClassifyRow {
-      vod_id: string;
-      vod_name: string;
-      vod_actor: string | null;
-      vod_director: string | null;
-      type_id: number | null;
-      type_name: string | null;
-      source_name: string | null;
-    }
-    
-    const videos = result.results as VideoClassifyRow[];
-    let updated = 0, unchanged = 0, errors = 0;
-    
-    for (const video of videos) {
-      try {
-        const oldTypeId = video.type_id;
-        const classification = autoClassify({
-          vod_name: video.vod_name, vod_actor: video.vod_actor, vod_director: video.vod_director,
-          type_id: video.type_id, type_name: video.type_name, source_name: video.source_name,
-        });
-        
-        if (classification.typeId !== oldTypeId && classification.confidence >= 0.8) {
-          await c.env.DB.prepare(`UPDATE vod_cache SET type_id = ?, type_name = ? WHERE vod_id = ?`)
-            .bind(classification.typeId, classification.typeName, video.vod_id).run();
-          updated++;
-        } else { unchanged++; }
-      } catch { errors++; }
-    }
-    
-    return c.json({ code: 1, msg: 'Video reclassification completed', data: { total: videos.length, updated, unchanged, errors } });
-  } catch (error) {
-    logger.admin.error('Reclassify error', { error: error instanceof Error ? error.message : 'Unknown' });
-    return c.json({ code: 0, msg: 'Failed to reclassify videos' }, 500);
-  }
-});
 
 export default system;

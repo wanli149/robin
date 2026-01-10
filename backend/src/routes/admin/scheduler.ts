@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import type { Bindings } from './types';
 import type { SchedulerTaskRow, SchedulerHistoryRow, TaskExecutionParams, HotSearchStatsRow, SystemConfigRow, HomeTabRow } from '../../types/database';
 import { logger } from '../../utils/logger';
+import { CACHE_CONFIG } from '../../config';
 
 const scheduler = new Hono<{ Bindings: Bindings }>();
 
@@ -566,7 +567,7 @@ async function warmupCaches(env: Bindings): Promise<void> {
     ORDER BY is_pinned DESC, search_count DESC LIMIT 10
   `).all();
   const keywords = ((hotResult.results || []) as HotSearchStatsRow[]).map(r => r.keyword);
-  await env.ROBIN_CACHE.put('hot_search_keywords', JSON.stringify({ keywords }), { expirationTtl: 600 });
+  await env.ROBIN_CACHE.put('hot_search_keywords', JSON.stringify({ keywords }), { expirationTtl: CACHE_CONFIG.hotSearchTTL });
   
   // 预热跑马灯
   const marqueeConfigs = await env.DB.prepare(`
@@ -577,7 +578,7 @@ async function warmupCaches(env: Bindings): Promise<void> {
     enabled: marqueeMap.get('marquee_enabled') === 'true',
     text: marqueeMap.get('marquee_text') || '',
     link: marqueeMap.get('marquee_link') || '',
-  }), { expirationTtl: 600 });
+  }), { expirationTtl: CACHE_CONFIG.marqueeTTL });
   
   // 预热 tabs
   const tabsResult = await env.DB.prepare(`
@@ -586,7 +587,7 @@ async function warmupCaches(env: Bindings): Promise<void> {
   await env.ROBIN_CACHE.put('home_tabs', JSON.stringify({
     tabs: tabsResult.results,
     timestamp: Date.now(),
-  }), { expirationTtl: 1800 });
+  }), { expirationTtl: CACHE_CONFIG.tabsTTL });
 }
 
 /**

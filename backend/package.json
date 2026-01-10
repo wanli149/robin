@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:init": "wrangler d1 execute robin-db --local --file=./schema.sql",
     "db:reset": "wrangler d1 execute robin-db --local --file=./schema.sql",
     "db:query": "wrangler d1 execute robin-db --local",
@@ -27,7 +28,9 @@
     "lodash": "^4.17.21"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.11.1",
     "tsx": "^4.21.0",
+    "vitest": "^4.0.16",
     "wrangler": "^4.53.0"
   }
 }

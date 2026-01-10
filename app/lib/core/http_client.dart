@@ -4,7 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart' as getx;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'user_store.dart';
+import 'logger.dart';
 
 /// HTTP 客户端服务
 /// 
@@ -83,7 +83,7 @@ class HttpClient {
   /// 启用/禁用 API 签名
   void setApiSignEnabled(bool enabled) {
     _enableApiSign = enabled;
-    print('🔐 API Sign ${enabled ? "enabled" : "disabled"}');
+    Logger.info('[HttpClient] API Sign ${enabled ? "enabled" : "disabled"}');
   }
 
   /// 初始化拦截器
@@ -98,23 +98,36 @@ class HttpClient {
           options.headers['Authorization'] = 'Bearer $token';
         }
         
+        // 🚀 添加用户 ID 和设备 ID（用于搜索历史和热搜统计）
+        final userId = prefs.getString('user_id');
+        if (userId != null && userId.isNotEmpty) {
+          options.headers['x-user-id'] = userId;
+        }
+        
+        // 获取或生成设备 ID
+        String? deviceId = prefs.getString('device_id');
+        if (deviceId == null || deviceId.isEmpty) {
+          deviceId = _generateDeviceId();
+          await prefs.setString('device_id', deviceId);
+        }
+        options.headers['x-device-id'] = deviceId;
         // 添加 API 签名（如果启用）
         if (_enableApiSign) {
           _addApiSignature(options);
         }
         
-        print('🌐 Request: ${options.method} ${options.uri}');
-        print('📤 Headers: ${options.headers}');
+        Logger.network('REQUEST', '${options.method} ${options.uri}');
+        Logger.debug('[HttpClient] Headers: ${options.headers}');
         if (options.data != null) {
-          print('📦 Data: ${options.data}');
+          Logger.debug('[HttpClient] Data: ${options.data}');
         }
         
         handler.next(options);
       },
       
       onResponse: (response, handler) {
-        print('✅ Response: ${response.statusCode} ${response.requestOptions.uri}');
-        print('📥 Data: ${response.data}');
+        Logger.network('RESPONSE', '${response.statusCode} ${response.requestOptions.uri}');
+        Logger.debug('[HttpClient] Data: ${response.data}');
         
         // 统一处理后端返回的 code 字段
         // 后端标准：code=1 表示成功，code=0 表示失败
@@ -123,7 +136,7 @@ class HttpClient {
           if (code == 0) {
             // 后端返回业务错误
             final msg = response.data['msg'] ?? '请求失败';
-            print('⚠️ Business Error: $msg');
+            Logger.warning('[HttpClient] Business Error: $msg');
             // 不抛出异常，让业务层自己处理
           }
         }
@@ -132,8 +145,8 @@ class HttpClient {
       },
       
       onError: (error, handler) async {
-        print('❌ Error: ${error.message}');
-        print('🔗 URL: ${error.requestOptions.uri}');
+        Logger.error('[HttpClient] Error: ${error.message}');
+        Logger.error('[HttpClient] URL: ${error.requestOptions.uri}');
         
         // 统一错误处理
         if (error.response != null) {
@@ -145,7 +158,7 @@ class HttpClient {
               // 让业务层自己决定是否需要登出
               final prefs = await SharedPreferences.getInstance();
               await prefs.remove('token');
-              print('⚠️ Token expired or invalid, cleared from storage');
+              Logger.warning('[HttpClient] Token expired or invalid, cleared from storage');
               break;
             case 403:
               _showError('没有权限访问');
@@ -175,7 +188,7 @@ class HttpClient {
             }
           } else if (error.type == DioExceptionType.connectionError) {
             // 连接错误时不立即显示，让智能切换处理
-            print('🔄 Connection error, will try alternative URLs');
+            Logger.info('[HttpClient] Connection error, will try alternative URLs');
           } else {
             _showError('网络请求失败，请稍后重试');
           }
@@ -268,7 +281,7 @@ class HttpClient {
   /// 设置 Base URL
   void setBaseUrl(String baseUrl) {
     dio.options.baseUrl = baseUrl;
-    print('🌐 HTTP Client base URL set to: $baseUrl');
+    Logger.network('CONFIG', 'HTTP Client base URL set to: $baseUrl');
   }
   
   /// 获取当前 Base URL
@@ -280,25 +293,22 @@ class HttpClient {
     final nonce = _generateNonce();
     final path = options.uri.path;
     
-    // 构建签名数据: METHOD&PATH&TIMESTAMP&NONCE&PACKAGE&VERSION
+    // 构建签名数据: METHOD&PATH&TIMESTAMP&NONCE (与后端一致)
     final signData = [
       options.method.toUpperCase(),
       path,
       timestamp,
       nonce,
-      _appPackage,
-      _appVersion,
     ].join('&');
     
     // 生成 HMAC-SHA256 签名
     final sign = _generateHmacSha256(signData, _apiSecretKey);
     
-    // 添加请求头
-    options.headers['X-Timestamp'] = timestamp;
-    options.headers['X-Nonce'] = nonce;
-    options.headers['X-Sign'] = sign;
-    options.headers['X-App-Package'] = _appPackage;
-    options.headers['X-App-Version'] = _appVersion;
+    // 添加请求头 (使用后端期望的头部名称)
+    options.headers['x-timestamp'] = timestamp;
+    options.headers['x-nonce'] = nonce;
+    options.headers['x-signature'] = sign;
+    options.headers['x-package-name'] = _appPackage;
   }
   
   /// 生成随机 Nonce
@@ -316,12 +326,26 @@ class HttpClient {
     final digest = hmac.convert(dataBytes);
     return digest.toString();
   }
+  
+  /// 🚀 生成唯一设备 ID（UUID v4 格式）
+  String _generateDeviceId() {
+    final random = Random.secure();
+    final values = List<int>.generate(16, (i) => random.nextInt(256));
+    
+    // 设置 UUID 版本 (v4) 和变体
+    values[6] = (values[6] & 0x0f) | 0x40; // version 4
+    values[8] = (values[8] & 0x3f) | 0x80; // variant
+    
+    // 格式化为 UUID 字符串
+    final hex = values.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
 
   /// 测试网络连接
   Future<bool> testConnection([String? testUrl]) async {
     try {
       final url = testUrl ?? dio.options.baseUrl;
-      print('🔍 Testing connection to: $url');
+      Logger.debug('[HttpClient] Testing connection to: $url');
       
       final response = await dio.get(
         '/api/version',
@@ -331,10 +355,10 @@ class HttpClient {
         ),
       );
       
-      print('✅ Connection test successful: ${response.statusCode}');
+      Logger.success('[HttpClient] Connection test successful: ${response.statusCode}');
       return response.statusCode == 200;
     } catch (e) {
-      print('❌ Connection test failed: $e');
+      Logger.error('[HttpClient] Connection test failed: $e');
       return false;
     }
   }
@@ -350,7 +374,7 @@ class HttpClient {
     ];
 
     for (final url in urls) {
-      print('🔍 Trying URL: $url');
+      Logger.debug('[HttpClient] Trying URL: $url');
       try {
         final testDio = Dio(BaseOptions(
           baseUrl: url,
@@ -360,16 +384,16 @@ class HttpClient {
 
         final response = await testDio.get('/api/version');
         if (response.statusCode == 200) {
-          print('✅ Found working URL: $url');
+          Logger.success('[HttpClient] Found working URL: $url');
           return url;
         }
       } catch (e) {
-        print('❌ URL $url failed: $e');
+        Logger.error('[HttpClient] URL $url failed: $e');
         continue;
       }
     }
 
-    print('⚠️ No working URL found, using default');
+    Logger.warning('[HttpClient] No working URL found, using default');
     return urls.first;
   }
 }
@@ -419,7 +443,7 @@ class RetryInterceptor extends Interceptor {
          err.type == DioExceptionType.sendTimeout ||
          err.type == DioExceptionType.connectionError)) {
       
-      print('🔄 Retry attempt ${retryCount + 1}/$retries');
+      Logger.info('[HttpClient] Retry attempt ${retryCount + 1}/$retries');
       
       // 等待后重试
       await Future.delayed(

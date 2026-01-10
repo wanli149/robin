@@ -21,7 +21,6 @@ logs/
 # 临时文件
 *.tmp
 *.temp
-layout_debug.json
 
 # 环境变量文件（包含敏感信息）
 .env
@@ -45,15 +44,49 @@ coverage/
 *.bak
 *.backup
 
-# 项目特定的临时文件和调试文件
-test_device_connection.ps1
+# ============================================
+# 测试脚本（本地调试用，不应提交）
+# ============================================
+**/test_*.ps1
+**/test_*.sh
+**/test_*.dart
+e2e_*.ps1
 setup_adb.bat
+test_device_connection.ps1
+
+# ============================================
+# 一次性 SQL 脚本（临时修复/运行脚本）
+# ============================================
+**/run_*.sql
+**/fix_*.sql
+**/fix-*.sql
+
+# ============================================
+# 部署脚本（包含环境特定配置）
+# ============================================
+**/deploy*.ps1
+**/deploy*.sh
+
+# ============================================
+# 调试文件
+# ============================================
 layout_debug.json
 
-# 开发文档（如果不想公开的话，可以取消注释）
-# API_REQUIREMENTS.md
-# DEPLOYMENT_CHECKLIST.md
-# DISTRIBUTED_DATABASE_ARCHITECTURE.md
+# ============================================
+# 敏感/内部文档（包含部署配置、商业策略、架构细节）
+# ============================================
+API_REQUIREMENTS.md
+DEPLOYMENT_CHECKLIST.md
+IMPLEMENTATION_GUIDE.md
+DISTRIBUTED_DATABASE_ARCHITECTURE.md
+backend/CLOUDFLARE_DEPLOY.md
+backend/CLOUDFLARE_OPTIMIZATION.md
+backend/DEPLOYMENT.md
+app/android/BUILD_CONFIG.md
+
+# 本地开发文档（包含内部配置信息）
+**/LOCAL_DEVELOPMENT.md
+**/DEVELOPMENT.md
 
 # Flutter 构建产物
 **/build/
@@ -98,12 +131,3 @@ layout_debug.json
 *.map
 executionHistory.bin
 fileHashes.bin
-
-# 敏感文档（包含部署配置、商业策略、架构细节）
-API_REQUIREMENTS.md
-DEPLOYMENT_CHECKLIST.md
-DISTRIBUTED_DATABASE_ARCHITECTURE.md
-backend/CLOUDFLARE_DEPLOY.md
-backend/CLOUDFLARE_OPTIMIZATION.md
-backend/DEPLOYMENT.md
-app/android/BUILD_CONFIG.md

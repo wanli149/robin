@@ -8,7 +8,6 @@ import {
   Table,
   Button,
   Space,
-  message,
   Popconfirm,
   Typography,
   Card,
@@ -19,6 +18,7 @@ import {
   InputNumber,
   Switch,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   PlusOutlined,
   EditOutlined,
@@ -46,6 +46,7 @@ const AppWallManagement: React.FC = () => {
   const [editingApp, setEditingApp] = useState<AppWallItem | null>(null);
   const [form] = Form.useForm();
   const [saveLoading, setSaveLoading] = useState(false);
+  const { success, error } = useNotification();
 
   // 加载应用列表
   const loadApps = async () => {
@@ -53,8 +54,8 @@ const AppWallManagement: React.FC = () => {
     try {
       const data = await getAppWall();
       setApps(data);
-    } catch (error: any) {
-      message.error(error.message || '加载应用列表失败');
+    } catch (err: any) {
+      error(err.message || '加载应用列表失败');
     } finally {
       setLoading(false);
     }
@@ -64,10 +65,10 @@ const AppWallManagement: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await deleteAppWall(id);
-      message.success('删除成功');
+      success('删除成功');
       loadApps();
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
@@ -102,16 +103,16 @@ const AppWallManagement: React.FC = () => {
       };
       
       await saveAppWall(data);
-      message.success(editingApp ? '更新成功' : '创建成功');
+      success(editingApp ? '更新成功' : '创建成功');
       setModalVisible(false);
       form.resetFields();
       loadApps();
-    } catch (error: any) {
-      if (error.errorFields) {
+    } catch (err: any) {
+      if (err.errorFields) {
         // 表单验证错误
         return;
       }
-      message.error(error.message || '保存失败');
+      error(err.message || '保存失败');
     } finally {
       setSaveLoading(false);
     }

@@ -21,11 +21,9 @@ class GridMenu extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-
-
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
@@ -36,9 +34,9 @@ class GridMenu extends StatelessWidget {
         padding: EdgeInsets.zero,
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 1.0,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 4,
+          childAspectRatio: 0.75, // 宽高比，给标签留空间
         ),
         itemCount: items.length,
         itemBuilder: (context, index) {
@@ -50,71 +48,83 @@ class GridMenu extends StatelessWidget {
 
   /// 构建菜单项
   Widget _buildMenuItem(Map<String, dynamic> item) {
+    // 兼容多种字段名
     final iconUrl = item['icon_url'] as String? ?? '';
     final iconData = item['icon'] as String? ?? '';
+    final iconType = item['icon_type'] as String? ?? '';
     final label = item['label'] as String? ?? '';
-    final jumpAction = item['jump_action'] as String? ?? '';
+    final target = item['target'] as String? ?? item['jump_action'] as String? ?? '';
+
+    // 根据 icon_type 判断图标类型
+    String effectiveIconUrl = iconUrl;
+    String effectiveIconData = iconData;
+    
+    if (iconType == 'url' && iconData.startsWith('http')) {
+      effectiveIconUrl = iconData;
+      effectiveIconData = '';
+    } else if (iconType == 'emoji' || _isEmoji(iconData)) {
+      effectiveIconUrl = '';
+      effectiveIconData = iconData;
+    }
 
     return GestureDetector(
       onTap: () {
-        if (jumpAction.isNotEmpty) {
-          UniversalRouter.handleRoute(jumpAction);
+        if (target.isNotEmpty) {
+          UniversalRouter.handleRoute(target);
         }
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // 图标
-            Expanded(
-              child: _buildIcon(iconUrl, iconData),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 图标
+          _buildIcon(effectiveIconUrl, effectiveIconData),
+          
+          const SizedBox(height: 6),
+          
+          // 标签
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Colors.white70,
             ),
-            
-            const SizedBox(height: 6),
-            
-            // 标签
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white70,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
 
   /// 构建图标
   Widget _buildIcon(String iconUrl, String iconData) {
+    const double containerSize = 48.0;
+    
     // 如果有图标 URL，显示网络图片
     if (iconUrl.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          iconUrl,
-          width: 48,
-          height: 48,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            
-            return Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: const Color(0xFF2E2E2E),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Center(
+      return Container(
+        width: containerSize,
+        height: containerSize,
+        decoration: BoxDecoration(
+          color: const Color(0xFF2A2A2A),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.network(
+            iconUrl,
+            width: containerSize,
+            height: containerSize,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              
+              return const Center(
                 child: SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     valueColor: AlwaysStoppedAnimation<Color>(
@@ -122,12 +132,34 @@ class GridMenu extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) {
-            return _buildDefaultIcon(iconData);
-          },
+              );
+            },
+            errorBuilder: (context, error, stackTrace) {
+              return _buildDefaultIcon(iconData);
+            },
+          ),
+        ),
+      );
+    }
+
+    // 检查是否是 emoji
+    if (iconData.isNotEmpty && _isEmoji(iconData)) {
+      return Container(
+        width: containerSize,
+        height: containerSize,
+        decoration: BoxDecoration(
+          color: const Color(0xFF2A2A2A),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Text(
+            iconData,
+            style: const TextStyle(
+              fontSize: 24,
+              height: 1.0,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ),
       );
     }
@@ -136,8 +168,20 @@ class GridMenu extends StatelessWidget {
     return _buildDefaultIcon(iconData);
   }
 
+  /// 检查是否是 emoji
+  bool _isEmoji(String text) {
+    if (text.isEmpty) return false;
+    // emoji 通常是非 ASCII 字符
+    final runes = text.runes;
+    if (runes.isEmpty) return false;
+    // 检查第一个字符是否在 emoji 范围内
+    final firstRune = runes.first;
+    return firstRune > 127; // 非 ASCII 字符
+  }
+
   /// 构建默认图标
   Widget _buildDefaultIcon(String iconData) {
+    const double containerSize = 48.0;
     IconData icon;
     
     // 根据 iconData 字符串映射到对应的图标
@@ -196,15 +240,15 @@ class GridMenu extends StatelessWidget {
     }
 
     return Container(
-      width: 48,
-      height: 48,
+      width: containerSize,
+      height: containerSize,
       decoration: BoxDecoration(
-        color: const Color(0xFFFFC107).withOpacity(0.15),
-        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Icon(
         icon,
-        size: 28,
+        size: 24,
         color: const Color(0xFFFFC107),
       ),
     );

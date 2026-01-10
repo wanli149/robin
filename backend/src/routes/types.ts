@@ -4,7 +4,9 @@
  */
 
 import { Hono } from 'hono';
+import { validateQuery, ValidationSchemas, sanitizeQueryParams } from '../middleware/input_validator';
 import { logger } from '../utils/logger';
+import { CACHE_CONFIG } from '../config';
 
 type Bindings = {
   DB: D1Database;
@@ -117,11 +119,11 @@ types.get('/api/types', async (c) => {
       data: typesData,
     };
 
-    // 缓存1小时
+    // 缓存
     await c.env.ROBIN_CACHE.put(
       cacheKey,
       JSON.stringify(response),
-      { expirationTtl: 3600 }
+      { expirationTtl: CACHE_CONFIG.vodDetailTTL }
     );
 
     return c.json(response);
@@ -193,8 +195,7 @@ types.get('/api/types/:id', async (c) => {
 types.get('/api/types/:id/videos', async (c) => {
   try {
     const id = parseInt(c.req.param('id'));
-    const page = parseInt(c.req.query('page') || '1');
-    const limit = parseInt(c.req.query('limit') || '20');
+    const { page, limit } = sanitizeQueryParams(c);
     const subType = c.req.query('sub_type'); // 子分类
     const area = c.req.query('area'); // 地区
     const year = c.req.query('year'); // 年份
@@ -222,6 +223,210 @@ types.get('/api/types/:id/videos', async (c) => {
       },
       500
     );
+  }
+});
+
+// ============================================
+// 筛选选项 API（客户端使用）
+// ============================================
+
+/**
+ * 标准化地区名称（用于去重和排序）
+ */
+function normalizeAreaForFilter(area: string): string {
+  const areaMap: Record<string, string> = {
+    '大陆': '中国大陆',
+    '内地': '中国大陆',
+    '国产': '中国大陆',
+    '中国': '中国大陆',
+    '香港': '中国香港',
+    '港': '中国香港',
+    '台湾': '中国台湾',
+    '台': '中国台湾',
+    '港台': '中国香港,中国台湾',
+  };
+  return areaMap[area] || area;
+}
+
+/**
+ * GET /api/filter-options
+ * 获取筛选选项（地区、年份）- 客户端使用
+ * 
+ * Query params:
+ * - type_id: 可选，按分类筛选
+ */
+types.get('/api/filter-options', async (c) => {
+  try {
+    const typeId = c.req.query('type_id');
+    
+    // 检查缓存
+    const cacheKey = `filter-options:${typeId || 'all'}`;
+    const cached = await c.env.ROBIN_CACHE.get(cacheKey, 'json');
+    
+    if (cached) {
+      return c.json(cached);
+    }
+    
+    // 并发获取地区和年份
+    const [areasResult, yearsResult] = await Promise.all([
+      // 地区
+      typeId
+        ? c.env.DB.prepare(`SELECT DISTINCT vod_area FROM vod_cache WHERE vod_area IS NOT NULL AND vod_area != '' AND type_id = ?`).bind(parseInt(typeId)).all()
+        : c.env.DB.prepare(`SELECT DISTINCT vod_area FROM vod_cache WHERE vod_area IS NOT NULL AND vod_area != ''`).all(),
+      // 年份
+      typeId
+        ? c.env.DB.prepare(`SELECT DISTINCT vod_year FROM vod_cache WHERE vod_year IS NOT NULL AND vod_year != '' AND vod_year != '0' AND type_id = ? ORDER BY vod_year DESC`).bind(parseInt(typeId)).all()
+        : c.env.DB.prepare(`SELECT DISTINCT vod_year FROM vod_cache WHERE vod_year IS NOT NULL AND vod_year != '' AND vod_year != '0' ORDER BY vod_year DESC`).all(),
+    ]);
+    
+    // 处理地区（去重、标准化）
+    const areaSet = new Set<string>();
+    const rawAreas = (areasResult.results || []) as { vod_area: string }[];
+    for (const row of rawAreas) {
+      const areas = row.vod_area.split(',').map(a => a.trim()).filter(a => a);
+      for (const area of areas) {
+        const normalized = normalizeAreaForFilter(area);
+        const parts = normalized.split(',').map(a => a.trim()).filter(a => a);
+        parts.forEach(p => areaSet.add(p));
+      }
+    }
+    
+    // 地区排序优先级
+    const areaPriority: Record<string, number> = {
+      '中国大陆': 1, '中国香港': 2, '中国台湾': 3, '日本': 4, '韩国': 5, 
+      '美国': 6, '英国': 7, '法国': 8, '泰国': 9,
+    };
+    const areas = Array.from(areaSet).sort((a, b) => {
+      const pa = areaPriority[a] || 100;
+      const pb = areaPriority[b] || 100;
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b, 'zh-CN');
+    });
+    
+    // 处理年份
+    const years = ((yearsResult.results || []) as { vod_year: string }[])
+      .map(row => row.vod_year)
+      .filter(year => /^\d{4}$/.test(year))
+      .sort((a, b) => parseInt(b) - parseInt(a));
+    
+    const response = {
+      code: 1,
+      msg: 'success',
+      data: {
+        areas: areas.map(a => ({ value: a, label: a })),
+        years: years.map(y => ({ value: y, label: y })),
+      },
+    };
+    
+    // 缓存 10 分钟
+    await c.env.ROBIN_CACHE.put(
+      cacheKey,
+      JSON.stringify(response),
+      { expirationTtl: 600 }
+    );
+    
+    return c.json(response);
+  } catch (error) {
+    logger.vod.error('Filter options error', { error: error instanceof Error ? error.message : String(error) });
+    return c.json(
+      {
+        code: 0,
+        msg: 'Failed to get filter options',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * GET /api/filter-options/areas
+ * 获取地区选项
+ */
+types.get('/api/filter-options/areas', async (c) => {
+  try {
+    const typeId = c.req.query('type_id');
+    
+    let query = `SELECT DISTINCT vod_area FROM vod_cache WHERE vod_area IS NOT NULL AND vod_area != ''`;
+    const params: number[] = [];
+    
+    if (typeId) {
+      query += ' AND type_id = ?';
+      params.push(parseInt(typeId));
+    }
+    
+    const result = await c.env.DB.prepare(query).bind(...params).all();
+    
+    // 处理地区数据
+    const areaSet = new Set<string>();
+    const rawAreas = (result.results || []) as { vod_area: string }[];
+    
+    for (const row of rawAreas) {
+      const areas = row.vod_area.split(',').map(a => a.trim()).filter(a => a);
+      for (const area of areas) {
+        const normalized = normalizeAreaForFilter(area);
+        const parts = normalized.split(',').map(a => a.trim()).filter(a => a);
+        parts.forEach(p => areaSet.add(p));
+      }
+    }
+    
+    const areaPriority: Record<string, number> = {
+      '中国大陆': 1, '中国香港': 2, '中国台湾': 3, '日本': 4, '韩国': 5,
+      '美国': 6, '英国': 7, '法国': 8, '泰国': 9,
+    };
+    
+    const sortedAreas = Array.from(areaSet).sort((a, b) => {
+      const pa = areaPriority[a] || 100;
+      const pb = areaPriority[b] || 100;
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b, 'zh-CN');
+    });
+    
+    return c.json({
+      code: 1,
+      msg: 'success',
+      data: sortedAreas.map(area => ({ value: area, label: area })),
+    });
+  } catch (error) {
+    logger.vod.error('Get areas error', { error: error instanceof Error ? error.message : String(error) });
+    return c.json({ code: 0, msg: 'Failed to get areas' }, 500);
+  }
+});
+
+/**
+ * GET /api/filter-options/years
+ * 获取年份选项
+ */
+types.get('/api/filter-options/years', async (c) => {
+  try {
+    const typeId = c.req.query('type_id');
+    
+    let query = `SELECT DISTINCT vod_year FROM vod_cache WHERE vod_year IS NOT NULL AND vod_year != '' AND vod_year != '0'`;
+    const params: number[] = [];
+    
+    if (typeId) {
+      query += ' AND type_id = ?';
+      params.push(parseInt(typeId));
+    }
+    
+    query += ' ORDER BY vod_year DESC';
+    
+    const result = await c.env.DB.prepare(query).bind(...params).all();
+    const years = (result.results || []) as { vod_year: string }[];
+    
+    const validYears = years
+      .map(row => row.vod_year)
+      .filter(year => /^\d{4}$/.test(year))
+      .sort((a, b) => parseInt(b) - parseInt(a));
+    
+    return c.json({
+      code: 1,
+      msg: 'success',
+      data: validYears.map(year => ({ value: year, label: year })),
+    });
+  } catch (error) {
+    logger.vod.error('Get years error', { error: error instanceof Error ? error.message : String(error) });
+    return c.json({ code: 0, msg: 'Failed to get years' }, 500);
   }
 });
 

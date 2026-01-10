@@ -4,7 +4,8 @@
  */
 
 import { useState } from 'react';
-import { Modal, Form, Input, Select, message } from 'antd';
+import { Modal, Form, Input, Select } from 'antd';
+import { useNotification } from '../providers';
 import type { Module } from '../../pages/LayoutEditor';
 import ApiParamsEditor from './ApiParamsEditor';
 import AdConfigEditor from './AdConfigEditor';
@@ -86,6 +87,7 @@ const AddModuleModal: React.FC<AddModuleModalProps> = ({
   const [selectedModuleType, setSelectedModuleType] = useState<string>('');
   const [apiParams, setApiParams] = useState<any>(null);
   const [adConfig, setAdConfig] = useState<any>(null);
+  const { success } = useNotification();
 
   const handleOk = async () => {
     try {
@@ -105,7 +107,7 @@ const AddModuleModal: React.FC<AddModuleModalProps> = ({
       setSelectedModuleType('');
       setApiParams(null);
       setAdConfig(null);
-      message.success('模块添加成功');
+      success('模块添加成功');
     } catch (error) {
       console.error('Validation failed:', error);
     } finally {

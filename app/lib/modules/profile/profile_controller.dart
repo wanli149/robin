@@ -5,9 +5,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/user_store.dart';
 import '../../core/http_client.dart';
+import '../../core/app_info.dart';
+import '../../core/logger.dart';
+import '../../core/cache_service.dart';
 
 import '../../widgets/share_poster.dart';
-import 'source_settings_page.dart';
 
 /// 个人中心控制器
 class ProfileController extends GetxController {
@@ -33,12 +35,12 @@ class ProfileController extends GetxController {
     try {
       final response = await _httpClient.get('/api/config');
       
-      if (response.data['code'] == 200 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         final data = response.data['data'] ?? response.data;
         systemConfig.value = SystemConfig.fromJson(data);
       }
     } catch (e) {
-      print('❌ Failed to load system config: $e');
+      Logger.error('Failed to load system config: $e');
     }
   }
   
@@ -101,12 +103,6 @@ class ProfileController extends GetxController {
     );
   }
   
-  /// 换源设置
-  void goToSourceSettings() {
-    // 跳转到换源设置页面
-    Get.to(() => const SourceSettingsPage());
-  }
-  
   /// 求片/反馈
   void goToFeedback() {
     Get.toNamed('/feedback');
@@ -145,12 +141,18 @@ class ProfileController extends GetxController {
               );
               
               try {
-                // 清除图片缓存
+                // 🚀 1. 清除图片缓存
                 PaintingBinding.instance.imageCache.clear();
                 PaintingBinding.instance.imageCache.clearLiveImages();
                 
-                // 清除 CachedNetworkImage 缓存
+                // 🚀 2. 清除 CachedNetworkImage 缓存
                 await CachedNetworkImage.evictFromCache('');
+                
+                // 🚀 3. 清除 CacheService 数据缓存（首页、短剧流等）
+                if (Get.isRegistered<CacheService>()) {
+                  await CacheService.to.clearAll();
+                  Logger.info('CacheService cache cleared');
+                }
                 
                 // 重新计算缓存大小
                 await _calculateCacheSize();
@@ -161,16 +163,17 @@ class ProfileController extends GetxController {
                   '成功',
                   '缓存已清除',
                   snackPosition: SnackPosition.BOTTOM,
-                  backgroundColor: const Color(0xFFFFC107).withOpacity(0.8),
+                  backgroundColor: const Color(0xFFFFC107).withValues(alpha: 0.8),
                   colorText: Colors.black,
                 );
               } catch (e) {
+                Logger.error('Clear cache failed: $e');
                 Get.back(); // 关闭加载提示
                 Get.snackbar(
                   '失败',
                   '清除缓存失败',
                   snackPosition: SnackPosition.BOTTOM,
-                  backgroundColor: Colors.red.withOpacity(0.8),
+                  backgroundColor: Colors.red.withValues(alpha: 0.8),
                   colorText: Colors.white,
                 );
               }
@@ -320,35 +323,48 @@ class ProfileController extends GetxController {
     try {
       final response = await _httpClient.get('/api/version');
       
-      if (response.data['code'] == 200 || response.statusCode == 200) {
+      if (response.data['code'] == 1) {
         final data = response.data['data'] ?? response.data;
         final version = data['version'] ?? '1.0.0';
         final force = data['force'] ?? false;
         final url = data['url'] ?? '';
         final changelog = data['changelog'] ?? '';
         
-        // TODO: 比较版本号，这里简化处理
+        // 获取当前版本号
+        final appInfo = Get.find<AppInfo>();
+        final currentVersion = appInfo.version.value;
+        final needUpdate = appInfo.isNewerVersion(version);
+        
         Get.dialog(
           AlertDialog(
             backgroundColor: const Color(0xFF1E1E1E),
-            title: const Text(
-              '版本信息',
-              style: TextStyle(color: Colors.white),
+            title: Text(
+              needUpdate ? '发现新版本' : '版本信息',
+              style: const TextStyle(color: Colors.white),
             ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '当前版本：1.0.0',
+                  '当前版本：$currentVersion',
                   style: const TextStyle(color: Colors.white70),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   '最新版本：$version',
-                  style: const TextStyle(color: Color(0xFFFFC107)),
+                  style: TextStyle(
+                    color: needUpdate ? const Color(0xFFFFC107) : Colors.white70,
+                  ),
                 ),
-                if (changelog.isNotEmpty) ...[
+                if (!needUpdate) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    '✓ 已是最新版本',
+                    style: TextStyle(color: Colors.green),
+                  ),
+                ],
+                if (changelog.isNotEmpty && needUpdate) ...[
                   const SizedBox(height: 16),
                   const Text(
                     '更新内容：',
@@ -366,23 +382,24 @@ class ProfileController extends GetxController {
               if (!force)
                 TextButton(
                   onPressed: () => Get.back(),
-                  child: const Text('取消'),
+                  child: const Text('关闭'),
                 ),
-              TextButton(
-                onPressed: () {
-                  Get.back();
-                  if (url.isNotEmpty) {
-                    _launchUrl(url);
-                  }
-                },
-                child: const Text('立即更新'),
-              ),
+              if (needUpdate)
+                TextButton(
+                  onPressed: () {
+                    Get.back();
+                    if (url.isNotEmpty) {
+                      _launchUrl(url);
+                    }
+                  },
+                  child: const Text('立即更新'),
+                ),
             ],
           ),
         );
       }
     } catch (e) {
-      print('❌ Failed to check update: $e');
+      Logger.error('Failed to check update: $e');
       Get.snackbar('失败', '检查更新失败');
     }
   }
@@ -397,7 +414,7 @@ class ProfileController extends GetxController {
         Get.snackbar('错误', '无法打开链接');
       }
     } catch (e) {
-      print('❌ Failed to launch URL: $e');
+      Logger.error('Failed to launch URL: $e');
       Get.snackbar('错误', '打开链接失败');
     }
   }
@@ -411,6 +428,9 @@ class SystemConfig {
   final String? appDownloadUrl;
   final String? shareTitle;
   final String? shareDescription;
+  final String? termsUrl;
+  final String? privacyUrl;
+  final bool adsEnabled; // 全局广告开关
   
   SystemConfig({
     this.customerService,
@@ -419,6 +439,9 @@ class SystemConfig {
     this.appDownloadUrl,
     this.shareTitle,
     this.shareDescription,
+    this.termsUrl,
+    this.privacyUrl,
+    this.adsEnabled = true, // 默认启用
   });
   
   factory SystemConfig.fromJson(Map<String, dynamic> json) {
@@ -431,6 +454,9 @@ class SystemConfig {
       appDownloadUrl: json['app_download_url'] ?? json['download_url'],
       shareTitle: json['share_title'],
       shareDescription: json['share_description'],
+      termsUrl: json['terms_url'],
+      privacyUrl: json['privacy_url'],
+      adsEnabled: json['ads_enabled'] == true,
     );
   }
 }

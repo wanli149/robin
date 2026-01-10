@@ -9,7 +9,9 @@
  */
 
 import { Hono } from 'hono';
+import { validateQuery, ValidationSchemas, sanitizeQueryParams } from '../middleware/input_validator';
 import { logger } from '../utils/logger';
+import { CACHE_CONFIG } from '../config';
 
 type Bindings = {
   DB: D1Database;
@@ -63,7 +65,7 @@ shorts.get('/api/shorts/random', async (c) => {
             code: 1,
             msg: 'success',
             total: (cached as ShortsListItem[]).length,
-            list: cached,
+            data: cached,
           });
         }
       } catch {
@@ -115,7 +117,7 @@ shorts.get('/api/shorts/random', async (c) => {
     if (c.env.ROBIN_CACHE && list.length > 0) {
       try {
         await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(list), {
-          expirationTtl: 300,
+          expirationTtl: CACHE_CONFIG.shortsRandomTTL,
         });
       } catch {
         // 缓存写入失败不影响主流程
@@ -127,7 +129,7 @@ shorts.get('/api/shorts/random', async (c) => {
       code: 1,
       msg: 'success',
       total: list.length,
-      list,
+      data: list,
     });
   } catch (error) {
     logger.shorts.error('Random error', { error: String(error) });
@@ -215,7 +217,7 @@ shorts.get('/api/shorts/series/:seriesId', async (c) => {
     if (c.env.ROBIN_CACHE) {
       try {
         await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(series), {
-          expirationTtl: 600,
+          expirationTtl: CACHE_CONFIG.shortsDetailTTL,
         });
       } catch (e) {
         // 缓存写入失败不影响主流程
@@ -343,9 +345,8 @@ shorts.get('/api/shorts/categories', async (c) => {
  */
 shorts.get('/api/shorts/list', async (c) => {
   try {
+    const { page, limit } = sanitizeQueryParams(c);
     const category = c.req.query('category');
-    const page = parseInt(c.req.query('page') || '1', 10);
-    const limit = parseInt(c.req.query('limit') || '20', 10);
     const offset = (page - 1) * limit;
 
     let query = `
@@ -390,7 +391,7 @@ shorts.get('/api/shorts/list', async (c) => {
       page,
       pagecount,
       total,
-      list: result.results,
+      data: result.results,
     });
   } catch (error) {
     logger.shorts.error('List error', { error: String(error) });

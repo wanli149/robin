@@ -15,7 +15,6 @@ import {
   Input,
   InputNumber,
   Switch,
-  message,
   Tabs,
   Statistic,
   Row,
@@ -29,6 +28,7 @@ import {
   Tooltip,
   Alert,
 } from 'antd';
+import { useNotification } from '../components/providers';
 import {
   EditOutlined,
   PlusOutlined,
@@ -48,6 +48,14 @@ import {
   saveSubCategory,
   deleteSubCategory,
   migrateSubCategories,
+  getCategories,
+  getCategoryStats,
+  getSources,
+  getCategoryMappings,
+  saveCategory,
+  deleteCategory,
+  saveCategoryMapping,
+  deleteCategoryMapping,
   type SubCategory,
 } from '../services/adminApi';
 
@@ -104,17 +112,13 @@ const CategoryManagement: React.FC = () => {
   const [categoryForm] = Form.useForm();
   const [mappingForm] = Form.useForm();
   const [subCategoryForm] = Form.useForm();
+  const { success, error, loading: showLoading } = useNotification();
 
   // 加载分类列表
   const loadCategories = useCallback(async () => {
     try {
-      const response = await fetch('/admin/categories', {
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setCategories(data.list || []);
-      }
+      const data = await getCategories();
+      setCategories(data as Category[]);
     } catch (error) {
       console.error('Failed to load categories:', error);
     }
@@ -123,13 +127,8 @@ const CategoryManagement: React.FC = () => {
   // 加载分类统计
   const loadStats = useCallback(async () => {
     try {
-      const response = await fetch('/admin/categories/stats', {
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setStats(data.list || []);
-      }
+      const data = await getCategoryStats();
+      setStats(data);
     } catch (error) {
       console.error('Failed to load stats:', error);
     }
@@ -138,13 +137,8 @@ const CategoryManagement: React.FC = () => {
   // 加载资源站列表
   const loadSources = useCallback(async () => {
     try {
-      const response = await fetch('/admin/sources', {
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setSources(data.list || []);
-      }
+      const data = await getSources();
+      setSources(data);
     } catch (error) {
       console.error('Failed to load sources:', error);
     }
@@ -153,13 +147,8 @@ const CategoryManagement: React.FC = () => {
   // 加载分类映射
   const loadMappings = useCallback(async () => {
     try {
-      const response = await fetch('/admin/categories/mappings', {
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        setMappings(data.list || []);
-      }
+      const data = await getCategoryMappings();
+      setMappings(data as SourceTypeMapping[]);
     } catch (error) {
       console.error('Failed to load mappings:', error);
     }
@@ -186,47 +175,27 @@ const CategoryManagement: React.FC = () => {
   const handleSaveCategory = async () => {
     try {
       const values = await categoryForm.validateFields();
-      const response = await fetch('/admin/categories', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-        body: JSON.stringify({
-          ...values,
-          id: editingCategory?.id,
-        }),
+      await saveCategory({
+        ...values,
+        id: editingCategory?.id,
       });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success(editingCategory ? '更新成功' : '添加成功');
-        setCategoryModalVisible(false);
-        loadCategories();
-        loadStats();
-      } else {
-        message.error(data.msg || '保存失败');
-      }
-    } catch (error) {
-      message.error('保存失败');
+      success(editingCategory ? '更新成功' : '添加成功');
+      setCategoryModalVisible(false);
+      loadCategories();
+      loadStats();
+    } catch (err: any) {
+      error(err.message || '保存失败');
     }
   };
 
   // 删除分类
   const handleDeleteCategory = async (id: number) => {
     try {
-      const response = await fetch(`/admin/categories/${id}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('删除成功');
-        loadCategories();
-      } else {
-        message.error(data.msg || '删除失败');
-      }
-    } catch (error) {
-      message.error('删除失败');
+      await deleteCategory(id);
+      success('删除成功');
+      loadCategories();
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
@@ -236,47 +205,26 @@ const CategoryManagement: React.FC = () => {
       const values = await mappingForm.validateFields();
       const source = sources.find(s => s.id === values.source_id);
       
-      const response = await fetch('/admin/categories/mappings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': localStorage.getItem('admin_key') || '',
-        },
-        body: JSON.stringify({
-          ...values,
-          id: editingMapping?.id,
-          source_name: source?.name || '',
-        }),
+      await saveCategoryMapping({
+        ...values,
+        source_name: source?.name || '',
       });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('保存成功');
-        setMappingModalVisible(false);
-        loadMappings();
-      } else {
-        message.error(data.msg || '保存失败');
-      }
-    } catch (error) {
-      message.error('保存失败');
+      success('保存成功');
+      setMappingModalVisible(false);
+      loadMappings();
+    } catch (err: any) {
+      error(err.message || '保存失败');
     }
   };
 
   // 删除映射
   const handleDeleteMapping = async (id: number) => {
     try {
-      const response = await fetch(`/admin/categories/mappings/${id}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success('删除成功');
-        loadMappings();
-      } else {
-        message.error(data.msg || '删除失败');
-      }
-    } catch (error) {
-      message.error('删除失败');
+      await deleteCategoryMapping(id);
+      success('删除成功');
+      loadMappings();
+    } catch (err: any) {
+      error(err.message || '删除失败');
     }
   };
 
@@ -288,11 +236,11 @@ const CategoryManagement: React.FC = () => {
         ...values,
         id: editingSubCategory?.id,
       });
-      message.success(editingSubCategory ? '更新成功' : '添加成功');
+      success(editingSubCategory ? '更新成功' : '添加成功');
       setSubCategoryModalVisible(false);
       loadSubCategories();
-    } catch (error) {
-      message.error('保存失败');
+    } catch (err) {
+      error('保存失败');
     }
   };
 
@@ -300,28 +248,28 @@ const CategoryManagement: React.FC = () => {
   const handleDeleteSubCategory = async (id: number) => {
     try {
       await deleteSubCategory(id);
-      message.success('删除成功');
+      success('删除成功');
       loadSubCategories();
-    } catch (error) {
-      message.error('删除失败');
+    } catch (err) {
+      error('删除失败');
     }
   };
 
   // 执行子分类迁移
   const handleMigrateSubCategories = async () => {
+    const hide = showLoading('正在迁移...');
     try {
-      message.loading('正在迁移...', 0);
       const result = await migrateSubCategories();
-      message.destroy();
+      hide();
       if (result.success) {
-        message.success(`迁移成功！创建了 ${result.subCategoriesCreated} 个子分类`);
+        success(`迁移成功！创建了 ${result.subCategoriesCreated} 个子分类`);
         loadSubCategories();
       } else {
-        message.error(result.message || '迁移失败');
+        error(result.message || '迁移失败');
       }
-    } catch (error) {
-      message.destroy();
-      message.error('迁移失败');
+    } catch (err) {
+      hide();
+      error('迁移失败');
     }
   };
 
@@ -339,28 +287,6 @@ const CategoryManagement: React.FC = () => {
       });
     }
     setSubCategoryModalVisible(true);
-  };
-
-  // 重新分类所有视频
-  const handleReclassify = async () => {
-    try {
-      message.loading('正在重新分类...', 0);
-      const response = await fetch('/admin/videos/reclassify', {
-        method: 'POST',
-        headers: { 'x-admin-key': localStorage.getItem('admin_key') || '' },
-      });
-      message.destroy();
-      const data = await response.json();
-      if (data.code === 1) {
-        message.success(`重新分类完成！更新: ${data.data.updated}, 未变: ${data.data.unchanged}`);
-        loadStats();
-      } else {
-        message.error(data.msg || '重新分类失败');
-      }
-    } catch (error) {
-      message.destroy();
-      message.error('重新分类失败');
-    }
   };
 
   // 打开编辑分类弹窗
@@ -547,15 +473,6 @@ const CategoryManagement: React.FC = () => {
               <Card
                 extra={
                   <Space>
-                    <Popconfirm
-                      title="确定重新分类所有视频？"
-                      description="将使用最新的分类规则重新识别所有视频的分类"
-                      onConfirm={handleReclassify}
-                    >
-                      <Button icon={<SyncOutlined />}>
-                        重新分类
-                      </Button>
-                    </Popconfirm>
                     <Button
                       type="primary"
                       icon={<PlusOutlined />}

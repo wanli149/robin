@@ -16,12 +16,12 @@ const sources = new Hono<{ Bindings: Bindings }>();
 sources.get('/admin/sources', async (c) => {
   try {
     const result = await c.env.DB.prepare(`
-      SELECT id, name, api_url, weight, is_active, sort_order, response_format
+      SELECT id, name, api_url, weight, is_active, sort_order, response_format, is_welfare
       FROM video_sources
       ORDER BY weight DESC, sort_order ASC
     `).all();
 
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
     logger.admin.error('Get sources error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get sources' }, 500);
@@ -35,7 +35,7 @@ sources.get('/admin/sources', async (c) => {
 sources.post('/admin/sources', async (c) => {
   try {
     const body = await c.req.json();
-    const { id, name, api_url, weight, is_active, response_format } = body;
+    const { id, name, api_url, weight, is_active, response_format, is_welfare } = body;
 
     if (!name || !api_url) {
       return c.json({ code: 0, msg: 'name and api_url are required' }, 400);
@@ -46,14 +46,14 @@ sources.post('/admin/sources', async (c) => {
 
     if (id) {
       await c.env.DB.prepare(`
-        UPDATE video_sources SET name = ?, api_url = ?, weight = ?, is_active = ?, response_format = ? WHERE id = ?
-      `).bind(name, api_url, weight || 50, is_active ? 1 : 0, format, id).run();
+        UPDATE video_sources SET name = ?, api_url = ?, weight = ?, is_active = ?, response_format = ?, is_welfare = ? WHERE id = ?
+      `).bind(name, api_url, weight || 50, is_active ? 1 : 0, format, is_welfare ? 1 : 0, id).run();
       logger.admin.info('Source updated', { id });
     } else {
       const result = await c.env.DB.prepare(`
-        INSERT INTO video_sources (name, api_url, weight, is_active, response_format, sort_order)
-        VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM video_sources))
-      `).bind(name, api_url, weight || 50, is_active ? 1 : 0, format).run();
+        INSERT INTO video_sources (name, api_url, weight, is_active, response_format, is_welfare, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM video_sources))
+      `).bind(name, api_url, weight || 50, is_active ? 1 : 0, format, is_welfare ? 1 : 0).run();
       logger.admin.info('Source created', { id: result.meta.last_row_id });
     }
 
@@ -71,7 +71,10 @@ sources.post('/admin/sources', async (c) => {
 sources.delete('/admin/sources/:id', async (c) => {
   try {
     const id = c.req.param('id');
+    // 删除资源站
     await c.env.DB.prepare('DELETE FROM video_sources WHERE id = ?').bind(id).run();
+    // 同步删除健康状态记录
+    await c.env.DB.prepare('DELETE FROM source_health WHERE source_id = ?').bind(id).run();
     logger.admin.info('Source deleted', { id });
     return c.json({ code: 1, msg: 'Source deleted successfully' });
   } catch (error) {
@@ -283,10 +286,35 @@ sources.post('/admin/sources/:id/sync-categories', async (c) => {
     const text = await response.text();
     const categories: Array<{ id: string; name: string }> = [];
     
-    // 从 XML <class> 标签提取分类
-    const classMatches = text.matchAll(/<ty[^>]*id="(\d+)"[^>]*>([^<]+)<\/ty>/gi);
-    for (const match of classMatches) {
-      categories.push({ id: match[1], name: match[2].trim() });
+    // 尝试解析JSON格式
+    try {
+      const json = JSON.parse(text);
+      // JSON格式：从list中提取唯一的type_id和type_name
+      if (json.list && Array.isArray(json.list)) {
+        const typeMap = new Map<string, string>();
+        for (const item of json.list) {
+          if (item.type_id && item.type_name) {
+            typeMap.set(String(item.type_id), item.type_name);
+          }
+        }
+        for (const [id, name] of typeMap) {
+          categories.push({ id, name });
+        }
+      }
+      // JSON格式：从class字段提取
+      if (json.class && Array.isArray(json.class)) {
+        for (const cat of json.class) {
+          if (cat.type_id && cat.type_name) {
+            categories.push({ id: String(cat.type_id), name: cat.type_name });
+          }
+        }
+      }
+    } catch {
+      // JSON解析失败，尝试XML格式
+      const classMatches = text.matchAll(/<ty[^>]*id="(\d+)"[^>]*>([^<]+)<\/ty>/gi);
+      for (const match of classMatches) {
+        categories.push({ id: match[1], name: match[2].trim() });
+      }
     }
     
     if (categories.length === 0) {
@@ -313,6 +341,7 @@ sources.post('/admin/sources/:id/sync-categories', async (c) => {
     let updated = 0;
     let skipped = 0;
     const mappings: Array<{ sourceTypeId: string; sourceTypeName: string; targetCategoryId: number; targetCategoryName: string }> = [];
+    const skippedCategories: Array<{ id: string; name: string }> = [];
     
     for (const cat of categories) {
       // 使用 classifyByTypeName 智能识别目标分类
@@ -320,6 +349,7 @@ sources.post('/admin/sources/:id/sync-categories', async (c) => {
       
       if (!result) {
         skipped++;
+        skippedCategories.push({ id: cat.id, name: cat.name });
         continue;
       }
       
@@ -364,6 +394,7 @@ sources.post('/admin/sources/:id/sync-categories', async (c) => {
         updated,
         skipped,
         mappings,
+        skippedCategories,
       },
     });
   } catch (error) {
@@ -428,9 +459,35 @@ sources.post('/admin/sources/sync-all-categories', async (c) => {
         const text = await response.text();
         const categories: Array<{ id: string; name: string }> = [];
         
-        const classMatches = text.matchAll(/<ty[^>]*id="(\d+)"[^>]*>([^<]+)<\/ty>/gi);
-        for (const match of classMatches) {
-          categories.push({ id: match[1], name: match[2].trim() });
+        // 尝试解析JSON格式
+        try {
+          const json = JSON.parse(text);
+          // JSON格式：从list中提取唯一的type_id和type_name
+          if (json.list && Array.isArray(json.list)) {
+            const typeMap = new Map<string, string>();
+            for (const item of json.list) {
+              if (item.type_id && item.type_name) {
+                typeMap.set(String(item.type_id), item.type_name);
+              }
+            }
+            for (const [id, name] of typeMap) {
+              categories.push({ id, name });
+            }
+          }
+          // JSON格式：从class字段提取
+          if (json.class && Array.isArray(json.class)) {
+            for (const cat of json.class) {
+              if (cat.type_id && cat.type_name) {
+                categories.push({ id: String(cat.type_id), name: cat.type_name });
+              }
+            }
+          }
+        } catch {
+          // JSON解析失败，尝试XML格式
+          const classMatches = text.matchAll(/<ty[^>]*id="(\d+)"[^>]*>([^<]+)<\/ty>/gi);
+          for (const match of classMatches) {
+            categories.push({ id: match[1], name: match[2].trim() });
+          }
         }
         
         let created = 0;
@@ -439,7 +496,6 @@ sources.post('/admin/sources/sync-all-categories', async (c) => {
         for (const cat of categories) {
           const result = classifyByTypeName(cat.name);
           if (!result) continue;
-          
           const existing = await c.env.DB.prepare(`
             SELECT id FROM category_mappings WHERE source_id = ? AND source_type_id = ?
           `).bind(source.id, cat.id).first();

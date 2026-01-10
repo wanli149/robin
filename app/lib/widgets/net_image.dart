@@ -10,6 +10,10 @@ class NetImage extends StatelessWidget {
   final double? height;
   final BoxFit fit;
   final BorderRadius? borderRadius;
+  /// 内存缓存宽度（用于高质量显示，如全屏封面）
+  final int? memCacheWidth;
+  /// 内存缓存高度（用于高质量显示，如全屏封面）
+  final int? memCacheHeight;
 
   const NetImage({
     super.key,
@@ -18,6 +22,8 @@ class NetImage extends StatelessWidget {
     this.height,
     this.fit = BoxFit.cover,
     this.borderRadius,
+    this.memCacheWidth,
+    this.memCacheHeight,
   });
 
   @override
@@ -35,6 +41,11 @@ class NetImage extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
+      // 设置内存缓存尺寸，避免图片被过度压缩
+      memCacheWidth: memCacheWidth,
+      memCacheHeight: memCacheHeight,
+      // 使用高质量过滤
+      filterQuality: FilterQuality.high,
       placeholder: (context, url) => _buildPlaceholder(),
       errorWidget: (context, url, error) => _buildErrorWidget(),
     );

@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:get/get.dart';
 import '../core/http_client.dart';
+import '../core/logger.dart';
 
 /// 广告配置
 /// 定义各个广告位的ID、展示策略和频次限制
@@ -185,9 +186,9 @@ class AdConfig {
           'event_type': 'click',
         },
       );
-      print('📊 Ad clicked: location=$location, adId=$adId');
+      Logger.info('Ad clicked: location=$location, adId=$adId');
     } catch (e) {
-      print('❌ Failed to record ad click: $e');
+      Logger.error('Failed to record ad click: $e');
     }
   }
 
@@ -203,9 +204,9 @@ class AdConfig {
           'event_type': 'impression',
         },
       );
-      print('📊 Ad impression: location=$location, adId=$adId');
+      Logger.info('Ad impression: location=$location, adId=$adId');
     } catch (e) {
-      print('❌ Failed to record ad impression: $e');
+      Logger.error('Failed to record ad impression: $e');
     }
   }
 }

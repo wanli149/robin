@@ -23,7 +23,7 @@ misc.get('/admin/feedback', async (c) => {
       SELECT id, user_id, content, contact, status, created_at
       FROM feedback WHERE status = 'pending' ORDER BY created_at DESC LIMIT 50
     `).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
     logger.admin.error('Get feedback error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get feedback' }, 500);
@@ -72,7 +72,7 @@ misc.get('/admin/feedback/all', async (c) => {
     if (category) { countQuery += ' AND category = ?'; countBindings.push(category); }
     const countResult = await c.env.DB.prepare(countQuery).bind(...countBindings).first();
 
-    return c.json({ code: 1, msg: 'success', list: result.results, total: countResult?.count || 0, page, limit });
+    return c.json({ code: 1, msg: 'success', data: { list: result.results, total: countResult?.count || 0, page, limit } });
   } catch (error) {
     logger.admin.error('Get all feedback error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get feedback' }, 500);
@@ -180,7 +180,7 @@ misc.get('/admin/app_wall', async (c) => {
       SELECT id, app_name, icon_url, download_url, commission, sort_order, is_active
       FROM app_wall ORDER BY sort_order ASC
     `).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
     logger.admin.error('Get app wall error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get app wall' }, 500);
@@ -238,7 +238,7 @@ misc.get('/admin/hot_search', async (c) => {
     const result = await c.env.DB.prepare(`
       SELECT keyword, search_count, is_pinned, is_hidden FROM hot_search_stats ORDER BY is_pinned DESC, search_count DESC LIMIT 50
     `).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
     logger.admin.error('Get hot search error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get hot search' }, 500);
@@ -284,20 +284,23 @@ misc.post('/admin/hot_search', async (c) => {
 
 /**
  * POST /admin/sources/auto-discover
+ * 自动添加常用资源站（示例资源站，仅供参考）
+ * 注意：这些资源站可能需要授权或有访问限制，请根据实际情况调整
  */
 misc.post('/admin/sources/auto-discover', async (c) => {
   try {
-    const commonSources = [
+    // 示例资源站列表（仅供参考，实际使用时请根据需要添加）
+    const exampleSources = [
       { name: '非凡资源', url: 'https://cj.ffzyapi.com/api.php/provide/vod', weight: 100 },
       { name: '量子资源', url: 'https://cj.lziapi.com/api.php/provide/vod', weight: 90 },
       { name: '新浪资源', url: 'https://api.xinlangapi.com/xinlangapi.php/provide/vod', weight: 80 },
     ];
 
     let added = 0;
-    for (const source of commonSources) {
+    for (const source of exampleSources) {
       try {
         await c.env.DB.prepare(`
-          INSERT OR IGNORE INTO video_sources (name, api_url, weight, is_active) VALUES (?, ?, ?, 1)
+          INSERT OR IGNORE INTO video_sources (name, api_url, weight, is_active, is_welfare) VALUES (?, ?, ?, 1, 0)
         `).bind(source.name, source.url, source.weight).run();
         added++;
       } catch (e) {
@@ -306,7 +309,11 @@ misc.post('/admin/sources/auto-discover', async (c) => {
       }
     }
 
-    return c.json({ code: 1, msg: `Auto-discovered ${added} sources` });
+    return c.json({ 
+      code: 1, 
+      msg: `已添加 ${added} 个示例资源站，请测试连接后根据需要调整`,
+      data: { added }
+    });
   } catch (error) {
     logger.admin.error('Auto-discover sources error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to auto-discover sources' }, 500);

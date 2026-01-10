@@ -117,7 +117,7 @@ topics.get('/admin/topics', async (c) => {
       data_source_config: topic.data_source_config ? JSON.parse(topic.data_source_config) : null,
     }));
     
-    return c.json({ code: 1, msg: 'success', list });
+    return c.json({ code: 1, msg: 'success', data: list });
   } catch (error) {
     logger.admin.error('Get topics error', { error: error instanceof Error ? error.message : 'Unknown' });
     return c.json({ code: 0, msg: 'Failed to get topics' }, 500);
@@ -199,9 +199,11 @@ topics.get('/admin/topic/:id/items', async (c) => {
     return c.json({ 
       code: 1, 
       msg: 'success', 
-      list: videos,
-      source_type: sourceType,
-      total: videos.length,
+      data: {
+        list: videos,
+        source_type: sourceType,
+        total: videos.length,
+      }
     });
   } catch (error) {
     logger.admin.error('Get topic items error', { error: error instanceof Error ? error.message : 'Unknown' });
@@ -306,6 +308,18 @@ interface FilterConfig {
   order_by?: string;
 }
 
+// ORDER BY 白名单，防止SQL注入
+const ALLOWED_ORDER_BY: Record<string, string> = {
+  'vod_score DESC': 'vod_score DESC',
+  'vod_score ASC': 'vod_score ASC',
+  'vod_year DESC': 'vod_year DESC',
+  'vod_year ASC': 'vod_year ASC',
+  'vod_hits DESC': 'vod_hits DESC',
+  'vod_hits_day DESC': 'vod_hits_day DESC',
+  'vod_name ASC': 'vod_name ASC',
+  'vod_score DESC, vod_year DESC': 'vod_score DESC, vod_year DESC',
+};
+
 /**
  * 按条件筛选视频
  */
@@ -348,8 +362,9 @@ async function getVideosByFilter(env: Bindings, config: FilterConfig, limit: num
       params.push(config.min_score);
     }
     
-    // 排序
-    const orderBy = config.order_by || 'vod_score DESC, vod_year DESC';
+    // 排序（使用白名单验证，防止SQL注入）
+    const requestedOrder = config.order_by || 'vod_score DESC, vod_year DESC';
+    const orderBy = ALLOWED_ORDER_BY[requestedOrder] || 'vod_score DESC, vod_year DESC';
     sql += ` ORDER BY ${orderBy} LIMIT ?`;
     params.push(limit);
     
@@ -476,7 +491,7 @@ topics.get('/admin/topics/stats', async (c) => {
       SELECT t.id, t.title, (SELECT COUNT(*) FROM topic_items WHERE topic_id = t.id) as video_count
       FROM topics t ORDER BY t.id
     `).all();
-    return c.json({ code: 1, msg: 'success', list: result.results });
+    return c.json({ code: 1, msg: 'success', data: result.results });
   } catch (error) {
     return c.json({ code: 0, msg: 'Failed to get stats' }, 500);
   }
