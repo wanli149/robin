@@ -64,13 +64,24 @@ class _ShortsFlowPlayerState extends State<ShortsFlowPlayer> {
       return _buildCoverPlaceholder();
     }
 
+    // 🚀 检查视频是否已渲染首帧
+    final hasFrame = _manager.hasVideoFrame.value;
+    
     // 使用 media_kit 的 Video widget，填充整个容器
-    return SizedBox.expand(
-      child: Video(
-        controller: videoController,
-        fit: BoxFit.cover, // 短剧流使用 cover 填充
-        controls: NoVideoControls,
-      ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 视频层
+        SizedBox.expand(
+          child: Video(
+            controller: videoController,
+            fit: BoxFit.cover, // 短剧流使用 cover 填充
+            controls: NoVideoControls,
+          ),
+        ),
+        // 🚀 首帧未渲染时显示封面（避免黑屏）
+        if (!hasFrame) _buildCoverPlaceholder(),
+      ],
     );
   }
 

@@ -65,6 +65,10 @@ class GlobalPlayerManager extends GetxController
   DateTime? _switchStartTime;
   final RxInt switchLatency = 0.obs;
   
+  /// 视频是否已渲染首帧（有画面）
+  /// 用于在视频加载时显示封面，避免黑屏
+  final RxBool hasVideoFrame = false.obs;
+  
   // ==================== 操作取消机制 ====================
   
   int _currentOperationId = 0;
@@ -88,6 +92,7 @@ class GlobalPlayerManager extends GetxController
   StreamSubscription? _bufferSubscription;
   StreamSubscription? _completedSubscription;
   StreamSubscription? _errorSubscription;
+  StreamSubscription? _widthSubscription;
 
   // ==================== Mixin 接口实现 ====================
 
@@ -203,6 +208,7 @@ class GlobalPlayerManager extends GetxController
       _switchStartTime = DateTime.now();
       isLoading.value = true;
       error.value = '';
+      hasVideoFrame.value = false; // 重置首帧状态
 
       final isSameContent = currentState.value.contentType == contentType &&
           currentState.value.contentId == contentId;
@@ -538,6 +544,7 @@ class GlobalPlayerManager extends GetxController
     _bufferSubscription?.cancel();
     _completedSubscription?.cancel();
     _errorSubscription?.cancel();
+    _widthSubscription?.cancel();
     
     _playingSubscription = null;
     _positionSubscription = null;
@@ -545,6 +552,7 @@ class GlobalPlayerManager extends GetxController
     _bufferSubscription = null;
     _completedSubscription = null;
     _errorSubscription = null;
+    _widthSubscription = null;
   }
 
   Future<void> _createPlayerInstance(String videoUrl) async {
@@ -621,6 +629,14 @@ class GlobalPlayerManager extends GetxController
           error.value = '播放错误: $errorMsg';
           unregisterFromPipManager();
         }
+      }
+    });
+    
+    // 🚀 监听视频宽度变化，用于判断首帧是否已渲染
+    _widthSubscription = _player!.stream.width.listen((width) {
+      if (width != null && width > 0 && !hasVideoFrame.value) {
+        hasVideoFrame.value = true;
+        Logger.player('First video frame rendered (width: $width)');
       }
     });
   }
