@@ -4,7 +4,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../player_config.dart';
 import '../player_enums.dart';
-import '../player_state.dart';
+import '../player_state.dart' show AppPlayerState;
 import '../../pip_manager.dart';
 import '../../logger.dart';
 
@@ -19,7 +19,7 @@ mixin PlayerPipMixin on GetxController {
   VideoController? get videoController;
 
   /// 获取当前播放状态
-  PlayerState get currentPlayerState;
+  AppPlayerState get currentPlayerState;
 
   /// 获取播放器模式
   Rx<PlayerMode> get playerModeRx;

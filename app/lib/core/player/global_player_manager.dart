@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'player_enums.dart';
 import 'player_config.dart';
-import 'player_state.dart';
+import 'player_state.dart' show AppPlayerState;
 import 'mixins/player_wakelock_mixin.dart';
 import 'mixins/player_fullscreen_mixin.dart';
 import 'mixins/player_progress_mixin.dart';
@@ -50,9 +50,12 @@ class GlobalPlayerManager extends GetxController
   
   /// 获取视频控制器（用于 Video Widget）
   VideoController? get videoController => _videoController;
+  
+  /// 获取播放器实例（兼容旧代码）
+  Rx<Player?>? get playerInstance => _player != null ? Rx<Player?>(_player) : null;
 
   final Rx<PlayerConfig> currentConfig = PlayerConfig.shortsWindow().obs;
-  final Rx<PlayerState> currentState = PlayerState.initial().obs;
+  final Rx<AppPlayerState> currentState = AppPlayerState.initial().obs;
   final Rx<PlayerMode> playerMode = PlayerMode.window.obs;
   final RxBool isLoading = false.obs;
   final RxString error = ''.obs;
@@ -95,7 +98,7 @@ class GlobalPlayerManager extends GetxController
   bool get isPlayingValue => currentState.value.isPlaying;
 
   @override
-  PlayerState get currentPlayerState => currentState.value;
+  AppPlayerState get currentPlayerState => currentState.value;
 
   @override
   Rx<PlayerMode> get playerModeRx => playerMode;
@@ -189,6 +192,7 @@ class GlobalPlayerManager extends GetxController
     required PlayerConfig config,
     String? contentName,
     String? videoUrl,
+    String? coverUrl,
     bool autoPlay = true,
   }) async {
     final operationId = ++_currentOperationId;
@@ -222,6 +226,7 @@ class GlobalPlayerManager extends GetxController
         episodeIndex: episodeIndex,
         position: Duration.zero,
         isPlaying: false,
+        coverUrl: coverUrl,
       );
 
       String playUrl = videoUrl ?? '';
@@ -516,7 +521,7 @@ class GlobalPlayerManager extends GetxController
   void _disposePlayer() {
     _cancelStreamSubscriptions();
     
-    _videoController?.dispose();
+    // media_kit VideoController 不需要手动 dispose
     _videoController = null;
     
     _player?.dispose();
@@ -607,11 +612,94 @@ class GlobalPlayerManager extends GetxController
     
     _errorSubscription = _player!.stream.error.listen((errorMsg) {
       if (errorMsg.isNotEmpty) {
-        error.value = '播放错误: $errorMsg';
-        unregisterFromPipManager();
         Logger.error('Player error: $errorMsg');
+        
+        // 🚀 智能错误处理：网络错误自动重试
+        if (_isNetworkError(errorMsg)) {
+          _handleNetworkError(errorMsg);
+        } else {
+          error.value = '播放错误: $errorMsg';
+          unregisterFromPipManager();
+        }
       }
     });
+  }
+  
+  /// 🚀 判断是否为网络错误
+  bool _isNetworkError(String errorMsg) {
+    final networkErrorPatterns = [
+      'ffurl_read',
+      'tcp',
+      'http',
+      'connection',
+      'timeout',
+      'network',
+      'socket',
+      'eof',
+      'reset',
+      'refused',
+      'unreachable',
+    ];
+    
+    final lowerMsg = errorMsg.toLowerCase();
+    return networkErrorPatterns.any((pattern) => lowerMsg.contains(pattern));
+  }
+  
+  /// 🚀 处理网络错误，自动重试
+  Future<void> _handleNetworkError(String errorMsg) async {
+    final currentRetry = retryCount.value;
+    
+    if (currentRetry < maxRetryCount) {
+      retryCount.value = currentRetry + 1;
+      Logger.warning('[Player] Network error, retry ${retryCount.value}/$maxRetryCount: $errorMsg');
+      
+      // 显示重试提示
+      error.value = '网络波动，正在重试 (${retryCount.value}/$maxRetryCount)...';
+      isLoading.value = true;
+      
+      // 延迟后重试，递增延迟
+      await Future.delayed(Duration(seconds: currentRetry + 1));
+      
+      // 重新播放当前内容
+      try {
+        final state = currentState.value;
+        final currentPosition = state.position;
+        
+        // 重新创建播放器
+        await _stopCurrentPlayback();
+        
+        final playUrl = await _getVideoUrl(
+          state.contentType,
+          state.contentId,
+          state.episodeIndex,
+        );
+        
+        if (playUrl.isNotEmpty) {
+          await _createPlayerInstance(playUrl);
+          
+          // 恢复播放位置
+          if (currentPosition.inSeconds > 0 && _player != null) {
+            await _player!.seek(currentPosition);
+          }
+          
+          await play();
+          error.value = '';
+          Logger.success('[Player] Retry successful');
+        }
+      } catch (e) {
+        Logger.error('[Player] Retry failed: $e');
+        // 继续下一次重试
+        _handleNetworkError(errorMsg);
+      } finally {
+        isLoading.value = false;
+      }
+    } else {
+      // 重试次数用尽
+      error.value = '网络连接失败，请检查网络后重试';
+      retryCount.value = 0;
+      unregisterFromPipManager();
+      Logger.error('[Player] Max retries reached');
+    }
   }
 
   void _onPlaybackCompleted() {

@@ -11,7 +11,7 @@ import 'player_enums.dart';
 /// 
 /// ## 使用示例
 /// ```dart
-/// final state = PlayerState(
+/// final state = AppPlayerState(
 ///   contentType: ContentType.tv,
 ///   contentId: '12345',
 ///   contentName: '手遮天',
@@ -24,7 +24,7 @@ import 'player_enums.dart';
 /// // 更新播放状态
 /// final newState = state.copyWith(isPlaying: true);
 /// ```
-class PlayerState {
+class AppPlayerState {
   /// 内容类型
   final ContentType contentType;
 
@@ -63,7 +63,12 @@ class PlayerState {
   /// 音量 (0.0 ~ 1.0)
   final double volume;
 
-  const PlayerState({
+  /// 封面图URL
+  /// 
+  /// 用于加载时显示封面占位符
+  final String? coverUrl;
+
+  const AppPlayerState({
     required this.contentType,
     required this.contentId,
     this.contentName = '',
@@ -74,13 +79,14 @@ class PlayerState {
     this.playbackSpeed = 1.0,
     this.isMuted = false,
     this.volume = 1.0,
+    this.coverUrl,
   });
 
   /// 创建初始状态
   /// 
   /// 用于播放器初始化时的默认状态
-  factory PlayerState.initial() {
-    return const PlayerState(
+  factory AppPlayerState.initial() {
+    return const AppPlayerState(
       contentType: ContentType.shorts,
       contentId: '',
       contentName: '',
@@ -88,13 +94,14 @@ class PlayerState {
       position: Duration.zero,
       duration: Duration.zero,
       isPlaying: false,
+      coverUrl: null,
     );
   }
 
   /// 创建状态副本并修改部分参数
   /// 
-  /// 由于 PlayerState 是不可变的，所有状态更新都通过此方法进行
-  PlayerState copyWith({
+  /// 由于 AppPlayerState 是不可变的，所有状态更新都通过此方法进行
+  AppPlayerState copyWith({
     ContentType? contentType,
     String? contentId,
     String? contentName,
@@ -105,8 +112,9 @@ class PlayerState {
     double? playbackSpeed,
     bool? isMuted,
     double? volume,
+    String? coverUrl,
   }) {
-    return PlayerState(
+    return AppPlayerState(
       contentType: contentType ?? this.contentType,
       contentId: contentId ?? this.contentId,
       contentName: contentName ?? this.contentName,
@@ -117,6 +125,7 @@ class PlayerState {
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       isMuted: isMuted ?? this.isMuted,
       volume: volume ?? this.volume,
+      coverUrl: coverUrl ?? this.coverUrl,
     );
   }
 
@@ -168,7 +177,7 @@ class PlayerState {
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-    return other is PlayerState &&
+    return other is AppPlayerState &&
         other.contentType == contentType &&
         other.contentId == contentId &&
         other.contentName == contentName &&
@@ -178,7 +187,8 @@ class PlayerState {
         other.isPlaying == isPlaying &&
         other.playbackSpeed == playbackSpeed &&
         other.isMuted == isMuted &&
-        other.volume == volume;
+        other.volume == volume &&
+        other.coverUrl == coverUrl;
   }
 
   @override
@@ -194,6 +204,7 @@ class PlayerState {
       playbackSpeed,
       isMuted,
       volume,
+      coverUrl,
     );
   }
 }

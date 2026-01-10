@@ -27,7 +27,7 @@ class ApiConfig {
   
   // 🔥 本地测试开关：true = 强制使用开发地址，false = 根据编译模式自动切换
   // ⚠️ 部署前务必改为 false！
-  static const bool forceDevMode = false;  // 生产环境必须为false
+  static const bool forceDevMode = true;  // 🚀 本地测试时设为 true
   
   // 当前环境（根据编译模式自动切换）
   static const bool isProduction = bool.fromEnvironment('dart.vm.product');

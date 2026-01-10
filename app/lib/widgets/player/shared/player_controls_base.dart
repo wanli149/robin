@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../core/global_player_manager.dart';
+import '../../../core/player/player_state.dart' show AppPlayerState;
 
 /// 播放器控制组件基类
 /// 提供通用的控制按钮和工具方法
@@ -79,7 +80,7 @@ abstract class PlayerControlsBase {
   }
 
   /// 获取内容类型对应的标题
-  static String getTitle(PlayerState state) {
+  static String getTitle(AppPlayerState state) {
     final name = state.contentName.isNotEmpty ? state.contentName : '未知视频';
     
     switch (state.contentType) {

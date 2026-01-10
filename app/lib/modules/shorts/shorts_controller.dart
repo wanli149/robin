@@ -233,6 +233,8 @@ class ShortsController extends GetxController {
       final currentShort = shortsList[index];
       final vodId = currentShort['vod_id']?.toString() ?? '';
       final playUrl = currentShort['play_url'] as String? ?? '';
+      final coverUrl = currentShort['vod_pic_vertical'] as String? ?? 
+                       currentShort['vod_pic'] as String? ?? '';
       
       if (vodId.isNotEmpty && playUrl.isNotEmpty) {
         // 解析视频URL
@@ -244,6 +246,7 @@ class ShortsController extends GetxController {
           episodeIndex: 1,
           config: PlayerConfig.shortsFlow(),
           videoUrl: videoUrl,
+          coverUrl: coverUrl,
           autoPlay: true,
         );
       }
@@ -288,6 +291,8 @@ class ShortsController extends GetxController {
     final currentShort = shortsList[currentIndex.value];
     final vodId = currentShort['vod_id']?.toString() ?? '';
     final playUrl = currentShort['play_url'] as String? ?? '';
+    final coverUrl = currentShort['vod_pic_vertical'] as String? ?? 
+                     currentShort['vod_pic'] as String? ?? '';
     
     if (vodId.isNotEmpty && playUrl.isNotEmpty) {
       try {
@@ -300,6 +305,7 @@ class ShortsController extends GetxController {
           episodeIndex: 1,
           config: PlayerConfig.shortsFlow(),
           videoUrl: videoUrl,
+          coverUrl: coverUrl,
           autoPlay: true,
         );
       } catch (e) {

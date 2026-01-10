@@ -1,6 +1,6 @@
 import 'package:get/get.dart';
 import '../player_enums.dart';
-import '../player_state.dart';
+import '../player_state.dart' show AppPlayerState;
 import '../../logger.dart';
 
 /// 预加载管理 Mixin
@@ -35,7 +35,7 @@ mixin PlayerPreloadMixin on GetxController {
   // ==================== 抽象方法（由主类实现） ====================
 
   /// 获取当前播放状态
-  PlayerState get currentPlayerState;
+  AppPlayerState get currentPlayerState;
 
   /// 获取视频 URL
   Future<String> getVideoUrl(

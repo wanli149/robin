@@ -42,21 +42,30 @@ class SplashController extends GetxController {
   /// 启动流程
   Future<void> _startupFlow() async {
     try {
-      // 1. 显示 Logo 1-2 秒
-      await Future.delayed(const Duration(milliseconds: 1500));
+      // 🚀 并行执行：显示 Logo 的同时请求广告
+      final adFuture = _fetchSplashAd();
+      
+      // 1. 显示 Logo 最少 1 秒
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+      // 2. 等待广告请求完成（最多再等 1.5 秒）
+      await adFuture.timeout(
+        const Duration(milliseconds: 1500),
+        onTimeout: () {
+          Logger.warning('[SplashController] Ad request timeout, skipping');
+        },
+      );
 
-      // 2. 检查更新
-      await _checkUpdate();
-
-      // 3. 请求开屏广告
-      await _fetchSplashAd();
-
-      // 4. 如果有广告，显示广告；否则直接进入首页
+      // 3. 如果有广告，显示广告；否则直接进入首页
       if (showAd.value) {
         _startAdCountdown();
       } else {
         _navigateToHome();
       }
+      
+      // 4. 🚀 后台检查更新（不阻塞启动）
+      _checkUpdateInBackground();
+      
     } catch (e) {
       Logger.error('[SplashController] Startup flow error: $e');
       // 出错也要进入首页
@@ -64,17 +73,17 @@ class SplashController extends GetxController {
     }
   }
 
-  /// 检查更新
-  Future<void> _checkUpdate() async {
-    try {
-      // 在启动页检查更新
-      if (Get.context != null) {
-        await Updater.checkUpdate(Get.context!);
+  /// 🚀 后台检查更新（不阻塞启动）
+  void _checkUpdateInBackground() {
+    Future.delayed(const Duration(seconds: 2), () async {
+      try {
+        if (Get.context != null) {
+          await Updater.checkUpdate(Get.context!);
+        }
+      } catch (e) {
+        Logger.error('[SplashController] Check update error: $e');
       }
-    } catch (e) {
-      Logger.error('[SplashController] Check update error: $e');
-      // 更新检查失败不影响启动
-    }
+    });
   }
 
   /// 获取开屏广告

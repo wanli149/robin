@@ -117,6 +117,9 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
     final episode = episodes[episodeIndex];
     final playUrl = episode['play_url'] as String? ?? '';
     
+    // 获取封面图
+    final coverUrl = controller.shortDetail.value?['cover'] as String? ?? '';
+    
     if (playUrl.isNotEmpty) {
       // 解析视频URL（处理旧格式兼容）
       String videoUrl = _parseVideoUrl(playUrl);
@@ -127,6 +130,7 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
         episodeIndex: episodeIndex + 1,
         config: PlayerConfig.shortsWindow(),
         videoUrl: videoUrl,
+        coverUrl: coverUrl,
         autoPlay: true, // 详情页自动播放
       ).whenComplete(() {
         // 🚀 初始化完成后释放锁
@@ -638,7 +642,7 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
 
     return Obx(() {
       final contentType = GlobalPlayerManager.to.currentState.value.contentType;
-      final isInitialized = GlobalPlayerManager.to.playerInstance?.value.isInitialized ?? false;
+      final isInitialized = GlobalPlayerManager.to.player != null;
       
       // 🚀 只有当播放器类型是 shorts 且已初始化时才显示播放器
       if (contentType == ContentType.shorts && isInitialized) {
@@ -1238,7 +1242,7 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
 
     return Obx(() {
       final contentType = GlobalPlayerManager.to.currentState.value.contentType;
-      final isInitialized = GlobalPlayerManager.to.playerInstance?.value.isInitialized ?? false;
+      final isInitialized = GlobalPlayerManager.to.player != null;
       
       if (contentType == ContentType.shorts && isInitialized) {
         return GestureDetector(

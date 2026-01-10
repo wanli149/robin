@@ -311,18 +311,19 @@ class MyApp extends StatelessWidget {
 
   /// 检测网络连接
   void _checkNetworkConnection() {
-    Future.delayed(const Duration(milliseconds: 100), () async {
+    // 🚀 延迟检测，不阻塞启动
+    Future.delayed(const Duration(milliseconds: 500), () async {
       try {
         final httpClient = HttpClient();
         
-        // 测试当前配置的连接
+        // 🚀 静默测试，不显示错误提示
         final isConnected = await httpClient.testConnection();
         
         if (!isConnected) {
           Logger.warning('Default connection failed, trying to find working URL...');
           
-          // 尝试找到可用的API地址
-          final workingUrl = await httpClient.findWorkingBaseUrl();
+          // 🚀 静默查找可用服务器
+          final workingUrl = await httpClient.findWorkingBaseUrl(silent: true);
           httpClient.setBaseUrl(workingUrl);
           
           // 更新API配置
@@ -342,6 +343,7 @@ class MyApp extends StatelessWidget {
         }
       } catch (e) {
         Logger.error('Network check failed: $e');
+        // 🚀 启动时网络检测失败不显示错误，让用户正常进入 App
       }
     });
   }

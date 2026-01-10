@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../core/player/global_player_manager.dart';
 import '../../../core/player/player_enums.dart';
-import '../../../core/player/player_state.dart';
+import '../../../core/player/player_state.dart' show AppPlayerState;
 import '../../../core/logger.dart';
 
 /// 播放器工具类
 class PlayerUtils {
   
   /// 检查是否有下一集
-  static bool hasNextEpisode(PlayerState state) {
+  static bool hasNextEpisode(AppPlayerState state) {
     try {
       final controller = Get.find<dynamic>(tag: state.contentId);
       if (controller != null && controller.episodes != null) {
@@ -192,7 +192,7 @@ class PlayerUtils {
   }
 
   /// 处理滑动换集
-  static void handleSwipeUp(GlobalPlayerManager manager, PlayerState state) {
+  static void handleSwipeUp(GlobalPlayerManager manager, AppPlayerState state) {
     switch (state.contentType) {
       case ContentType.shorts:
         if (hasNextEpisode(state)) {
@@ -216,7 +216,7 @@ class PlayerUtils {
   }
 
   /// 处理向下滑动
-  static void handleSwipeDown(GlobalPlayerManager manager, PlayerState state) {
+  static void handleSwipeDown(GlobalPlayerManager manager, AppPlayerState state) {
     switch (state.contentType) {
       case ContentType.shorts:
         if (state.episodeIndex > 1) {

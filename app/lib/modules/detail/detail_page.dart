@@ -292,7 +292,7 @@ class _DetailPageState extends State<DetailPage> {
     final currentState = manager.currentState.value;
     
     // 简化逻辑：只在播放器不存在或内容完全不匹配时才重新初始化
-    final hasPlayerInstance = manager.playerInstance != null;
+    final hasPlayerInstance = manager.player != null;
     final isContentMatching = currentState.contentId == widget.videoId;
     
     // 如果播放器存在且内容ID匹配，则不重新初始化（忽略集数差异，因为可能是UI状态延迟）

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../player_enums.dart';
-import '../player_state.dart';
+import '../player_state.dart' show AppPlayerState;
 import '../../progress_sync_service.dart';
 import '../../logger.dart';
 
@@ -43,7 +43,7 @@ mixin PlayerProgressMixin on GetxController {
   // ==================== 抽象属性（由主类实现） ====================
 
   /// 获取当前播放状态
-  PlayerState get currentPlayerState;
+  AppPlayerState get currentPlayerState;
 
   /// 获取预加载状态
   bool get isPreloadingValue;
@@ -200,7 +200,7 @@ mixin PlayerProgressMixin on GetxController {
   }
 
   /// 本地保存进度（降级方案）
-  Future<void> _saveProgressLocally(PlayerState state) async {
+  Future<void> _saveProgressLocally(AppPlayerState state) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final key = _getProgressKey(state.contentType, state.contentId, state.episodeIndex);

@@ -2,18 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import '../../core/player/global_player_manager.dart';
+import '../net_image.dart';
 
 /// 短剧流专用播放器UI (基于 media_kit)
 class ShortsFlowPlayer extends StatefulWidget {
   final bool showControls;
   final VoidCallback? onTap;
   final Widget? overlay;
+  final String? coverUrl; // 封面图URL，加载时显示
 
   const ShortsFlowPlayer({
     super.key,
     this.showControls = false,
     this.onTap,
     this.overlay,
+    this.coverUrl,
   });
 
   @override
@@ -57,7 +60,8 @@ class _ShortsFlowPlayerState extends State<ShortsFlowPlayer> {
 
   Widget _buildVideoPlayer(VideoController? videoController) {
     if (videoController == null) {
-      return const SizedBox.shrink();
+      // 播放器未初始化时显示封面
+      return _buildCoverPlaceholder();
     }
 
     // 使用 media_kit 的 Video widget，填充整个容器
@@ -70,12 +74,44 @@ class _ShortsFlowPlayerState extends State<ShortsFlowPlayer> {
     );
   }
 
+  /// 构建封面占位符
+  Widget _buildCoverPlaceholder() {
+    final coverUrl = widget.coverUrl ?? _manager.currentState.value.coverUrl;
+    
+    if (coverUrl == null || coverUrl.isEmpty) {
+      return Container(color: Colors.black);
+    }
+    
+    return NetImage(
+      url: coverUrl,
+      fit: BoxFit.cover,
+    );
+  }
+
   Widget _buildLoadingIndicator() {
-    return const Center(
-      child: CircularProgressIndicator(
-        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
-        strokeWidth: 3,
-      ),
+    final coverUrl = widget.coverUrl ?? _manager.currentState.value.coverUrl;
+    
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 封面背景
+        if (coverUrl != null && coverUrl.isNotEmpty)
+          NetImage(
+            url: coverUrl,
+            fit: BoxFit.cover,
+          ),
+        // 半透明遮罩
+        Container(
+          color: Colors.black.withValues(alpha: 0.3),
+        ),
+        // 加载指示器
+        const Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
+            strokeWidth: 3,
+          ),
+        ),
+      ],
     );
   }
 

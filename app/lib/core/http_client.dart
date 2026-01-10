@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:get/get.dart' as getx;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'logger.dart';
+import 'network/request_cache.dart';
+import 'network/cancel_token_manager.dart';
 
 /// HTTP 客户端服务
 /// 
@@ -16,6 +18,8 @@ import 'logger.dart';
 /// - 统一错误处理
 /// - 自动重试机制
 /// - 智能 API 地址切换
+/// - 请求缓存支持
+/// - 请求取消管理
 /// 
 /// ## 使用示例
 /// ```dart
@@ -23,6 +27,12 @@ import 'logger.dart';
 /// 
 /// // GET 请求
 /// final response = await httpClient.get('/api/videos');
+/// 
+/// // 带缓存的 GET 请求
+/// final response = await httpClient.getCached(
+///   '/api/videos',
+///   cacheConfig: CacheConfig.homeData,
+/// );
 /// 
 /// // POST 请求
 /// final response = await httpClient.post('/api/login', data: {
@@ -52,12 +62,21 @@ class HttpClient {
   
   late Dio dio;
   
+  // 🚀 启动阶段标记，启动时不显示网络错误
+  bool _isStartupPhase = true;
+  
+  /// 标记启动阶段结束
+  void markStartupComplete() {
+    _isStartupPhase = false;
+    Logger.info('[HttpClient] Startup phase complete');
+  }
+  
   HttpClient._internal() {
     dio = Dio(BaseOptions(
       baseUrl: '', // 将在 API 配置中设置
-      connectTimeout: const Duration(seconds: 8), // 🚀 从10秒减少到8秒
-      receiveTimeout: const Duration(seconds: 12), // 🚀 从15秒减少到12秒
-      sendTimeout: const Duration(seconds: 8), // 🚀 从10秒减少到8秒
+      connectTimeout: const Duration(seconds: 8),
+      receiveTimeout: const Duration(seconds: 12),
+      sendTimeout: const Duration(seconds: 8),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -65,6 +84,11 @@ class HttpClient {
     ));
     
     _initInterceptors();
+    
+    // 🚀 3秒后自动结束启动阶段
+    Future.delayed(const Duration(seconds: 3), () {
+      markStartupComplete();
+    });
   }
   
   // API 签名密钥（需要与后端配置一致）
@@ -181,10 +205,13 @@ class HttpClient {
           if (error.type == DioExceptionType.connectionTimeout ||
               error.type == DioExceptionType.receiveTimeout ||
               error.type == DioExceptionType.sendTimeout) {
-            // 只在重试失败后才显示错误
-            final retryCount = error.requestOptions.extra['retryCount'] ?? 0;
-            if (retryCount >= 2) {
-              _showError('连接超时，正在尝试其他服务器...');
+            // 🚀 启动阶段不显示超时错误
+            if (!_isStartupPhase) {
+              // 只在重试失败后才显示错误
+              final retryCount = error.requestOptions.extra['retryCount'] ?? 0;
+              if (retryCount >= 2) {
+                _showError('连接超时，正在尝试其他服务器...');
+              }
             }
           } else if (error.type == DioExceptionType.connectionError) {
             // 连接错误时不立即显示，让智能切换处理
@@ -220,16 +247,155 @@ class HttpClient {
     );
   }
   
+  // ==================== 缓存相关 ====================
+  
+  final RequestCache _cache = RequestCache();
+  
+  /// 带缓存的 GET 请求
+  /// 
+  /// [path] 请求路径
+  /// [queryParameters] 查询参数
+  /// [cacheConfig] 缓存配置
+  /// [options] Dio 选项
+  Future<Response<T>> getCached<T>(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+    CacheConfig cacheConfig = const CacheConfig(),
+    Options? options,
+  }) async {
+    final cacheKey = RequestCache.generateKey(
+      '${dio.options.baseUrl}$path',
+      queryParameters,
+    );
+    
+    switch (cacheConfig.strategy) {
+      case CacheStrategy.cacheFirst:
+        // 优先使用缓存
+        final cached = await _cache.get(cacheKey);
+        if (cached != null) {
+          Logger.debug('[HttpClient] Cache hit: $path');
+          return Response<T>(
+            data: cached as T,
+            statusCode: 200,
+            requestOptions: RequestOptions(path: path),
+          );
+        }
+        // 缓存不存在，请求网络
+        final response = await get<T>(path, queryParameters: queryParameters, options: options);
+        if (response.statusCode == 200) {
+          await _cache.set(cacheKey, response.data, ttl: cacheConfig.ttl, persist: cacheConfig.persist);
+        }
+        return response;
+        
+      case CacheStrategy.networkFirst:
+        // 优先请求网络
+        try {
+          final response = await get<T>(path, queryParameters: queryParameters, options: options);
+          if (response.statusCode == 200) {
+            await _cache.set(cacheKey, response.data, ttl: cacheConfig.ttl, persist: cacheConfig.persist);
+          }
+          return response;
+        } catch (e) {
+          // 网络失败，尝试使用缓存
+          final cached = await _cache.get(cacheKey, allowStale: true);
+          if (cached != null) {
+            Logger.debug('[HttpClient] Fallback to cache: $path');
+            return Response<T>(
+              data: cached as T,
+              statusCode: 200,
+              requestOptions: RequestOptions(path: path),
+            );
+          }
+          rethrow;
+        }
+        
+      case CacheStrategy.cacheOnly:
+        // 只使用缓存
+        final cached = await _cache.get(cacheKey, allowStale: true);
+        if (cached != null) {
+          return Response<T>(
+            data: cached as T,
+            statusCode: 200,
+            requestOptions: RequestOptions(path: path),
+          );
+        }
+        throw DioException(
+          requestOptions: RequestOptions(path: path),
+          message: 'No cache available',
+        );
+        
+      case CacheStrategy.networkOnly:
+        // 只使用网络
+        return get<T>(path, queryParameters: queryParameters, options: options);
+        
+      case CacheStrategy.staleWhileRevalidate:
+        // 先返回缓存，同时更新
+        final cached = await _cache.get(cacheKey, allowStale: true);
+        
+        // 异步更新缓存
+        get<T>(path, queryParameters: queryParameters, options: options).then((response) {
+          if (response.statusCode == 200) {
+            _cache.set(cacheKey, response.data, ttl: cacheConfig.ttl, persist: cacheConfig.persist);
+          }
+        }).catchError((e) {
+          Logger.debug('[HttpClient] Background refresh failed: $e');
+        });
+        
+        if (cached != null) {
+          return Response<T>(
+            data: cached as T,
+            statusCode: 200,
+            requestOptions: RequestOptions(path: path),
+          );
+        }
+        // 没有缓存，等待网络
+        return get<T>(path, queryParameters: queryParameters, options: options);
+    }
+  }
+  
+  /// 清除缓存
+  Future<void> clearCache() async {
+    await _cache.clear();
+  }
+  
+  /// 清除过期缓存
+  Future<void> clearExpiredCache() async {
+    await _cache.clearExpired();
+  }
+  
+  // ==================== 请求取消 ====================
+  
+  final GlobalCancelTokenManager _cancelManager = GlobalCancelTokenManager();
+  
+  /// 获取页面级别的取消令牌管理器
+  CancelTokenManager getPageCancelManager(String pageId) {
+    return _cancelManager.getPageManager(pageId);
+  }
+  
+  /// 取消指定页面的所有请求
+  void cancelPageRequests(String pageId) {
+    _cancelManager.cancelPage(pageId);
+  }
+  
+  /// 取消所有请求
+  void cancelAllRequests() {
+    _cancelManager.cancelAll();
+  }
+  
+  // ==================== 基础请求方法 ====================
+  
   /// GET 请求
   Future<Response<T>> get<T>(
     String path, {
     Map<String, dynamic>? queryParameters,
     Options? options,
+    CancelToken? cancelToken,
   }) async {
     return dio.get<T>(
       path,
       queryParameters: queryParameters,
       options: options,
+      cancelToken: cancelToken,
     );
   }
   
@@ -239,12 +405,14 @@ class HttpClient {
     dynamic data,
     Map<String, dynamic>? queryParameters,
     Options? options,
+    CancelToken? cancelToken,
   }) async {
     return dio.post<T>(
       path,
       data: data,
       queryParameters: queryParameters,
       options: options,
+      cancelToken: cancelToken,
     );
   }
   
@@ -254,12 +422,14 @@ class HttpClient {
     dynamic data,
     Map<String, dynamic>? queryParameters,
     Options? options,
+    CancelToken? cancelToken,
   }) async {
     return dio.put<T>(
       path,
       data: data,
       queryParameters: queryParameters,
       options: options,
+      cancelToken: cancelToken,
     );
   }
   
@@ -269,12 +439,14 @@ class HttpClient {
     dynamic data,
     Map<String, dynamic>? queryParameters,
     Options? options,
+    CancelToken? cancelToken,
   }) async {
     return dio.delete<T>(
       path,
       data: data,
       queryParameters: queryParameters,
       options: options,
+      cancelToken: cancelToken,
     );
   }
   
@@ -364,13 +536,13 @@ class HttpClient {
   }
 
   /// 智能切换API地址
-  Future<String> findWorkingBaseUrl() async {
+  /// 
+  /// [silent] 静默模式，不触发错误提示
+  Future<String> findWorkingBaseUrl({bool silent = false}) async {
     final urls = [
       'http://localhost:8787',      // USB连接 + ADB端口转发（优先尝试）
       'http://10.0.2.2:8787',       // Android模拟器
-      'http://192.168.1.4:8787',    // 局域网IP（WiFi连接）
       'http://127.0.0.1:8787',      // 本地回环地址
-      'https://robin-backend.your-name.workers.dev', // 生产环境
     ];
 
     for (final url in urls) {
@@ -378,8 +550,8 @@ class HttpClient {
       try {
         final testDio = Dio(BaseOptions(
           baseUrl: url,
-          connectTimeout: const Duration(seconds: 2),
-          receiveTimeout: const Duration(seconds: 2),
+          connectTimeout: const Duration(milliseconds: 1500), // 🚀 减少超时时间
+          receiveTimeout: const Duration(milliseconds: 1500),
         ));
 
         final response = await testDio.get('/api/version');
@@ -388,7 +560,9 @@ class HttpClient {
           return url;
         }
       } catch (e) {
-        Logger.error('[HttpClient] URL $url failed: $e');
+        if (!silent) {
+          Logger.error('[HttpClient] URL $url failed: $e');
+        }
         continue;
       }
     }

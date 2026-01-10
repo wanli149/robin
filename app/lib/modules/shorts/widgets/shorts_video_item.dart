@@ -149,6 +149,8 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
   void _initializePlayer() {
     final vodId = widget.shortData['vod_id']?.toString() ?? '';
     final playUrl = widget.shortData['play_url'] as String? ?? '';
+    final coverUrl = widget.shortData['vod_pic_vertical'] as String? ?? 
+                     widget.shortData['vod_pic'] as String? ?? '';
     
     if (playUrl.isEmpty) {
       return;
@@ -171,6 +173,7 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
       episodeIndex: 1,
       config: PlayerConfig.shortsFlow(),
       videoUrl: videoUrl,
+      coverUrl: coverUrl,
       autoPlay: widget.isActive,
     );
   }
@@ -218,8 +221,7 @@ class _ShortsVideoItemState extends State<ShortsVideoItem> {
                 final contentType = _globalPlayer.currentState.value.contentType;
                 final isPlaying = _globalPlayer.currentState.value.isPlaying;
                 final isLoading = _globalPlayer.isLoading.value;
-                final playerInstance = _globalPlayer.playerInstance;
-                final isInitialized = playerInstance?.value.isInitialized ?? false;
+                final isInitialized = _globalPlayer.player != null;
                 
                 // 只有视频初始化完成后才显示播放器，否则显示封面+加载指示器
                 if (contentType == ContentType.shortsFlow && isInitialized) {

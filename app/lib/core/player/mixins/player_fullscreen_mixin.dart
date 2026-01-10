@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import '../player_config.dart';
 import '../player_enums.dart';
-import '../player_state.dart';
+import '../player_state.dart' show AppPlayerState;
 import '../../logger.dart';
 
 /// 全屏管理 Mixin
@@ -27,7 +27,7 @@ mixin PlayerFullscreenMixin on GetxController {
   // ==================== 抽象属性（由主类实现） ====================
 
   /// 获取当前播放状态
-  PlayerState get currentPlayerState;
+  AppPlayerState get currentPlayerState;
 
   /// 获取当前播放器模式
   Rx<PlayerMode> get playerModeRx;

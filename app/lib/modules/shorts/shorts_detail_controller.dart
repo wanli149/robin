@@ -113,6 +113,9 @@ class ShortsDetailController extends GetxController {
     final episode = episodes[index];
     final playUrl = episode['play_url'] as String? ?? '';
     
+    // 获取封面图
+    final coverUrl = shortDetail.value?['cover'] as String? ?? '';
+    
     if (playUrl.isNotEmpty) {
       // 解析视频URL（处理旧格式兼容）
       String videoUrl = _parseVideoUrl(playUrl);
@@ -124,6 +127,7 @@ class ShortsDetailController extends GetxController {
         episodeIndex: index + 1,
         config: PlayerConfig.shortsWindow(),
         videoUrl: videoUrl,
+        coverUrl: coverUrl,
         autoPlay: true,
       );
       

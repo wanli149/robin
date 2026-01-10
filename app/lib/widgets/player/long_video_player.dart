@@ -6,7 +6,7 @@ import 'package:volume_controller/volume_controller.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import '../../core/player/global_player_manager.dart';
 import '../../core/player/player_enums.dart';
-import '../../core/player/player_state.dart';
+import '../../core/player/player_state.dart' show AppPlayerState;
 import '../../core/pip_manager.dart';
 import '../../core/logger.dart';
 import 'shared/player_controls_base.dart';
@@ -161,13 +161,13 @@ class _LongVideoPlayerState extends State<LongVideoPlayer> {
     );
   }
 
-  Widget _buildControls(PlayerState state) {
+  Widget _buildControls(AppPlayerState state) {
     final isPipMode = _manager.playerMode.value == PlayerMode.pip;
     if (isPipMode) return _buildPipControls(state);
     return Stack(children: [_buildTopBar(state), _buildBottomBar(state)]);
   }
 
-  Widget _buildTopBar(PlayerState state) {
+  Widget _buildTopBar(AppPlayerState state) {
     final isFullscreen = _manager.playerMode.value == PlayerMode.fullscreen;
     final topPadding = isFullscreen ? 8.0 : MediaQuery.of(context).padding.top;
     return Positioned(
@@ -202,7 +202,7 @@ class _LongVideoPlayerState extends State<LongVideoPlayer> {
     );
   }
 
-  Widget _buildBottomBar(PlayerState state) {
+  Widget _buildBottomBar(AppPlayerState state) {
     final isFullscreen = _manager.playerMode.value == PlayerMode.fullscreen;
     final bottomPadding = isFullscreen ? 8.0 : MediaQuery.of(context).padding.bottom;
     return Positioned(
@@ -231,7 +231,7 @@ class _LongVideoPlayerState extends State<LongVideoPlayer> {
     );
   }
 
-  Widget _buildProgressBar(PlayerState state) {
+  Widget _buildProgressBar(AppPlayerState state) {
     final progress = state.duration.inMilliseconds > 0 ? state.position.inMilliseconds / state.duration.inMilliseconds : 0.0;
     return LayoutBuilder(builder: (context, constraints) {
       return GestureDetector(
@@ -279,8 +279,8 @@ class _LongVideoPlayerState extends State<LongVideoPlayer> {
   Widget _buildQualityOption(String label, String resolution, {bool isSelected = false}) => ListTile(title: Text('$label $resolution', style: TextStyle(color: isSelected ? _accentColor : Colors.white)), trailing: isSelected ? const Icon(Icons.check, color: _accentColor) : null, onTap: () => Navigator.pop(context));
   Widget _buildLoadingIndicator() => const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(_accentColor)));
   Widget _buildErrorIndicator(String error) => Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.error_outline, color: Colors.white54, size: 48), const SizedBox(height: 16), Padding(padding: const EdgeInsets.symmetric(horizontal: 32), child: Text(error, style: const TextStyle(color: Colors.white, fontSize: 14), textAlign: TextAlign.center)), const SizedBox(height: 16), ElevatedButton(onPressed: () { _manager.switchContent(contentType: _manager.currentState.value.contentType, contentId: _manager.currentState.value.contentId, episodeIndex: _manager.currentState.value.episodeIndex, config: _manager.currentConfig.value); }, style: ElevatedButton.styleFrom(backgroundColor: _accentColor), child: const Text('重试'))]));
-  Widget _buildPipControls(PlayerState state) => Stack(children: [Center(child: GestureDetector(onTap: _manager.togglePlayPause, child: Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), shape: BoxShape.circle), child: Icon(state.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 24)))), Positioned(bottom: 0, left: 0, right: 0, child: Container(height: 3, margin: const EdgeInsets.symmetric(horizontal: 8), child: _buildSimpleProgressBar(state)))]);
-  Widget _buildSimpleProgressBar(PlayerState state) { final progress = state.duration.inMilliseconds > 0 ? state.position.inMilliseconds / state.duration.inMilliseconds : 0.0; return Stack(alignment: Alignment.centerLeft, children: [Container(height: 3, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(1.5))), FractionallySizedBox(widthFactor: progress.clamp(0.0, 1.0), child: Container(height: 3, decoration: BoxDecoration(color: _accentColor, borderRadius: BorderRadius.circular(1.5))))]); }
+  Widget _buildPipControls(AppPlayerState state) => Stack(children: [Center(child: GestureDetector(onTap: _manager.togglePlayPause, child: Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), shape: BoxShape.circle), child: Icon(state.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 24)))), Positioned(bottom: 0, left: 0, right: 0, child: Container(height: 3, margin: const EdgeInsets.symmetric(horizontal: 8), child: _buildSimpleProgressBar(state)))]);
+  Widget _buildSimpleProgressBar(AppPlayerState state) { final progress = state.duration.inMilliseconds > 0 ? state.position.inMilliseconds / state.duration.inMilliseconds : 0.0; return Stack(alignment: Alignment.centerLeft, children: [Container(height: 3, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(1.5))), FractionallySizedBox(widthFactor: progress.clamp(0.0, 1.0), child: Container(height: 3, decoration: BoxDecoration(color: _accentColor, borderRadius: BorderRadius.circular(1.5))))]); }
   String _formatDuration(Duration duration) { final hours = duration.inHours; final minutes = duration.inMinutes.remainder(60); final seconds = duration.inSeconds.remainder(60); if (hours > 0) return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}'; return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}'; }
 
   void _onVerticalDragStart(DragStartDetails details) { final screenWidth = MediaQuery.of(context).size.width; _isVerticalDragging = true; _isDraggingLeft = details.localPosition.dx < screenWidth / 2; _startDragY = details.localPosition.dy; setState(() { if (_isDraggingLeft) _showBrightnessIndicator = true; else _showVolumeIndicator = true; }); }

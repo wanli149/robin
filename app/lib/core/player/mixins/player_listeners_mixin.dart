@@ -1,5 +1,5 @@
 import 'package:get/get.dart';
-import '../player_state.dart';
+import '../player_state.dart' show AppPlayerState;
 import '../../logger.dart';
 
 /// 状态监听器管理 Mixin
@@ -17,7 +17,7 @@ import '../../logger.dart';
 /// ```
 mixin PlayerListenersMixin on GetxController {
   /// 状态监听器列表
-  final List<Function(PlayerState state)> _stateListeners = [];
+  final List<Function(AppPlayerState state)> _stateListeners = [];
 
   /// 错误监听器列表
   final List<Function(String error)> _errorListeners = [];
@@ -29,17 +29,17 @@ mixin PlayerListenersMixin on GetxController {
   /// 监听器会在播放状态变化时被调用
   /// 
   /// [listener] 回调函数，参数为当前播放状态
-  void addStateListener(Function(PlayerState state) listener) {
+  void addStateListener(Function(AppPlayerState state) listener) {
     _stateListeners.add(listener);
   }
 
   /// 移除状态监听器
-  void removeStateListener(Function(PlayerState state) listener) {
+  void removeStateListener(Function(AppPlayerState state) listener) {
     _stateListeners.remove(listener);
   }
 
   /// 通知所有状态监听器
-  void notifyStateListenersInternal(PlayerState state) {
+  void notifyStateListenersInternal(AppPlayerState state) {
     for (final listener in _stateListeners) {
       try {
         listener(state);
