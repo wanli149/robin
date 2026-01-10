@@ -142,22 +142,50 @@ class _LongVideoPlayerState extends State<LongVideoPlayer> {
   }
 
   Widget _buildVideoPlayer(VideoController? videoController) {
+    // 🚀 检查视频是否已渲染首帧
+    final hasFrame = _manager.hasVideoFrame.value;
+    
     if (videoController == null) {
-      return Container(
-        color: Colors.black,
-        child: const Center(
+      // 播放器未初始化时显示背景图
+      return _buildBackgroundPlaceholder();
+    }
+    
+    // 使用 Stack 叠加，首帧未渲染时显示背景
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 视频层
+        SizedBox.expand(
+          child: Video(
+            controller: videoController,
+            fit: BoxFit.contain,
+            controls: NoVideoControls,
+          ),
+        ),
+        // 🚀 首帧未渲染时显示背景图（避免黑屏）
+        if (!hasFrame) _buildBackgroundPlaceholder(),
+      ],
+    );
+  }
+  
+  /// 构建背景占位图
+  Widget _buildBackgroundPlaceholder() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/images/player_background.webp',
+          fit: BoxFit.cover,
+        ),
+        Container(
+          color: Colors.black.withValues(alpha: 0.3),
+        ),
+        const Center(
           child: CircularProgressIndicator(
             valueColor: AlwaysStoppedAnimation<Color>(_accentColor),
           ),
         ),
-      );
-    }
-    return SizedBox.expand(
-      child: Video(
-        controller: videoController,
-        fit: BoxFit.contain,
-        controls: NoVideoControls,
-      ),
+      ],
     );
   }
 
@@ -277,7 +305,7 @@ class _LongVideoPlayerState extends State<LongVideoPlayer> {
   }
 
   Widget _buildQualityOption(String label, String resolution, {bool isSelected = false}) => ListTile(title: Text('$label $resolution', style: TextStyle(color: isSelected ? _accentColor : Colors.white)), trailing: isSelected ? const Icon(Icons.check, color: _accentColor) : null, onTap: () => Navigator.pop(context));
-  Widget _buildLoadingIndicator() => const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(_accentColor)));
+  Widget _buildLoadingIndicator() => _buildBackgroundPlaceholder();
   Widget _buildErrorIndicator(String error) => Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.error_outline, color: Colors.white54, size: 48), const SizedBox(height: 16), Padding(padding: const EdgeInsets.symmetric(horizontal: 32), child: Text(error, style: const TextStyle(color: Colors.white, fontSize: 14), textAlign: TextAlign.center)), const SizedBox(height: 16), ElevatedButton(onPressed: () { _manager.switchContent(contentType: _manager.currentState.value.contentType, contentId: _manager.currentState.value.contentId, episodeIndex: _manager.currentState.value.episodeIndex, config: _manager.currentConfig.value); }, style: ElevatedButton.styleFrom(backgroundColor: _accentColor), child: const Text('重试'))]));
   Widget _buildPipControls(AppPlayerState state) => Stack(children: [Center(child: GestureDetector(onTap: _manager.togglePlayPause, child: Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), shape: BoxShape.circle), child: Icon(state.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 24)))), Positioned(bottom: 0, left: 0, right: 0, child: Container(height: 3, margin: const EdgeInsets.symmetric(horizontal: 8), child: _buildSimpleProgressBar(state)))]);
   Widget _buildSimpleProgressBar(AppPlayerState state) { final progress = state.duration.inMilliseconds > 0 ? state.position.inMilliseconds / state.duration.inMilliseconds : 0.0; return Stack(alignment: Alignment.centerLeft, children: [Container(height: 3, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(1.5))), FractionallySizedBox(widthFactor: progress.clamp(0.0, 1.0), child: Container(height: 3, decoration: BoxDecoration(color: _accentColor, borderRadius: BorderRadius.circular(1.5))))]); }

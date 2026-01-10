@@ -38,6 +38,7 @@ import scheduler from './scheduler';
 import domains from './domains';
 import announcements from './announcements';
 import security from './security';
+import imageStorage from './image_storage';
 
 const admin = new Hono<{ Bindings: Bindings }>();
 
@@ -61,6 +62,7 @@ admin.route('/', scheduler);
 admin.route('/', domains);
 admin.route('/', announcements);
 admin.route('/', security);
+admin.route('/', imageStorage);
 
 export default admin;
 

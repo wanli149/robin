@@ -80,6 +80,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         { key: '/app-wall-management', label: '应用墙管理' },
         { key: '/system-settings', label: '系统设置' },
         { key: '/storage-settings', label: '存储配置' },
+        { key: '/image-storage-settings', label: '图片云存储' },
         { key: '/scheduler-management', label: '定时任务' },
         { key: '/domain-management', label: '域名管理' },
         { key: '/announcement-management', label: '公告管理' },

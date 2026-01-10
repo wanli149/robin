@@ -10,6 +10,7 @@ import { getCollectorMetrics, checkHealth, sendDingTalkAlert } from '../scripts/
 import { checkAllSourcesHealth } from './source_health';
 import { cleanupOldTasks } from './task_manager';
 import { cleanupOldLogs } from './collect_logger';
+import { ImageStorageService } from './image_storage';
 import { logger } from '../utils/logger';
 import { CACHE_CONFIG } from '../config';
 import type { SystemConfigRow, HotSearchStatsRow, HomeTabRow, VodCacheListRow } from '../types/database';
@@ -18,6 +19,7 @@ import type { SystemConfigRow, HotSearchStatsRow, HomeTabRow, VodCacheListRow } 
 interface Env {
   DB: D1Database;
   ROBIN_CACHE: KVNamespace;
+  IMAGE_BUCKET?: R2Bucket;
   DINGTALK_WEBHOOK?: string;
 }
 
@@ -86,6 +88,13 @@ async function runHourlyTasks(env: Env): Promise<void> {
     await runIncrementalCollect(env, { maxPages: 3, maxVideos: 100 });
   } catch (error) {
     logger.scheduler.error('Hourly collect failed', { error: error instanceof Error ? error.message : String(error) });
+  }
+  
+  // 3. 处理图片上传队列
+  try {
+    await processImageQueue(env);
+  } catch (error) {
+    logger.scheduler.error('Image queue processing failed', { error: error instanceof Error ? error.message : String(error) });
   }
 }
 
@@ -285,6 +294,25 @@ async function runHealthCheck(env: Env): Promise<void> {
     }
   } catch (error) {
     logger.scheduler.error('Health check failed', { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/**
+ * 处理图片上传队列
+ */
+async function processImageQueue(env: Env): Promise<void> {
+  logger.scheduler.info('Processing image upload queue...');
+  
+  try {
+    const imageService = new ImageStorageService(env);
+    const result = await imageService.processQueue(100);
+    
+    logger.scheduler.info('Image queue processed', {
+      success: result.success,
+      failed: result.failed,
+    });
+  } catch (error) {
+    logger.scheduler.error('Image queue processing error', { error: error instanceof Error ? error.message : String(error) });
   }
 }
 

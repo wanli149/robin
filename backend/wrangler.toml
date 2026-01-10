@@ -15,6 +15,12 @@ binding = "ROBIN_CACHE"
 id = "local-kv"  # For local development, will be updated for production
 preview_id = "local-kv"
 
+# R2 Storage Binding (图片云存储)
+[[r2_buckets]]
+binding = "IMAGE_BUCKET"
+bucket_name = "robin-images"
+# preview_bucket_name = "robin-images-preview"  # 可选：预览环境使用不同的桶
+
 # Environment Variables (set via wrangler secret put or dashboard)
 # JWT_SECRET
 # DINGTALK_WEBHOOK

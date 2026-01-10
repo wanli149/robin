@@ -278,12 +278,26 @@ class GlobalPlayerManager extends GetxController
       }
 
       if (autoPlay && _shouldAutoPlay) {
+        // 🚀 再次检查操作是否被取消
+        if (_isOperationCancelled(operationId)) {
+          Logger.player('Operation $operationId cancelled before play');
+          await _stopCurrentPlayback();
+          return;
+        }
+        
         if (contentType == ContentType.shortsFlow) {
           if (_isPlayerVisible()) {
             await play();
           }
         } else {
           await play();
+        }
+        
+        // 🚀 播放后再次检查，如果被取消则暂停
+        if (_isOperationCancelled(operationId)) {
+          Logger.player('Operation $operationId cancelled after play started, pausing');
+          await pause();
+          return;
         }
       }
 
@@ -364,42 +378,52 @@ class GlobalPlayerManager extends GetxController
   }
 
   Future<void> play() async {
-    if (_player == null) return;
+    if (_isDisposed || _player == null) return;
 
-    await _player!.play();
-    enableWakelock();
-    registerToPipManager();
-    startProgressTracking();
+    try {
+      await _player!.play();
+      enableWakelock();
+      registerToPipManager();
+      startProgressTracking();
 
-    showPauseAd.value = false;
+      showPauseAd.value = false;
 
-    currentState.value = currentState.value.copyWith(isPlaying: true);
-    notifyStateListeners();
-    
-    _reportPlayStart();
+      currentState.value = currentState.value.copyWith(isPlaying: true);
+      notifyStateListeners();
+      
+      _reportPlayStart();
+    } catch (e) {
+      Logger.error('Play error (ignored): $e');
+    }
   }
 
   Future<void> pause() async {
-    if (_player == null) return;
+    if (_isDisposed || _player == null) return;
 
-    await _player!.pause();
-    scheduleDisableWakelock();
+    try {
+      await _player!.pause();
+      scheduleDisableWakelock();
 
-    if (!PipManager.to.isInPipMode.value) {
-      unregisterFromPipManager();
+      if (!PipManager.to.isInPipMode.value) {
+        unregisterFromPipManager();
+      }
+
+      stopProgressTracking();
+
+      if (!PipManager.to.isInPipMode.value && pauseAdData.value != null) {
+        showPauseAd.value = true;
+      }
+
+      currentState.value = currentState.value.copyWith(isPlaying: false);
+      notifyStateListeners();
+    } catch (e) {
+      Logger.error('Pause error (ignored): $e');
     }
-
-    stopProgressTracking();
-
-    if (!PipManager.to.isInPipMode.value && pauseAdData.value != null) {
-      showPauseAd.value = true;
-    }
-
-    currentState.value = currentState.value.copyWith(isPlaying: false);
-    notifyStateListeners();
   }
 
   Future<void> togglePlayPause() async {
+    if (_isDisposed || _player == null) return;
+    
     final now = DateTime.now();
     if (_lastToggleTime != null &&
         now.difference(_lastToggleTime!).inMilliseconds < _toggleDebounceMs) {
@@ -416,45 +440,65 @@ class GlobalPlayerManager extends GetxController
   }
 
   Future<void> seekTo(Duration position) async {
-    if (_player == null) return;
-    await _player!.seek(position);
+    if (_isDisposed || _player == null) return;
+    try {
+      await _player!.seek(position);
+    } catch (e) {
+      Logger.error('Seek error (ignored): $e');
+    }
   }
 
   Future<void> setPlaybackSpeed(double speed) async {
-    if (_player == null) return;
-    await _player!.setRate(speed);
-    currentState.value = currentState.value.copyWith(playbackSpeed: speed);
-    notifyStateListeners();
+    if (_isDisposed || _player == null) return;
+    try {
+      await _player!.setRate(speed);
+      currentState.value = currentState.value.copyWith(playbackSpeed: speed);
+      notifyStateListeners();
+    } catch (e) {
+      Logger.error('SetRate error (ignored): $e');
+    }
   }
 
   Future<void> toggleMute() async {
-    if (_player == null) return;
+    if (_isDisposed || _player == null) return;
     
-    final newMuted = !currentState.value.isMuted;
-    await _player!.setVolume(newMuted ? 0.0 : currentState.value.volume * 100);
-    currentState.value = currentState.value.copyWith(isMuted: newMuted);
-    notifyStateListeners();
-    
-    Logger.player('Mute toggled: $newMuted');
+    try {
+      final newMuted = !currentState.value.isMuted;
+      await _player!.setVolume(newMuted ? 0.0 : currentState.value.volume * 100);
+      currentState.value = currentState.value.copyWith(isMuted: newMuted);
+      notifyStateListeners();
+      
+      Logger.player('Mute toggled: $newMuted');
+    } catch (e) {
+      Logger.error('ToggleMute error (ignored): $e');
+    }
   }
 
   Future<void> setMuted(bool muted) async {
-    if (_player == null) return;
+    if (_isDisposed || _player == null) return;
     
-    await _player!.setVolume(muted ? 0.0 : currentState.value.volume * 100);
-    currentState.value = currentState.value.copyWith(isMuted: muted);
-    notifyStateListeners();
+    try {
+      await _player!.setVolume(muted ? 0.0 : currentState.value.volume * 100);
+      currentState.value = currentState.value.copyWith(isMuted: muted);
+      notifyStateListeners();
+    } catch (e) {
+      Logger.error('SetMuted error (ignored): $e');
+    }
   }
 
   Future<void> setVolume(double volume) async {
-    if (_player == null) return;
+    if (_isDisposed || _player == null) return;
     
-    final clampedVolume = volume.clamp(0.0, 1.0);
-    if (!currentState.value.isMuted) {
-      await _player!.setVolume(clampedVolume * 100); // media_kit 使用 0-100
+    try {
+      final clampedVolume = volume.clamp(0.0, 1.0);
+      if (!currentState.value.isMuted) {
+        await _player!.setVolume(clampedVolume * 100); // media_kit 使用 0-100
+      }
+      currentState.value = currentState.value.copyWith(volume: clampedVolume);
+      notifyStateListeners();
+    } catch (e) {
+      Logger.error('SetVolume error (ignored): $e');
     }
-    currentState.value = currentState.value.copyWith(volume: clampedVolume);
-    notifyStateListeners();
   }
 
   void setPlayPermission(bool allowed) {
@@ -520,36 +564,58 @@ class GlobalPlayerManager extends GetxController
   // ==================== 私有方法 ====================
 
   Future<void> _stopCurrentPlayback() async {
-    if (_player != null) {
+    if (_isDisposed || _player == null) return;
+    
+    try {
       await _player!.pause();
       stopProgressTracking();
       await saveProgress();
+    } catch (e) {
+      Logger.error('StopCurrentPlayback error (ignored): $e');
     }
   }
 
   void _disposePlayer() {
-    _isDisposed = true; // 标记为已销毁，防止回调继续执行
+    // 先取消所有订阅，防止回调继续触发
     _cancelStreamSubscriptions();
     
-    // media_kit VideoController 不需要手动 dispose
+    // 然后标记为已销毁
+    _isDisposed = true;
+    
+    // 保存播放器引用，然后立即清空
+    final playerToDispose = _player;
+    _player = null;
     _videoController = null;
     
-    _player?.dispose();
-    _player = null;
+    // 最后异步销毁播放器实例
+    if (playerToDispose != null) {
+      // 使用 Future.microtask 确保在当前事件循环结束后销毁
+      Future.microtask(() {
+        try {
+          playerToDispose.dispose();
+        } catch (e) {
+          Logger.error('Player dispose error (ignored): $e');
+        }
+      });
+    }
     
     stopProgressTracking();
     Logger.player('Player disposed');
   }
   
   void _cancelStreamSubscriptions() {
-    _playingSubscription?.cancel();
-    _positionSubscription?.cancel();
-    _durationSubscription?.cancel();
-    _bufferSubscription?.cancel();
-    _completedSubscription?.cancel();
-    _errorSubscription?.cancel();
-    _widthSubscription?.cancel();
+    // 先保存引用
+    final subs = [
+      _playingSubscription,
+      _positionSubscription,
+      _durationSubscription,
+      _bufferSubscription,
+      _completedSubscription,
+      _errorSubscription,
+      _widthSubscription,
+    ];
     
+    // 立即清空引用
     _playingSubscription = null;
     _positionSubscription = null;
     _durationSubscription = null;
@@ -557,6 +623,11 @@ class GlobalPlayerManager extends GetxController
     _completedSubscription = null;
     _errorSubscription = null;
     _widthSubscription = null;
+    
+    // 然后取消订阅
+    for (final sub in subs) {
+      sub?.cancel();
+    }
   }
 
   Future<void> _createPlayerInstance(String videoUrl) async {
@@ -590,31 +661,46 @@ class GlobalPlayerManager extends GetxController
   void _setupStreamListeners() {
     if (_player == null) return;
     
+    // 保存当前播放器引用，用于回调中验证
+    final currentPlayer = _player;
+    
     _playingSubscription = _player!.stream.playing.listen((playing) {
-      if (_isDisposed || _player == null) return; // 防止销毁后回调
-      
-      final wasPlaying = currentState.value.isPlaying;
-      currentState.value = currentState.value.copyWith(isPlaying: playing);
-      
-      if (playing && !wasPlaying) {
-        registerToPipManager();
-      } else if (!playing && wasPlaying && !PipManager.to.isInPipMode.value) {
-        unregisterFromPipManager();
+      try {
+        if (_isDisposed || _player == null || _player != currentPlayer) return;
+        
+        final wasPlaying = currentState.value.isPlaying;
+        currentState.value = currentState.value.copyWith(isPlaying: playing);
+        
+        if (playing && !wasPlaying) {
+          registerToPipManager();
+        } else if (!playing && wasPlaying && !PipManager.to.isInPipMode.value) {
+          unregisterFromPipManager();
+        }
+        
+        notifyStateListeners();
+      } catch (e) {
+        Logger.error('Playing listener error (ignored): $e');
       }
-      
-      notifyStateListeners();
     });
     
     _positionSubscription = _player!.stream.position.listen((position) {
-      if (_isDisposed || _player == null) return; // 防止销毁后回调
-      currentState.value = currentState.value.copyWith(position: position);
-      notifyStateListeners();
+      try {
+        if (_isDisposed || _player == null || _player != currentPlayer) return;
+        currentState.value = currentState.value.copyWith(position: position);
+        notifyStateListeners();
+      } catch (e) {
+        Logger.error('Position listener error (ignored): $e');
+      }
     });
     
     _durationSubscription = _player!.stream.duration.listen((duration) {
-      if (_isDisposed || _player == null) return; // 防止销毁后回调
-      currentState.value = currentState.value.copyWith(duration: duration);
-      notifyStateListeners();
+      try {
+        if (_isDisposed || _player == null || _player != currentPlayer) return;
+        currentState.value = currentState.value.copyWith(duration: duration);
+        notifyStateListeners();
+      } catch (e) {
+        Logger.error('Duration listener error (ignored): $e');
+      }
     });
     
     _bufferSubscription = _player!.stream.buffer.listen((buffer) {
@@ -622,33 +708,45 @@ class GlobalPlayerManager extends GetxController
     });
     
     _completedSubscription = _player!.stream.completed.listen((completed) {
-      if (_isDisposed || _player == null) return; // 防止销毁后回调
-      if (completed) {
-        _onPlaybackCompleted();
+      try {
+        if (_isDisposed || _player == null || _player != currentPlayer) return;
+        if (completed) {
+          _onPlaybackCompleted();
+        }
+      } catch (e) {
+        Logger.error('Completed listener error (ignored): $e');
       }
     });
     
     _errorSubscription = _player!.stream.error.listen((errorMsg) {
-      if (_isDisposed || _player == null) return; // 防止销毁后回调
-      if (errorMsg.isNotEmpty) {
-        Logger.error('Player error: $errorMsg');
-        
-        // 🚀 智能错误处理：网络错误自动重试
-        if (_isNetworkError(errorMsg)) {
-          _handleNetworkError(errorMsg);
-        } else {
-          error.value = '播放错误: $errorMsg';
-          unregisterFromPipManager();
+      try {
+        if (_isDisposed || _player == null || _player != currentPlayer) return;
+        if (errorMsg.isNotEmpty) {
+          Logger.error('Player error: $errorMsg');
+          
+          // 🚀 智能错误处理：网络错误自动重试
+          if (_isNetworkError(errorMsg)) {
+            _handleNetworkError(errorMsg);
+          } else {
+            error.value = '播放错误: $errorMsg';
+            unregisterFromPipManager();
+          }
         }
+      } catch (e) {
+        Logger.error('Error listener error (ignored): $e');
       }
     });
     
     // 🚀 监听视频宽度变化，用于判断首帧是否已渲染
     _widthSubscription = _player!.stream.width.listen((width) {
-      if (_isDisposed || _player == null) return; // 防止销毁后回调
-      if (width != null && width > 0 && !hasVideoFrame.value) {
-        hasVideoFrame.value = true;
-        Logger.player('First video frame rendered (width: $width)');
+      try {
+        if (_isDisposed || _player == null || _player != currentPlayer) return;
+        if (width != null && width > 0 && !hasVideoFrame.value) {
+          hasVideoFrame.value = true;
+          Logger.player('First video frame rendered (width: $width)');
+        }
+      } catch (e) {
+        Logger.error('Width listener error (ignored): $e');
       }
     });
   }

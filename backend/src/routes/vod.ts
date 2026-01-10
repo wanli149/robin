@@ -23,6 +23,38 @@ type Bindings = {
   DOUBAN_API_KEY?: string;
 };
 
+// 源名称显示别名缓存
+let sourceDisplayNameCache: Map<string, string> | null = null;
+let sourceDisplayNameCacheTime = 0;
+const SOURCE_DISPLAY_NAME_CACHE_TTL = 300000; // 5分钟
+
+/**
+ * 获取源名称到显示别名的映射
+ */
+async function getSourceDisplayNameMap(db: D1Database): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (sourceDisplayNameCache && now - sourceDisplayNameCacheTime < SOURCE_DISPLAY_NAME_CACHE_TTL) {
+    return sourceDisplayNameCache;
+  }
+
+  try {
+    const result = await db.prepare(`
+      SELECT name, display_name FROM video_sources WHERE display_name IS NOT NULL AND display_name != ''
+    `).all();
+
+    const map = new Map<string, string>();
+    for (const row of result.results as { name: string; display_name: string }[]) {
+      map.set(row.name, row.display_name);
+    }
+
+    sourceDisplayNameCache = map;
+    sourceDisplayNameCacheTime = now;
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
 // 视频缓存数据类型
 interface VodCacheData {
   vod_id: string;
@@ -124,6 +156,9 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
   try {
     const { ids } = getValidatedQuery(c);
 
+    // 获取源名称别名映射
+    const displayNameMap = await getSourceDisplayNameMap(c.env.DB);
+
     // 🚀 优先从 KV 缓存读取
     const cacheKey = `vod:${ids}`;
     let video: VodCacheData | null = null;
@@ -139,7 +174,7 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
         let playSources: PlaySource[] = [];
         try {
           const cleanedUrls = JSON.parse(video.vod_play_url || '{}') as CleanedPlayUrls;
-          playSources = toPlaySources(cleanedUrls);
+          playSources = toPlaySources(cleanedUrls, displayNameMap);
         } catch {
           logger.vod.warn('Failed to parse play_sources from cache');
         }
@@ -213,16 +248,16 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
     if (isFromRealtime) {
       // 实时获取的数据是原始格式，需要清洗
       const cleanedUrls = ensureCleanedFormat(video.vod_play_url);
-      playSources = toPlaySources(cleanedUrls);
+      playSources = toPlaySources(cleanedUrls, displayNameMap);
     } else {
       // 缓存数据已是清洗后的JSON格式
       try {
         const parsed = JSON.parse(video.vod_play_url || '{}') as CleanedPlayUrls;
-        playSources = toPlaySources(parsed);
+        playSources = toPlaySources(parsed, displayNameMap);
       } catch {
         // JSON解析失败，说明是原始字符串格式，需要清洗
         const cleanedUrls = ensureCleanedFormat(video.vod_play_url);
-        playSources = toPlaySources(cleanedUrls);
+        playSources = toPlaySources(cleanedUrls, displayNameMap);
       }
     }
 

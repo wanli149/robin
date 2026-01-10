@@ -37,6 +37,7 @@ const SchedulerManagement = lazy(() => import('./pages/SchedulerManagement'));
 const DomainManagement = lazy(() => import('./pages/DomainManagement'));
 const AnnouncementManagement = lazy(() => import('./pages/AnnouncementManagement'));
 const SecuritySettings = lazy(() => import('./pages/SecuritySettings'));
+const ImageStorageSettings = lazy(() => import('./pages/ImageStorageSettings'));
 
 // 页面加载中的占位组件
 const PageLoading = () => (
@@ -91,6 +92,7 @@ function App() {
                     <Route path="/domain-management" element={<ProtectedPage><DomainManagement /></ProtectedPage>} />
                     <Route path="/announcement-management" element={<ProtectedPage><AnnouncementManagement /></ProtectedPage>} />
                     <Route path="/security-settings" element={<ProtectedPage><SecuritySettings /></ProtectedPage>} />
+                    <Route path="/image-storage-settings" element={<ProtectedPage><ImageStorageSettings /></ProtectedPage>} />
 
                     {/* 默认重定向到仪表板 */}
                     <Route path="/" element={<Navigate to="/dashboard" replace />} />

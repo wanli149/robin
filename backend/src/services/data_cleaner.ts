@@ -212,12 +212,15 @@ export function ensureCleanedFormat(playUrls: unknown): CleanedPlayUrls {
 /**
  * 将清洗后的格式转换为 play_sources 数组
  * 用于 API 返回
+ * @param playUrls 清洗后的播放地址
+ * @param displayNameMap 可选的源名称到显示别名的映射
  */
 export function toPlaySources(
-  playUrls: CleanedPlayUrls
+  playUrls: CleanedPlayUrls,
+  displayNameMap?: Map<string, string>
 ): Array<{ name: string; episodes: Episode[] }> {
   return Object.entries(playUrls).map(([name, episodes]) => ({
-    name,
+    name: displayNameMap?.get(name) || name,
     episodes,
   }));
 }

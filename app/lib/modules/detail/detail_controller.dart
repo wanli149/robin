@@ -91,7 +91,9 @@ class DetailController extends GetxController {
           // 加载推荐视频
           final recs = data['recommendations'] as List?;
           if (recs != null && recs.isNotEmpty) {
+            // 限制为9个（3x3网格）
             recommendations.value = recs
+                .take(9)
                 .map((e) => Map<String, dynamic>.from(e as Map))
                 .toList();
           } else {
@@ -436,7 +438,9 @@ class DetailController extends GetxController {
           }
           
           if (rawList != null && rawList.isNotEmpty) {
+            // 限制为9个（3x3网格）
             final list = rawList
+                .take(9)
                 .map((e) => Map<String, dynamic>.from(e as Map))
                 .toList();
             recommendations.value = list;

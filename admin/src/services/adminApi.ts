@@ -993,19 +993,6 @@ export const testDingTalk = async (): Promise<void> => {
   }
 };
 
-/**
- * 自动发现常用资源站
- */
-export const autoDiscoverSources = async (): Promise<{ added: number }> => {
-  const response = await apiClient.post<ApiResponse & { data?: { added: number } }>(
-    '/admin/sources/auto-discover'
-  );
-  if (response.data.code === 1 && response.data.data) {
-    return response.data.data;
-  }
-  throw new Error(response.data.msg || '自动发现失败');
-};
-
 // 获取崩溃日志列表
 export const getCrashReports = async (limit = 50, offset = 0): Promise<{
   list: any[];

@@ -119,6 +119,7 @@ export const logger = {
   actorCollector: createLogger('ActorCollector'),
   collectLogger: createLogger('CollectLogger'),
   migration: createLogger('Migration'),
+  imageStorage: createLogger('ImageStorage'),
 };
 
 export default logger;

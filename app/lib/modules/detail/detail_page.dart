@@ -65,11 +65,18 @@ class _DetailPageState extends State<DetailPage> {
   void dispose() {
     // 🚀 取消正在进行的播放器初始化操作
     GlobalPlayerManager.to.cancelCurrentOperation();
+    
     // 🚀 离开页面时暂停播放器并保存进度
-    Logger.player('[DetailPage] Disposing, pausing player and saving progress');
-    GlobalPlayerManager.to.pause();
-    // 立即保存进度
-    GlobalPlayerManager.to.saveProgress();
+    // 使用 try-catch 防止播放器已销毁时出错
+    try {
+      Logger.player('[DetailPage] Disposing, pausing player and saving progress');
+      GlobalPlayerManager.to.pause();
+      // 立即保存进度
+      GlobalPlayerManager.to.saveProgress();
+    } catch (e) {
+      Logger.error('[DetailPage] Error during dispose: $e');
+    }
+    
     // 离开页面时删除控制器
     Get.delete<DetailController>(tag: widget.videoId);
     super.dispose();
@@ -312,13 +319,16 @@ class _DetailPageState extends State<DetailPage> {
     // 获取视频名称
     final contentName = detail['vod_name'] as String? ?? '';
     
-    Logger.player('[DetailPage] Initializing player for ${widget.videoId}, name: $contentName');
+    // 保存当前 videoId，用于后续检查
+    final targetVideoId = widget.videoId;
+    
+    Logger.player('[DetailPage] Initializing player for $targetVideoId, name: $contentName');
     
     // 切换到新内容时，不要保留旧视频的进度和播放状态
     // 新视频应该从头开始播放
     GlobalPlayerManager.to.switchContent(
       contentType: contentType,
-      contentId: widget.videoId,
+      contentId: targetVideoId,
       contentName: contentName,
       episodeIndex: controller.currentEpisodeIndex.value + 1,
       config: PlayerConfig.tvWindow(),
@@ -326,6 +336,20 @@ class _DetailPageState extends State<DetailPage> {
       autoPlay: true, // 新视频自动播放
     ).then((_) {
       _isInitializing = false; // 初始化完成
+      
+      // 🚀 检查页面是否仍然存在，如果已经离开则暂停播放
+      if (!mounted) {
+        Logger.player('[DetailPage] Page disposed during initialization, pausing player');
+        GlobalPlayerManager.to.pause();
+        return;
+      }
+      
+      // 🚀 检查当前播放的内容是否仍然是目标内容
+      final currentContentId = GlobalPlayerManager.to.currentState.value.contentId;
+      if (currentContentId != targetVideoId) {
+        Logger.player('[DetailPage] Content changed during initialization, skipping');
+        return;
+      }
     }).catchError((error) {
       _isInitializing = false; // 初始化失败也要重置状态
       Logger.player('[DetailPage] Initialization failed: $error');

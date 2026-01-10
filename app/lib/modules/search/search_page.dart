@@ -442,6 +442,7 @@ class SearchPage extends StatelessWidget {
     final vodRemarks = video['vod_remarks'] as String? ?? '';
     final vodYear = video['vod_year']?.toString() ?? '';
     final vodArea = video['vod_area'] as String? ?? '';
+    final vodContent = video['vod_content'] as String? ?? video['vod_blurb'] as String? ?? '';
 
     return GestureDetector(
       onTap: () {
@@ -460,7 +461,7 @@ class SearchPage extends StatelessWidget {
                   child: NetImage(
                     url: vodPic,
                     width: 80,
-                    height: 100,
+                    height: 110,
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -501,10 +502,10 @@ class SearchPage extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
 
                   // 标签
                   Wrap(
@@ -528,6 +529,21 @@ class SearchPage extends StatelessWidget {
                         ),
                     ],
                   ),
+                  
+                  // 简介
+                  if (vodContent.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      vodContent.replaceAll(RegExp(r'<[^>]*>'), '').trim(),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.white38,
+                        height: 1.3,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
               ),
             ),

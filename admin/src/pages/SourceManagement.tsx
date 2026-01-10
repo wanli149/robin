@@ -18,6 +18,7 @@ import {
   Select,
   Tag,
   Popconfirm,
+  Tooltip,
 } from 'antd';
 import { useNotification } from '../components/providers';
 import {
@@ -35,6 +36,7 @@ const { Title } = Typography;
 interface Source {
   id?: number;
   name: string;
+  display_name?: string;
   api_url: string;
   weight: number;
   is_active: boolean;
@@ -173,13 +175,15 @@ const SourceManagement: React.FC = () => {
   const columns: ColumnsType<Source> = [
     {
       title: '排序',
-      width: 60,
+      width: 50,
+      align: 'center',
       render: () => <DragOutlined style={{ cursor: 'move', color: '#999' }} />,
     },
     {
       title: '资源站名称',
       dataIndex: 'name',
       key: 'name',
+      width: 120,
       render: (name: string, record: Source) => (
         <Space>
           {name}
@@ -191,13 +195,16 @@ const SourceManagement: React.FC = () => {
       title: 'API 地址',
       dataIndex: 'api_url',
       key: 'api_url',
+      width: 400,
+      align: 'center',
       ellipsis: true,
     },
     {
       title: '格式',
       dataIndex: 'response_format',
       key: 'response_format',
-      width: 80,
+      width: 70,
+      align: 'center',
       render: (format: string) => {
         const formatConfig: Record<string, { color: string; text: string }> = {
           json: { color: 'blue', text: 'JSON' },
@@ -212,14 +219,16 @@ const SourceManagement: React.FC = () => {
       title: '权重',
       dataIndex: 'weight',
       key: 'weight',
-      width: 80,
+      width: 60,
+      align: 'center',
       sorter: (a, b) => b.weight - a.weight,
     },
     {
       title: '状态',
       dataIndex: 'is_active',
       key: 'is_active',
-      width: 100,
+      width: 70,
+      align: 'center',
       render: (is_active: boolean, record: Source) => (
         <Switch
           checked={is_active}
@@ -230,68 +239,48 @@ const SourceManagement: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 280,
+      width: 120,
+      align: 'center',
       render: (_: any, record: Source) => (
         <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<ThunderboltOutlined />}
-            onClick={() => handleTest(record)}
-          >
-            测试
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<SyncOutlined />}
-            onClick={() => handleSyncCategories(record)}
-          >
-            同步分类
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
-            编辑
-          </Button>
+          <Tooltip title="测试连接">
+            <Button
+              type="text"
+              size="small"
+              icon={<ThunderboltOutlined />}
+              onClick={() => handleTest(record)}
+            />
+          </Tooltip>
+          <Tooltip title="同步分类">
+            <Button
+              type="text"
+              size="small"
+              icon={<SyncOutlined />}
+              onClick={() => handleSyncCategories(record)}
+            />
+          </Tooltip>
+          <Tooltip title="编辑">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => handleEdit(record)}
+            />
+          </Tooltip>
           <Popconfirm
             title="确定删除这个资源站吗？"
             onConfirm={() => handleDelete(record.id!)}
             okText="确定"
             cancelText="取消"
           >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
+            <Tooltip title="删除">
+              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
     },
   ];
-
-  // 自动发现常用资源站
-  const handleAutoDiscover = () => {
-    Modal.confirm({
-      title: '自动添加常用资源站',
-      content: '将自动添加以下常用资源站：非凡资源、量子资源、新浪资源。是否继续？',
-      onOk: async () => {
-        try {
-          setLoading(true);
-          const { autoDiscoverSources } = await import('../services/adminApi');
-          const result = await autoDiscoverSources();
-          success(`成功添加 ${result.added} 个资源站`);
-          loadSources();
-        } catch (err: any) {
-          error(err.message || '自动发现失败');
-        } finally {
-          setLoading(false);
-        }
-      },
-    });
-  };
 
   // 同步所有资源站的分类映射
   const handleSyncAllCategories = async () => {
@@ -340,9 +329,6 @@ const SourceManagement: React.FC = () => {
             <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
               添加资源站
             </Button>
-            <Button icon={<ThunderboltOutlined />} onClick={handleAutoDiscover}>
-              自动发现常用资源站
-            </Button>
             <Button icon={<SyncOutlined />} onClick={handleSyncAllCategories}>
               同步所有分类映射
             </Button>
@@ -355,6 +341,7 @@ const SourceManagement: React.FC = () => {
           rowKey="id"
           loading={loading}
           pagination={false}
+          tableLayout="fixed"
         />
       </Card>
 
@@ -375,6 +362,14 @@ const SourceManagement: React.FC = () => {
             rules={[{ required: true, message: '请输入资源站名称' }]}
           >
             <Input placeholder="非凡资源 / 量子资源" />
+          </Form.Item>
+
+          <Form.Item
+            label="显示别名"
+            name="display_name"
+            help="APP端显示的名称，留空则显示资源站名称。如：高清、蓝光、极速"
+          >
+            <Input placeholder="高清 / 蓝光 / 极速" />
           </Form.Item>
 
           <Form.Item

@@ -18,6 +18,7 @@ class ShortsPage extends StatefulWidget {
 class _ShortsPageState extends State<ShortsPage> with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   late ShortsController controller;
   bool _isPageVisible = false;
+  Worker? _indexWorker; // 保存 ever() 返回的 Worker 以便 dispose
 
   @override
   bool get wantKeepAlive => true;
@@ -32,11 +33,15 @@ class _ShortsPageState extends State<ShortsPage> with AutomaticKeepAliveClientMi
     
     // 延迟监听根页面的切换，确保RootController已经初始化
     Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return; // 防止页面已销毁时继续执行
+      
       try {
         final rootController = Get.find<RootController>();
         _isPageVisible = rootController.currentIndex.value == 2;
         
-        ever(rootController.currentIndex, (index) {
+        _indexWorker = ever(rootController.currentIndex, (index) {
+          if (!mounted) return; // 防止回调在页面销毁后执行
+          
           final wasVisible = _isPageVisible;
           _isPageVisible = index == 2; // 短剧页面是第3个tab (index=2)
           
@@ -65,6 +70,10 @@ class _ShortsPageState extends State<ShortsPage> with AutomaticKeepAliveClientMi
 
   @override
   void dispose() {
+    // 取消 ever() 监听
+    _indexWorker?.dispose();
+    _indexWorker = null;
+    
     // 移除应用生命周期监听
     WidgetsBinding.instance.removeObserver(this);
     // 页面销毁时暂停所有视频

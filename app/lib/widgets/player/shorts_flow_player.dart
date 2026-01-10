@@ -90,7 +90,11 @@ class _ShortsFlowPlayerState extends State<ShortsFlowPlayer> {
     final coverUrl = widget.coverUrl ?? _manager.currentState.value.coverUrl;
     
     if (coverUrl == null || coverUrl.isEmpty) {
-      return Container(color: Colors.black);
+      // 没有封面时使用竖屏默认背景图
+      return Image.asset(
+        'assets/images/player_background_vertical.webp',
+        fit: BoxFit.cover,
+      );
     }
     
     return NetImage(
@@ -105,10 +109,15 @@ class _ShortsFlowPlayerState extends State<ShortsFlowPlayer> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // 封面背景
+        // 封面背景或竖屏默认背景图
         if (coverUrl != null && coverUrl.isNotEmpty)
           NetImage(
             url: coverUrl,
+            fit: BoxFit.cover,
+          )
+        else
+          Image.asset(
+            'assets/images/player_background_vertical.webp',
             fit: BoxFit.cover,
           ),
         // 半透明遮罩

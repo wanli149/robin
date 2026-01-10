@@ -35,7 +35,7 @@ sources.get('/admin/sources', async (c) => {
 sources.post('/admin/sources', async (c) => {
   try {
     const body = await c.req.json();
-    const { id, name, api_url, weight, is_active, response_format, is_welfare } = body;
+    const { id, name, display_name, api_url, weight, is_active, response_format, is_welfare } = body;
 
     if (!name || !api_url) {
       return c.json({ code: 0, msg: 'name and api_url are required' }, 400);
@@ -46,14 +46,14 @@ sources.post('/admin/sources', async (c) => {
 
     if (id) {
       await c.env.DB.prepare(`
-        UPDATE video_sources SET name = ?, api_url = ?, weight = ?, is_active = ?, response_format = ?, is_welfare = ? WHERE id = ?
-      `).bind(name, api_url, weight || 50, is_active ? 1 : 0, format, is_welfare ? 1 : 0, id).run();
+        UPDATE video_sources SET name = ?, display_name = ?, api_url = ?, weight = ?, is_active = ?, response_format = ?, is_welfare = ? WHERE id = ?
+      `).bind(name, display_name || null, api_url, weight || 50, is_active ? 1 : 0, format, is_welfare ? 1 : 0, id).run();
       logger.admin.info('Source updated', { id });
     } else {
       const result = await c.env.DB.prepare(`
-        INSERT INTO video_sources (name, api_url, weight, is_active, response_format, is_welfare, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM video_sources))
-      `).bind(name, api_url, weight || 50, is_active ? 1 : 0, format, is_welfare ? 1 : 0).run();
+        INSERT INTO video_sources (name, display_name, api_url, weight, is_active, response_format, is_welfare, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM video_sources))
+      `).bind(name, display_name || null, api_url, weight || 50, is_active ? 1 : 0, format, is_welfare ? 1 : 0).run();
       logger.admin.info('Source created', { id: result.meta.last_row_id });
     }
 

@@ -278,46 +278,4 @@ misc.post('/admin/hot_search', async (c) => {
   }
 });
 
-// ============================================
-// 资源站管理
-// ============================================
-
-/**
- * POST /admin/sources/auto-discover
- * 自动添加常用资源站（示例资源站，仅供参考）
- * 注意：这些资源站可能需要授权或有访问限制，请根据实际情况调整
- */
-misc.post('/admin/sources/auto-discover', async (c) => {
-  try {
-    // 示例资源站列表（仅供参考，实际使用时请根据需要添加）
-    const exampleSources = [
-      { name: '非凡资源', url: 'https://cj.ffzyapi.com/api.php/provide/vod', weight: 100 },
-      { name: '量子资源', url: 'https://cj.lziapi.com/api.php/provide/vod', weight: 90 },
-      { name: '新浪资源', url: 'https://api.xinlangapi.com/xinlangapi.php/provide/vod', weight: 80 },
-    ];
-
-    let added = 0;
-    for (const source of exampleSources) {
-      try {
-        await c.env.DB.prepare(`
-          INSERT OR IGNORE INTO video_sources (name, api_url, weight, is_active, is_welfare) VALUES (?, ?, ?, 1, 0)
-        `).bind(source.name, source.url, source.weight).run();
-        added++;
-      } catch (e) {
-        // 单个资源站添加失败不影响其他资源站
-        logger.admin.warn('Failed to add source', { sourceName: source.name, error: e instanceof Error ? e.message : 'Unknown' });
-      }
-    }
-
-    return c.json({ 
-      code: 1, 
-      msg: `已添加 ${added} 个示例资源站，请测试连接后根据需要调整`,
-      data: { added }
-    });
-  } catch (error) {
-    logger.admin.error('Auto-discover sources error', { error: error instanceof Error ? error.message : 'Unknown' });
-    return c.json({ code: 0, msg: 'Failed to auto-discover sources' }, 500);
-  }
-});
-
 export default misc;
