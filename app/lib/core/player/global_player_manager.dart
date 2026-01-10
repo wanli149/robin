@@ -73,6 +73,9 @@ class GlobalPlayerManager extends GetxController
   
   int _currentOperationId = 0;
   final Set<int> _cancelledOperations = {};
+  
+  /// 播放器是否已销毁（防止回调在销毁后触发）
+  bool _isDisposed = false;
 
   // ==================== 暂停广告相关 ====================
 
@@ -525,6 +528,7 @@ class GlobalPlayerManager extends GetxController
   }
 
   void _disposePlayer() {
+    _isDisposed = true; // 标记为已销毁，防止回调继续执行
     _cancelStreamSubscriptions();
     
     // media_kit VideoController 不需要手动 dispose
@@ -557,6 +561,7 @@ class GlobalPlayerManager extends GetxController
 
   Future<void> _createPlayerInstance(String videoUrl) async {
     _disposePlayer();
+    _isDisposed = false; // 重置销毁标志
 
     String playUrl = videoUrl;
     if (videoUrl.contains('/share/')) {
@@ -586,6 +591,8 @@ class GlobalPlayerManager extends GetxController
     if (_player == null) return;
     
     _playingSubscription = _player!.stream.playing.listen((playing) {
+      if (_isDisposed || _player == null) return; // 防止销毁后回调
+      
       final wasPlaying = currentState.value.isPlaying;
       currentState.value = currentState.value.copyWith(isPlaying: playing);
       
@@ -599,11 +606,13 @@ class GlobalPlayerManager extends GetxController
     });
     
     _positionSubscription = _player!.stream.position.listen((position) {
+      if (_isDisposed || _player == null) return; // 防止销毁后回调
       currentState.value = currentState.value.copyWith(position: position);
       notifyStateListeners();
     });
     
     _durationSubscription = _player!.stream.duration.listen((duration) {
+      if (_isDisposed || _player == null) return; // 防止销毁后回调
       currentState.value = currentState.value.copyWith(duration: duration);
       notifyStateListeners();
     });
@@ -613,12 +622,14 @@ class GlobalPlayerManager extends GetxController
     });
     
     _completedSubscription = _player!.stream.completed.listen((completed) {
+      if (_isDisposed || _player == null) return; // 防止销毁后回调
       if (completed) {
         _onPlaybackCompleted();
       }
     });
     
     _errorSubscription = _player!.stream.error.listen((errorMsg) {
+      if (_isDisposed || _player == null) return; // 防止销毁后回调
       if (errorMsg.isNotEmpty) {
         Logger.error('Player error: $errorMsg');
         
@@ -634,6 +645,7 @@ class GlobalPlayerManager extends GetxController
     
     // 🚀 监听视频宽度变化，用于判断首帧是否已渲染
     _widthSubscription = _player!.stream.width.listen((width) {
+      if (_isDisposed || _player == null) return; // 防止销毁后回调
       if (width != null && width > 0 && !hasVideoFrame.value) {
         hasVideoFrame.value = true;
         Logger.player('First video frame rendered (width: $width)');
