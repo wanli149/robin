@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-import 'package:flutter/services.dart';
 
 import 'player_enums.dart';
 import 'player_config.dart';
@@ -17,10 +16,11 @@ import 'mixins/player_listeners_mixin.dart';
 import '../http_client.dart';
 import '../pip_manager.dart';
 import '../logger.dart';
+import '../url_parser.dart';
 import '../../services/play_stats_service.dart';
 
 /// 全局播放器管理器 (基于 media_kit)
-/// 
+///
 /// 单例模式管理整个应用的视频播放，确保同一时间只有一个播放器实例。
 /// 使用 media_kit 提供更好的缓冲控制和预加载能力。
 class GlobalPlayerManager extends GetxController
@@ -32,7 +32,6 @@ class GlobalPlayerManager extends GetxController
         PlayerPreloadMixin,
         PlayerPipMixin,
         PlayerListenersMixin {
-  
   static GlobalPlayerManager get to => Get.find<GlobalPlayerManager>();
 
   // ==================== 核心属性 ====================
@@ -41,18 +40,21 @@ class GlobalPlayerManager extends GetxController
 
   /// media_kit 播放器实例
   Player? _player;
-  
+
   /// media_kit 视频控制器（用于渲染）
   VideoController? _videoController;
 
   /// 获取播放器实例
+  @override
   Player? get player => _player;
-  
+
   /// 获取视频控制器（用于 Video Widget）
+  @override
   VideoController? get videoController => _videoController;
-  
+
   /// 获取播放器实例（兼容旧代码）
-  Rx<Player?>? get playerInstance => _player != null ? Rx<Player?>(_player) : null;
+  Rx<Player?>? get playerInstance =>
+      _player != null ? Rx<Player?>(_player) : null;
 
   final Rx<PlayerConfig> currentConfig = PlayerConfig.shortsWindow().obs;
   final Rx<AppPlayerState> currentState = AppPlayerState.initial().obs;
@@ -64,16 +66,16 @@ class GlobalPlayerManager extends GetxController
   bool _shouldAutoPlay = true;
   DateTime? _switchStartTime;
   final RxInt switchLatency = 0.obs;
-  
+
   /// 视频是否已渲染首帧（有画面）
   /// 用于在视频加载时显示封面，避免黑屏
   final RxBool hasVideoFrame = false.obs;
-  
+
   // ==================== 操作取消机制 ====================
-  
+
   int _currentOperationId = 0;
   final Set<int> _cancelledOperations = {};
-  
+
   /// 播放器是否已销毁（防止回调在销毁后触发）
   bool _isDisposed = false;
 
@@ -86,9 +88,9 @@ class GlobalPlayerManager extends GetxController
 
   DateTime? _lastToggleTime;
   static const int _toggleDebounceMs = 300;
-  
+
   // ==================== 流订阅 ====================
-  
+
   StreamSubscription? _playingSubscription;
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
@@ -96,6 +98,11 @@ class GlobalPlayerManager extends GetxController
   StreamSubscription? _completedSubscription;
   StreamSubscription? _errorSubscription;
   StreamSubscription? _widthSubscription;
+
+  // 🚀 视频帧轮询定时器
+  Timer? _videoFramePollingTimer;
+  int _pollingAttempts = 0;
+  static const int _maxPollingAttempts = 50; // 最多轮询 50 次（5秒）
 
   // ==================== Mixin 接口实现 ====================
 
@@ -121,7 +128,8 @@ class GlobalPlayerManager extends GetxController
   Future<void> resumePlay() async => await play();
 
   @override
-  void notifyStateListeners() => notifyStateListenersInternal(currentState.value);
+  void notifyStateListeners() =>
+      notifyStateListenersInternal(currentState.value);
 
   @override
   bool get isPreloadingValue => isPreloading.value;
@@ -130,7 +138,11 @@ class GlobalPlayerManager extends GetxController
   void triggerPreloadNextEpisode() => preloadNextEpisode();
 
   @override
-  Future<String> getVideoUrl(ContentType contentType, String contentId, int episodeIndex) {
+  Future<String> getVideoUrl(
+    ContentType contentType,
+    String contentId,
+    int episodeIndex,
+  ) {
     return _getVideoUrl(contentType, contentId, episodeIndex);
   }
 
@@ -149,16 +161,16 @@ class GlobalPlayerManager extends GetxController
   void onClose() {
     WidgetsBinding.instance.removeObserver(this);
     PipManager.to.unregisterPlayerCallback(_onAppLifecycleChanged);
-    
+
     saveProgress();
-    
+
     disposeWakelockMixin();
     disposeProgressMixin();
     disposePreloadMixin();
     disposeListenersMixin();
-    
+
     _disposePlayer();
-    
+
     Logger.player('Manager closed');
     super.onClose();
   }
@@ -204,20 +216,23 @@ class GlobalPlayerManager extends GetxController
     bool autoPlay = true,
   }) async {
     final operationId = ++_currentOperationId;
-    
+
     try {
-      Logger.player('Switching: $contentType, $contentId, ep: $episodeIndex (opId: $operationId)');
+      Logger.player(
+        'Switching: $contentType, $contentId, ep: $episodeIndex (opId: $operationId)',
+      );
 
       _switchStartTime = DateTime.now();
       isLoading.value = true;
       error.value = '';
       hasVideoFrame.value = false; // 重置首帧状态
 
-      final isSameContent = currentState.value.contentType == contentType &&
+      final isSameContent =
+          currentState.value.contentType == contentType &&
           currentState.value.contentId == contentId;
 
       await _stopCurrentPlayback();
-      
+
       if (_isOperationCancelled(operationId)) {
         Logger.player('Operation $operationId cancelled after stop');
         return;
@@ -242,7 +257,7 @@ class GlobalPlayerManager extends GetxController
       if (playUrl.isEmpty) {
         playUrl = await _getVideoUrl(contentType, contentId, episodeIndex);
       }
-      
+
       if (_isOperationCancelled(operationId)) {
         Logger.player('Operation $operationId cancelled after getVideoUrl');
         return;
@@ -253,7 +268,7 @@ class GlobalPlayerManager extends GetxController
       }
 
       await _createPlayerInstance(playUrl);
-      
+
       if (_isOperationCancelled(operationId)) {
         Logger.player('Operation $operationId cancelled after createPlayer');
         await _stopCurrentPlayback();
@@ -264,13 +279,17 @@ class GlobalPlayerManager extends GetxController
 
       // 恢复播放进度（非短剧流模式）
       if (contentType != ContentType.shortsFlow) {
-        final savedProgress = await loadSavedProgress(contentType, contentId, episodeIndex);
+        final savedProgress = await loadSavedProgress(
+          contentType,
+          contentId,
+          episodeIndex,
+        );
         if (savedProgress.inSeconds > 0 && _player != null) {
           await _player!.seek(savedProgress);
           Logger.player('Restored progress: ${savedProgress.inSeconds}s');
         }
       }
-      
+
       if (_isOperationCancelled(operationId)) {
         Logger.player('Operation $operationId cancelled before autoPlay');
         await _stopCurrentPlayback();
@@ -284,7 +303,7 @@ class GlobalPlayerManager extends GetxController
           await _stopCurrentPlayback();
           return;
         }
-        
+
         if (contentType == ContentType.shortsFlow) {
           if (_isPlayerVisible()) {
             await play();
@@ -292,10 +311,12 @@ class GlobalPlayerManager extends GetxController
         } else {
           await play();
         }
-        
+
         // 🚀 播放后再次检查，如果被取消则暂停
         if (_isOperationCancelled(operationId)) {
-          Logger.player('Operation $operationId cancelled after play started, pausing');
+          Logger.player(
+            'Operation $operationId cancelled after play started, pausing',
+          );
           await pause();
           return;
         }
@@ -308,7 +329,9 @@ class GlobalPlayerManager extends GetxController
       }
 
       if (_switchStartTime != null) {
-        switchLatency.value = DateTime.now().difference(_switchStartTime!).inMilliseconds;
+        switchLatency.value = DateTime.now()
+            .difference(_switchStartTime!)
+            .inMilliseconds;
         Logger.info('Switch latency: ${switchLatency.value}ms');
       }
 
@@ -318,7 +341,7 @@ class GlobalPlayerManager extends GetxController
         Logger.player('Operation $operationId cancelled, ignoring error');
         return;
       }
-      
+
       error.value = '播放器初始化失败: $e';
       Logger.error('Failed to switch: $e');
 
@@ -348,22 +371,26 @@ class GlobalPlayerManager extends GetxController
       _cancelledOperations.remove(operationId);
     }
   }
-  
+
   void cancelCurrentOperation() {
     if (_currentOperationId > 0) {
       _cancelledOperations.add(_currentOperationId);
       Logger.player('Cancelled operation: $_currentOperationId');
     }
   }
-  
+
   bool _isOperationCancelled(int operationId) {
-    return _cancelledOperations.contains(operationId) || operationId != _currentOperationId;
+    return _cancelledOperations.contains(operationId) ||
+        operationId != _currentOperationId;
   }
 
   Future<void> switchEpisode(int episodeIndex) async {
     if (currentState.value.episodeIndex == episodeIndex) return;
 
-    final preloadedUrl = getPreloadedUrl(currentState.value.contentId, episodeIndex);
+    final preloadedUrl = getPreloadedUrl(
+      currentState.value.contentId,
+      episodeIndex,
+    );
 
     await switchContent(
       contentType: currentState.value.contentType,
@@ -390,8 +417,26 @@ class GlobalPlayerManager extends GetxController
 
       currentState.value = currentState.value.copyWith(isPlaying: true);
       notifyStateListeners();
-      
+
       _reportPlayStart();
+      
+      // 🚀 播放时主动检查视频帧状态
+      // 如果 hasVideoFrame 为 false，可能是轮询超时了，主动检查一次
+      if (!hasVideoFrame.value) {
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (_isDisposed || _player == null) return;
+          
+          final width = _player!.state.width;
+          final height = _player!.state.height;
+          
+          if (width != null && width > 0 && height != null && height > 0) {
+            if (!hasVideoFrame.value) {
+              hasVideoFrame.value = true;
+              Logger.success('[Manager] 🎯 Play-time check: Updated hasVideoFrame = true (width: $width, height: $height)');
+            }
+          }
+        });
+      }
     } catch (e) {
       Logger.error('Play error (ignored): $e');
     }
@@ -423,7 +468,7 @@ class GlobalPlayerManager extends GetxController
 
   Future<void> togglePlayPause() async {
     if (_isDisposed || _player == null) return;
-    
+
     final now = DateTime.now();
     if (_lastToggleTime != null &&
         now.difference(_lastToggleTime!).inMilliseconds < _toggleDebounceMs) {
@@ -461,13 +506,15 @@ class GlobalPlayerManager extends GetxController
 
   Future<void> toggleMute() async {
     if (_isDisposed || _player == null) return;
-    
+
     try {
       final newMuted = !currentState.value.isMuted;
-      await _player!.setVolume(newMuted ? 0.0 : currentState.value.volume * 100);
+      await _player!.setVolume(
+        newMuted ? 0.0 : currentState.value.volume * 100,
+      );
       currentState.value = currentState.value.copyWith(isMuted: newMuted);
       notifyStateListeners();
-      
+
       Logger.player('Mute toggled: $newMuted');
     } catch (e) {
       Logger.error('ToggleMute error (ignored): $e');
@@ -476,7 +523,7 @@ class GlobalPlayerManager extends GetxController
 
   Future<void> setMuted(bool muted) async {
     if (_isDisposed || _player == null) return;
-    
+
     try {
       await _player!.setVolume(muted ? 0.0 : currentState.value.volume * 100);
       currentState.value = currentState.value.copyWith(isMuted: muted);
@@ -488,7 +535,7 @@ class GlobalPlayerManager extends GetxController
 
   Future<void> setVolume(double volume) async {
     if (_isDisposed || _player == null) return;
-    
+
     try {
       final clampedVolume = volume.clamp(0.0, 1.0);
       if (!currentState.value.isMuted) {
@@ -545,10 +592,10 @@ class GlobalPlayerManager extends GetxController
       case 'webview':
         if (actionUrl.startsWith('webview://')) {
           final url = actionUrl.substring(10);
-          Get.toNamed('/webview', arguments: {
-            'url': url,
-            'title': adData['title'] ?? '广告详情',
-          });
+          Get.toNamed(
+            '/webview',
+            arguments: {'url': url, 'title': adData['title'] ?? '广告详情'},
+          );
         }
         break;
     }
@@ -565,7 +612,7 @@ class GlobalPlayerManager extends GetxController
 
   Future<void> _stopCurrentPlayback() async {
     if (_isDisposed || _player == null) return;
-    
+
     try {
       await _player!.pause();
       stopProgressTracking();
@@ -579,14 +626,17 @@ class GlobalPlayerManager extends GetxController
     // 先取消所有订阅，防止回调继续触发
     _cancelStreamSubscriptions();
     
+    // 🚀 停止视频帧轮询
+    _stopVideoFramePolling();
+
     // 然后标记为已销毁
     _isDisposed = true;
-    
+
     // 保存播放器引用，然后立即清空
     final playerToDispose = _player;
     _player = null;
     _videoController = null;
-    
+
     // 最后异步销毁播放器实例
     if (playerToDispose != null) {
       // 使用 Future.microtask 确保在当前事件循环结束后销毁
@@ -598,11 +648,11 @@ class GlobalPlayerManager extends GetxController
         }
       });
     }
-    
+
     stopProgressTracking();
     Logger.player('Player disposed');
   }
-  
+
   void _cancelStreamSubscriptions() {
     // 先保存引用
     final subs = [
@@ -614,7 +664,7 @@ class GlobalPlayerManager extends GetxController
       _errorSubscription,
       _widthSubscription,
     ];
-    
+
     // 立即清空引用
     _playingSubscription = null;
     _positionSubscription = null;
@@ -623,7 +673,7 @@ class GlobalPlayerManager extends GetxController
     _completedSubscription = null;
     _errorSubscription = null;
     _widthSubscription = null;
-    
+
     // 然后取消订阅
     for (final sub in subs) {
       sub?.cancel();
@@ -645,54 +695,94 @@ class GlobalPlayerManager extends GetxController
         bufferSize: 32 * 1024 * 1024, // 32MB 缓冲
       ),
     );
-    
+
     // 创建视频控制器
     _videoController = VideoController(_player!);
-    
+
     // 设置流监听
     _setupStreamListeners();
-    
+
     // 打开媒体
     await _player!.open(Media(playUrl));
+
+    // 🚀 打开媒体后，主动检查视频尺寸（多次检查，确保可靠性）
+    // 因为如果 URL 相同，width stream 可能不会再次发出事件
+    _scheduleVideoFrameCheck();
 
     Logger.player('Player created: $playUrl');
   }
 
   void _setupStreamListeners() {
     if (_player == null) return;
-    
+
     // 保存当前播放器引用，用于回调中验证
     final currentPlayer = _player;
-    
-    _playingSubscription = _player!.stream.playing.listen((playing) {
+
+    // 🚀 监听视频宽度变化，用于判断首帧是否已渲染
+    _widthSubscription = _player!.stream.width.listen((width) {
       try {
         if (_isDisposed || _player == null || _player != currentPlayer) return;
         
+        // 🚀 响应式更新：根据视频尺寸实时更新 hasVideoFrame 状态
+        final hasValidFrame = width != null && width > 0;
+        
+        Logger.player('[Manager] Width stream event: width=$width, hasValidFrame=$hasValidFrame, current hasVideoFrame=${hasVideoFrame.value}');
+        
+        if (hasVideoFrame.value != hasValidFrame) {
+          hasVideoFrame.value = hasValidFrame;
+          Logger.player('[Manager] Video frame state changed: $hasValidFrame (width: $width)');
+        }
+      } catch (e) {
+        Logger.error('Width listener error (ignored): $e');
+      }
+    });
+    
+    // 🚀 监听播放状态，当开始播放但 hasVideoFrame 为 false 时，启动轮询检查
+    _playingSubscription = _player!.stream.playing.listen((playing) {
+      try {
+        if (_isDisposed || _player == null || _player != currentPlayer) return;
+
         final wasPlaying = currentState.value.isPlaying;
         currentState.value = currentState.value.copyWith(isPlaying: playing);
-        
+
+        // 🚀 当开始播放但 hasVideoFrame 为 false 时，启动轮询检查
+        if (playing && !hasVideoFrame.value) {
+          _startVideoFramePolling();
+        }
+
         if (playing && !wasPlaying) {
           registerToPipManager();
         } else if (!playing && wasPlaying && !PipManager.to.isInPipMode.value) {
           unregisterFromPipManager();
         }
-        
+
         notifyStateListeners();
       } catch (e) {
         Logger.error('Playing listener error (ignored): $e');
       }
     });
-    
+
+    // 🚀 优化：进度更新节流（从 60 FPS 降低到 1 次/秒）
+    DateTime? lastPositionUpdate;
     _positionSubscription = _player!.stream.position.listen((position) {
       try {
         if (_isDisposed || _player == null || _player != currentPlayer) return;
+        
+        // 节流：每秒最多更新 1 次（避免 60 FPS 的频繁重建）
+        final now = DateTime.now();
+        if (lastPositionUpdate != null && 
+            now.difference(lastPositionUpdate!).inMilliseconds < 1000) {
+          return;
+        }
+        lastPositionUpdate = now;
+        
         currentState.value = currentState.value.copyWith(position: position);
         notifyStateListeners();
       } catch (e) {
         Logger.error('Position listener error (ignored): $e');
       }
     });
-    
+
     _durationSubscription = _player!.stream.duration.listen((duration) {
       try {
         if (_isDisposed || _player == null || _player != currentPlayer) return;
@@ -702,11 +792,11 @@ class GlobalPlayerManager extends GetxController
         Logger.error('Duration listener error (ignored): $e');
       }
     });
-    
+
     _bufferSubscription = _player!.stream.buffer.listen((buffer) {
       // 可以用于显示缓冲进度
     });
-    
+
     _completedSubscription = _player!.stream.completed.listen((completed) {
       try {
         if (_isDisposed || _player == null || _player != currentPlayer) return;
@@ -717,13 +807,13 @@ class GlobalPlayerManager extends GetxController
         Logger.error('Completed listener error (ignored): $e');
       }
     });
-    
+
     _errorSubscription = _player!.stream.error.listen((errorMsg) {
       try {
         if (_isDisposed || _player == null || _player != currentPlayer) return;
         if (errorMsg.isNotEmpty) {
           Logger.error('Player error: $errorMsg');
-          
+
           // 🚀 智能错误处理：网络错误自动重试
           if (_isNetworkError(errorMsg)) {
             _handleNetworkError(errorMsg);
@@ -736,21 +826,8 @@ class GlobalPlayerManager extends GetxController
         Logger.error('Error listener error (ignored): $e');
       }
     });
-    
-    // 🚀 监听视频宽度变化，用于判断首帧是否已渲染
-    _widthSubscription = _player!.stream.width.listen((width) {
-      try {
-        if (_isDisposed || _player == null || _player != currentPlayer) return;
-        if (width != null && width > 0 && !hasVideoFrame.value) {
-          hasVideoFrame.value = true;
-          Logger.player('First video frame rendered (width: $width)');
-        }
-      } catch (e) {
-        Logger.error('Width listener error (ignored): $e');
-      }
-    });
   }
-  
+
   /// 🚀 判断是否为网络错误
   bool _isNetworkError(String errorMsg) {
     final networkErrorPatterns = [
@@ -766,48 +843,50 @@ class GlobalPlayerManager extends GetxController
       'refused',
       'unreachable',
     ];
-    
+
     final lowerMsg = errorMsg.toLowerCase();
     return networkErrorPatterns.any((pattern) => lowerMsg.contains(pattern));
   }
-  
+
   /// 🚀 处理网络错误，自动重试
   Future<void> _handleNetworkError(String errorMsg) async {
     final currentRetry = retryCount.value;
-    
+
     if (currentRetry < maxRetryCount) {
       retryCount.value = currentRetry + 1;
-      Logger.warning('[Player] Network error, retry ${retryCount.value}/$maxRetryCount: $errorMsg');
-      
+      Logger.warning(
+        '[Player] Network error, retry ${retryCount.value}/$maxRetryCount: $errorMsg',
+      );
+
       // 显示重试提示
       error.value = '网络波动，正在重试 (${retryCount.value}/$maxRetryCount)...';
       isLoading.value = true;
-      
+
       // 延迟后重试，递增延迟
       await Future.delayed(Duration(seconds: currentRetry + 1));
-      
+
       // 重新播放当前内容
       try {
         final state = currentState.value;
         final currentPosition = state.position;
-        
+
         // 重新创建播放器
         await _stopCurrentPlayback();
-        
+
         final playUrl = await _getVideoUrl(
           state.contentType,
           state.contentId,
           state.episodeIndex,
         );
-        
+
         if (playUrl.isNotEmpty) {
           await _createPlayerInstance(playUrl);
-          
+
           // 恢复播放位置
           if (currentPosition.inSeconds > 0 && _player != null) {
             await _player!.seek(currentPosition);
           }
-          
+
           await play();
           error.value = '';
           Logger.success('[Player] Retry successful');
@@ -841,17 +920,18 @@ class GlobalPlayerManager extends GetxController
   Future<void> _autoPlayNextEpisode() async {
     try {
       final state = currentState.value;
-      
+
       if (state.contentType == ContentType.shortsFlow) {
         Logger.player('ShortsFlow mode, skip auto play next');
         return;
       }
-      
+
       final nextEpisodeIndex = state.episodeIndex + 1;
 
       List? episodes;
       try {
-        if (state.contentId.isNotEmpty && Get.isRegistered<dynamic>(tag: state.contentId)) {
+        if (state.contentId.isNotEmpty &&
+            Get.isRegistered<dynamic>(tag: state.contentId)) {
           final controller = Get.find<dynamic>(tag: state.contentId);
           if (controller != null && controller.episodes != null) {
             episodes = controller.episodes as List;
@@ -873,11 +953,17 @@ class GlobalPlayerManager extends GetxController
     }
   }
 
-  Future<String> _getVideoUrl(ContentType contentType, String contentId, int episodeIndex) async {
+  Future<String> _getVideoUrl(
+    ContentType contentType,
+    String contentId,
+    int episodeIndex,
+  ) async {
     try {
       switch (contentType) {
         case ContentType.shorts:
-          final response = await _httpClient.get('/api/shorts/series/$contentId');
+          final response = await _httpClient.get(
+            '/api/shorts/series/$contentId',
+          );
           if (response.statusCode == 200 && response.data != null) {
             final data = response.data;
             if (data['code'] == 1 && data['data'] != null) {
@@ -919,22 +1005,7 @@ class GlobalPlayerManager extends GetxController
   }
 
   String _parseVideoUrl(String playUrl) {
-    if (playUrl.isEmpty) return '';
-
-    if (!playUrl.contains('#') && !playUrl.contains('\$')) {
-      return playUrl.trim();
-    }
-
-    String firstEpisode = playUrl.contains('#') ? playUrl.split('#')[0] : playUrl;
-
-    if (firstEpisode.contains('\$')) {
-      final parts = firstEpisode.split('\$');
-      if (parts.length > 1) {
-        return parts[1].trim();
-      }
-    }
-
-    return playUrl.trim();
+    return UrlParser.parseVideoUrl(playUrl);
   }
 
   String _parsePlayUrlFromNewFormat(List playSources, int episodeIndex) {
@@ -948,9 +1019,9 @@ class GlobalPlayerManager extends GetxController
           break;
         }
       }
-      
+
       selectedSource ??= playSources[0] as Map<String, dynamic>;
-      
+
       final episodes = selectedSource['episodes'] as List? ?? [];
       if (episodeIndex > 0 && episodeIndex <= episodes.length) {
         final episode = episodes[episodeIndex - 1] as Map<String, dynamic>;
@@ -959,7 +1030,7 @@ class GlobalPlayerManager extends GetxController
     } catch (e) {
       Logger.error('Failed to parse new format URL: $e');
     }
-    
+
     return '';
   }
 
@@ -987,7 +1058,10 @@ class GlobalPlayerManager extends GetxController
     if (!_shouldAutoPlay) return false;
     if (_player == null) return false;
     if (PipManager.to.isInPipMode.value) return true;
-    if (playerMode.value != PlayerMode.flow && playerMode.value != PlayerMode.window) return false;
+    if (playerMode.value != PlayerMode.flow &&
+        playerMode.value != PlayerMode.window) {
+      return false;
+    }
     return true;
   }
 
@@ -1028,33 +1102,126 @@ class GlobalPlayerManager extends GetxController
 
     return '播放失败，请重试';
   }
-  
+
+  /// 🚀 定时检查视频帧状态（多次检查，确保可靠性）
+  void _scheduleVideoFrameCheck() {
+    // 第一次检查：300ms（快速响应）
+    Future.delayed(const Duration(milliseconds: 300), () {
+      _checkVideoFrame('Check-1');
+    });
+    
+    // 第二次检查：600ms（中等延迟）
+    Future.delayed(const Duration(milliseconds: 600), () {
+      _checkVideoFrame('Check-2');
+    });
+    
+    // 第三次检查：1000ms（确保完全加载）
+    Future.delayed(const Duration(milliseconds: 1000), () {
+      _checkVideoFrame('Check-3');
+    });
+  }
+
+  /// 🚀 检查视频帧状态并更新 hasVideoFrame
+  void _checkVideoFrame(String checkPoint) {
+    if (_isDisposed || _player == null) return;
+    
+    final width = _player!.state.width;
+    final height = _player!.state.height;
+    
+    Logger.player('[Manager] $checkPoint: width=$width, height=$height, hasVideoFrame=${hasVideoFrame.value}');
+    
+    // 🚀 如果视频已经有尺寸但 hasVideoFrame 为 false，立即更新
+    if (width != null && width > 0 && height != null && height > 0) {
+      if (!hasVideoFrame.value) {
+        hasVideoFrame.value = true;
+        Logger.player('[Manager] $checkPoint: Updated hasVideoFrame = true (width: $width, height: $height)');
+      }
+    }
+  }
+
+  /// 🚀 启动视频帧轮询（当播放开始但 hasVideoFrame 为 false 时）
+  void _startVideoFramePolling() {
+    // 停止之前的轮询
+    _stopVideoFramePolling();
+    
+    _pollingAttempts = 0;
+    Logger.player('[Manager] 🔍 Starting video frame polling (hasVideoFrame: ${hasVideoFrame.value})');
+    
+    _videoFramePollingTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (_isDisposed || _player == null) {
+        Logger.player('[Manager] ⚠️ Polling stopped: Player disposed');
+        _stopVideoFramePolling();
+        return;
+      }
+      
+      _pollingAttempts++;
+      
+      final width = _player!.state.width;
+      final height = _player!.state.height;
+      
+      // 每 5 次轮询输出一次日志（避免日志过多）
+      if (_pollingAttempts % 5 == 0) {
+        Logger.player('[Manager] 🔍 Polling attempt $_pollingAttempts: width=$width, height=$height');
+      }
+      
+      // 如果检测到视频尺寸，立即更新并停止轮询
+      if (width != null && width > 0 && height != null && height > 0) {
+        if (!hasVideoFrame.value) {
+          hasVideoFrame.value = true;
+          Logger.success('[Manager] ✅ Polling success: hasVideoFrame = true (width: $width, height: $height, attempts: $_pollingAttempts)');
+        }
+        _stopVideoFramePolling();
+        return;
+      }
+      
+      // 达到最大轮询次数，停止轮询
+      if (_pollingAttempts >= _maxPollingAttempts) {
+        Logger.warning('[Manager] ⏱️ Polling timeout: No video frame after $_pollingAttempts attempts (width: $width, height: $height)');
+        _stopVideoFramePolling();
+        return;
+      }
+      
+      // 如果播放已停止，停止轮询
+      if (!currentState.value.isPlaying) {
+        Logger.player('[Manager] ⏸️ Polling stopped: Playback stopped');
+        _stopVideoFramePolling();
+        return;
+      }
+    });
+  }
+
+  /// 🚀 停止视频帧轮询
+  void _stopVideoFramePolling() {
+    _videoFramePollingTimer?.cancel();
+    _videoFramePollingTimer = null;
+  }
+
   // ==================== 播放统计 ====================
-  
+
   void _reportPlayStart() {
     if (!Get.isRegistered<PlayStatsService>()) return;
-    
+
     final state = currentState.value;
     if (state.contentId.isEmpty) return;
     if (state.contentType == ContentType.shortsFlow) return;
-    
+
     PlayStatsService.to.reportPlayStart(
       vodId: state.contentId,
       vodType: _getVodType(state.contentType),
       episodeIndex: state.episodeIndex,
     );
   }
-  
+
   void reportValidPlay() {
     if (!Get.isRegistered<PlayStatsService>()) return;
-    
+
     final state = currentState.value;
     if (state.contentId.isEmpty) return;
     if (state.contentType == ContentType.shortsFlow) return;
-    
+
     final playedSeconds = state.position.inSeconds;
     final totalSeconds = state.duration.inSeconds;
-    
+
     if (playedSeconds >= 30 && totalSeconds > 0) {
       PlayStatsService.to.reportValidPlay(
         vodId: state.contentId,
@@ -1065,21 +1232,21 @@ class GlobalPlayerManager extends GetxController
       );
     }
   }
-  
+
   void _reportPlayComplete() {
     if (!Get.isRegistered<PlayStatsService>()) return;
-    
+
     final state = currentState.value;
     if (state.contentId.isEmpty) return;
     if (state.contentType == ContentType.shortsFlow) return;
-    
+
     PlayStatsService.to.reportPlayComplete(
       vodId: state.contentId,
       vodType: _getVodType(state.contentType),
       episodeIndex: state.episodeIndex,
     );
   }
-  
+
   String _getVodType(ContentType contentType) {
     switch (contentType) {
       case ContentType.movie:

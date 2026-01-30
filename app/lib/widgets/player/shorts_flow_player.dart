@@ -28,155 +28,215 @@ class _ShortsFlowPlayerState extends State<ShortsFlowPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() {
-      final videoController = _manager.videoController;
-      final state = _manager.currentState.value;
-      final isLoading = _manager.isLoading.value;
-      final error = _manager.error.value;
-
-      return GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: widget.onTap,
-        onDoubleTap: _manager.togglePlayPause,
-        child: Container(
-          width: double.infinity,
-          height: double.infinity,
-          color: Colors.black,
+    // 🚀 性能优化：只监听必要的状态，避免整个 widget 树重建
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: widget.onTap,
+      onDoubleTap: _manager.togglePlayPause,
+      child: Container(
+        width: double.infinity,
+        height: double.infinity,
+        color: Colors.black,
+        child: RepaintBoundary( // 🚀 隔离重绘边界
           child: Stack(
             fit: StackFit.expand,
             children: [
-              _buildVideoPlayer(videoController),
-              if (isLoading) _buildLoadingIndicator(),
-              if (error.isNotEmpty) _buildErrorIndicator(error),
-              if (!state.isPlaying && !isLoading && error.isEmpty)
-                _buildPlayIcon(),
+              _VideoPlayerWidget(manager: _manager),
+              _LoadingIndicator(manager: _manager, coverUrl: widget.coverUrl),
+              _ErrorIndicator(manager: _manager),
+              _PlayIcon(manager: _manager),
               if (widget.overlay != null) widget.overlay!,
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 🚀 独立的视频播放器 widget - 只监听必要的状态
+class _VideoPlayerWidget extends StatelessWidget {
+  final GlobalPlayerManager manager;
+
+  const _VideoPlayerWidget({required this.manager});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final videoController = manager.videoController;
+      
+      if (videoController == null) {
+        return const SizedBox.shrink();
+      }
+
+      final hasFrame = manager.hasVideoFrame.value;
+      
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          // 视频层（始终渲染）
+          SizedBox.expand(
+            child: Video(
+              controller: videoController,
+              fit: BoxFit.cover,
+              controls: NoVideoControls,
+            ),
+          ),
+          // 封面层：首帧未渲染时显示
+          if (!hasFrame) _CoverPlaceholder(manager: manager),
+        ],
       );
     });
   }
+}
 
-  Widget _buildVideoPlayer(VideoController? videoController) {
-    if (videoController == null) {
-      // 播放器未初始化时显示封面
-      return _buildCoverPlaceholder();
-    }
+/// 🚀 独立的加载指示器 widget
+class _LoadingIndicator extends StatelessWidget {
+  final GlobalPlayerManager manager;
+  final String? coverUrl;
 
-    // 🚀 检查视频是否已渲染首帧
-    final hasFrame = _manager.hasVideoFrame.value;
-    
-    // 使用 media_kit 的 Video widget，填充整个容器
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // 视频层
-        SizedBox.expand(
-          child: Video(
-            controller: videoController,
-            fit: BoxFit.cover, // 短剧流使用 cover 填充
-            controls: NoVideoControls,
+  const _LoadingIndicator({required this.manager, this.coverUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      if (!manager.isLoading.value) {
+        return const SizedBox.shrink();
+      }
+
+      final url = coverUrl ?? manager.currentState.value.coverUrl;
+      
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          // 封面背景
+          if (url != null && url.isNotEmpty)
+            NetImage(url: url, fit: BoxFit.contain)
+          else
+            Image.asset(
+              'assets/images/player_background_vertical.webp',
+              fit: BoxFit.cover,
+            ),
+          // 半透明遮罩
+          Container(color: Colors.black.withValues(alpha: 0.3)),
+          // 加载指示器
+          const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
+              strokeWidth: 3,
+            ),
           ),
-        ),
-        // 🚀 首帧未渲染时显示封面（避免黑屏）
-        if (!hasFrame) _buildCoverPlaceholder(),
-      ],
-    );
+        ],
+      );
+    });
   }
+}
 
-  /// 构建封面占位符
-  Widget _buildCoverPlaceholder() {
-    final coverUrl = widget.coverUrl ?? _manager.currentState.value.coverUrl;
+/// 🚀 独立的错误指示器 widget
+class _ErrorIndicator extends StatelessWidget {
+  final GlobalPlayerManager manager;
+
+  const _ErrorIndicator({required this.manager});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final error = manager.error.value;
+      
+      if (error.isEmpty) {
+        return const SizedBox.shrink();
+      }
+
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white54, size: 48),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                error,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                manager.switchContent(
+                  contentType: manager.currentState.value.contentType,
+                  contentId: manager.currentState.value.contentId,
+                  episodeIndex: manager.currentState.value.episodeIndex,
+                  config: manager.currentConfig.value,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC107),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              child: const Text('重试', style: TextStyle(color: Colors.black)),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+}
+
+/// 🚀 独立的播放图标 widget
+class _PlayIcon extends StatelessWidget {
+  final GlobalPlayerManager manager;
+
+  const _PlayIcon({required this.manager});
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final state = manager.currentState.value;
+      final isLoading = manager.isLoading.value;
+      final error = manager.error.value;
+      
+      if (state.isPlaying || isLoading || error.isNotEmpty) {
+        return const SizedBox.shrink();
+      }
+
+      return const Center(
+        child: Icon(Icons.play_circle_outline, color: Colors.white, size: 80),
+      );
+    });
+  }
+}
+
+/// 🚀 封面占位符 widget
+class _CoverPlaceholder extends StatelessWidget {
+  final GlobalPlayerManager manager;
+
+  const _CoverPlaceholder({required this.manager});
+
+  @override
+  Widget build(BuildContext context) {
+    final coverUrl = manager.currentState.value.coverUrl;
     
     if (coverUrl == null || coverUrl.isEmpty) {
-      // 没有封面时使用竖屏默认背景图
       return Image.asset(
         'assets/images/player_background_vertical.webp',
         fit: BoxFit.cover,
       );
     }
     
-    return NetImage(
-      url: coverUrl,
-      fit: BoxFit.cover,
-    );
-  }
-
-  Widget _buildLoadingIndicator() {
-    final coverUrl = widget.coverUrl ?? _manager.currentState.value.coverUrl;
-    
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // 封面背景或竖屏默认背景图
-        if (coverUrl != null && coverUrl.isNotEmpty)
-          NetImage(
-            url: coverUrl,
-            fit: BoxFit.cover,
-          )
-        else
-          Image.asset(
-            'assets/images/player_background_vertical.webp',
-            fit: BoxFit.cover,
-          ),
-        // 半透明遮罩
-        Container(
-          color: Colors.black.withValues(alpha: 0.3),
-        ),
-        // 加载指示器
-        const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
-            strokeWidth: 3,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildErrorIndicator(String error) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
+    return RepaintBoundary(
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          const Icon(Icons.error_outline, color: Colors.white54, size: 48),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              error,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              textAlign: TextAlign.center,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () {
-              _manager.switchContent(
-                contentType: _manager.currentState.value.contentType,
-                contentId: _manager.currentState.value.contentId,
-                episodeIndex: _manager.currentState.value.episodeIndex,
-                config: _manager.currentConfig.value,
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFC107),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-            child: const Text('重试', style: TextStyle(color: Colors.black)),
-          ),
+          NetImage(url: coverUrl, fit: BoxFit.cover),
+          Container(color: Colors.black.withValues(alpha: 0.6)),
+          NetImage(url: coverUrl, fit: BoxFit.contain),
         ],
       ),
-    );
-  }
-
-  Widget _buildPlayIcon() {
-    return const Center(
-      child: Icon(Icons.play_circle_outline, color: Colors.white, size: 80),
     );
   }
 }
