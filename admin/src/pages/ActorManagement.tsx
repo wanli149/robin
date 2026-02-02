@@ -214,7 +214,7 @@ const ActorManagement: React.FC = () => {
       const data = await getCollectStats();
       setStats(data.actors);
     } catch (err) {
-      console.error('Failed to load stats:', err);
+      logger.admin.error('Failed to load stats:', { error: err });
     }
   };
 

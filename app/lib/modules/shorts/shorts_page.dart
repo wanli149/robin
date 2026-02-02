@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 import 'shorts_controller.dart';
 import 'widgets/shorts_video_item.dart';
 import '../root/root_controller.dart';
-import '../../core/global_player_manager.dart';
+import '../../core/player/global_player_manager.dart';
 import '../../core/logger.dart';
 
 /// 短剧页面
@@ -53,6 +53,8 @@ class _ShortsPageState extends State<ShortsPage> with AutomaticKeepAliveClientMi
             // 🚀 页面变为不可见时，禁止播放并暂停所有视频
             GlobalPlayerManager.to.setPlayPermission(false);
             controller.pauseAllVideos();
+            // 🚀 清除临时播放进度（用户切换到其他导航）
+            controller.clearTempProgress();
           }
           
           // 强制刷新UI以更新isActive状态
@@ -114,8 +116,8 @@ class _ShortsPageState extends State<ShortsPage> with AutomaticKeepAliveClientMi
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Obx(() {
+      // 🚀 移除 SafeArea，实现全屏沉浸式体验
+      body: Obx(() {
         // 加载中
         if (controller.isLoading.value && controller.shortsList.isEmpty) {
           return const Center(
@@ -202,8 +204,7 @@ class _ShortsPageState extends State<ShortsPage> with AutomaticKeepAliveClientMi
             ));
           },
         );
-        }),
-      ),
+      }),
     );
   }
 }

@@ -3,6 +3,8 @@
  * Signs sensitive API responses to prevent man-in-the-middle tampering
  */
 
+import { getCurrentTimestamp } from './time';
+
 /**
  * Generate response signature
  * @param data Response data
@@ -38,7 +40,7 @@ export async function createSignedResponse(
   timestamp: number;
   signature: string;
 }> {
-  const timestamp = Math.floor(Date.now() / 1000);
+  const timestamp = getCurrentTimestamp();
   const signature = await signResponse(data, secretKey, timestamp);
   
   return {
@@ -59,7 +61,7 @@ export async function verifyResponseSignature(
   maxAge: number = 300 // Default 5 minutes validity
 ): Promise<boolean> {
   // Check if timestamp is expired
-  const now = Math.floor(Date.now() / 1000);
+  const now = getCurrentTimestamp();
   if (Math.abs(now - timestamp) > maxAge) {
     return false;
   }

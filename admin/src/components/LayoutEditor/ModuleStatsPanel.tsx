@@ -30,7 +30,7 @@ const ModuleStatsPanel: React.FC<ModuleStatsPanelProps> = ({ tabId, moduleId }) 
       setStats(data.stats);
       setDateRange(data.date_range);
     } catch (error: any) {
-      console.error('Failed to load stats:', error);
+      logger.admin.error('Failed to load stats:', { error });
     } finally {
       setLoading(false);
     }

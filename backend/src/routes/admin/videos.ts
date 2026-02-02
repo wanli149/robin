@@ -215,24 +215,35 @@ videos.post('/admin/videos/batch', async (c) => {
       return c.json({ code: 0, msg: 'vod_ids is required' }, 400);
     }
 
-    const placeholders = vod_ids.map(() => '?').join(',');
-    const now = Math.floor(Date.now() / 1000);
+    // 安全地生成 placeholders
+    if (!Array.isArray(vod_ids) || vod_ids.length === 0) {
+      return c.json({ code: 0, msg: 'Invalid video IDs' }, 400);
+    }
+    
+    // 验证所有ID都是有效字符串
+    const validIds = vod_ids.filter((id: unknown) => typeof id === 'string' && id.length > 0);
+    if (validIds.length !== vod_ids.length) {
+      return c.json({ code: 0, msg: 'All IDs must be valid strings' }, 400);
+    }
+    
+    const placeholders = generatePlaceholders(validIds.length);
+    const now = getCurrentTimestamp();
 
     switch (action) {
       case 'delete':
-        await c.env.DB.prepare(`DELETE FROM vod_cache WHERE vod_id IN (${placeholders})`).bind(...vod_ids).run();
+        await c.env.DB.prepare(`DELETE FROM vod_cache WHERE vod_id IN (${placeholders})`).bind(...validIds).run();
         break;
       case 'mark_valid':
-        await c.env.DB.prepare(`UPDATE vod_cache SET is_valid = 1, updated_at = ? WHERE vod_id IN (${placeholders})`).bind(now, ...vod_ids).run();
+        await c.env.DB.prepare(`UPDATE vod_cache SET is_valid = 1, updated_at = ? WHERE vod_id IN (${placeholders})`).bind(now, ...validIds).run();
         break;
       case 'mark_invalid':
-        await c.env.DB.prepare(`UPDATE vod_cache SET is_valid = 0, updated_at = ? WHERE vod_id IN (${placeholders})`).bind(now, ...vod_ids).run();
+        await c.env.DB.prepare(`UPDATE vod_cache SET is_valid = 0, updated_at = ? WHERE vod_id IN (${placeholders})`).bind(now, ...validIds).run();
         break;
       case 'change_category':
         if (data?.type_id) {
           const typeNames: Record<number, string> = { 1: '电影', 2: '电视剧', 3: '综艺', 4: '动漫', 5: '短剧', 6: '体育', 7: '纪录片', 8: '预告片' };
           await c.env.DB.prepare(`UPDATE vod_cache SET type_id = ?, type_name = ?, updated_at = ? WHERE vod_id IN (${placeholders})`)
-            .bind(data.type_id, typeNames[data.type_id] || '其他', now, ...vod_ids).run();
+            .bind(data.type_id, typeNames[data.type_id] || '其他', now, ...validIds).run();
         }
         break;
       default:
@@ -294,7 +305,8 @@ videos.get('/admin/video/:id/sources', async (c) => {
           });
         }
       }
-    } catch (e) {
+    } catch (error) {
+      logger.admin.warn('Failed to parse play_url JSON', { error: error instanceof Error ? error.message : String(error) });
       // JSON 解析失败
     }
 
@@ -437,7 +449,10 @@ videos.post('/admin/video/:id/repair', async (c) => {
  */
 videos.post('/admin/videos/repair-invalid', async (c) => {
   try {
-    const body = await c.req.json().catch(() => ({}));
+    const body = await c.req.json().catch((err) => {
+      logger.admin.warn('Failed to parse request body', { error: err.message });
+      return {};
+    });
     const { type_id, sub_type_id, limit = 20 } = body;
     
     // 查询失效视频

@@ -16,6 +16,7 @@
     "@refinedev/core": "^5.0.6",
     "antd": "^5.29.1",
     "axios": "^1.13.2",
+    "dompurify": "^3.2.2",
     "react": "^19.2.0",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@types/dompurify": "^3.2.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",

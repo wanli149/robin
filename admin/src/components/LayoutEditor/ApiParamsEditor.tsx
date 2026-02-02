@@ -31,7 +31,7 @@ const ApiParamsEditor: React.FC<ApiParamsEditorProps> = ({ moduleType, value, on
         const data = await getCategoriesWithSubs();
         setCategories(data.categories || []);
       } catch (error) {
-        console.error('Failed to load categories:', error);
+        logger.admin.error('Failed to load categories:', { error });
         // 不使用硬编码降级，显示空列表让用户知道需要配置分类
         setCategories([]);
       } finally {

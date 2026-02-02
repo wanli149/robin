@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../../core/global_player_manager.dart';
+import '../../../core/player/global_player_manager.dart';
+import '../../../core/player/player_enums.dart';
 import '../../../core/player/player_state.dart' show AppPlayerState;
 
 /// 播放器控制组件基类

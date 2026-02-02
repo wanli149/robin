@@ -7,6 +7,7 @@
 
 import { ARTICLE_TYPE_MAPPING } from '../scripts/migrate_articles_actors';
 import { logger } from '../utils/logger';
+import { getCurrentTimestamp } from '../utils/time';
 
 interface Env {
   DB: D1Database;
@@ -187,7 +188,7 @@ async function saveArticle(
   const localTypeId = ARTICLE_TYPE_MAPPING[article.type_id] || 1;
   
   // 解析发布时间
-  let publishedAt = Math.floor(Date.now() / 1000);
+  let publishedAt = getCurrentTimestamp();
   if (article.art_time) {
     const parsed = Date.parse(article.art_time);
     if (!isNaN(parsed)) {
@@ -195,7 +196,7 @@ async function saveArticle(
     }
   }
   
-  const now = Math.floor(Date.now() / 1000);
+  const now = getCurrentTimestamp();
   
   if (existing) {
     // 如果是详情采集且已有内容，或者只是列表采集，跳过

@@ -66,7 +66,7 @@ const PerformanceMonitor: React.FC = () => {
       setHealth(data.health);
       setReport(data.report);
     } catch (error) {
-      console.error('Failed to load metrics:', error);
+      logger.admin.error('Failed to load metrics:', { error });
     } finally {
       setLoading(false);
     }

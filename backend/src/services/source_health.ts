@@ -7,6 +7,7 @@ import { parseResponse, detectFormat, type ResponseFormat } from './response_par
 import { logger } from '../utils/logger';
 import { HEALTH_THRESHOLDS } from '../config';
 import type { VideoSourceRow, SourceHealthRow } from '../types/database';
+import { getCurrentTimestamp } from '../utils/time';
 
 interface Env {
   DB: D1Database;
@@ -136,7 +137,7 @@ async function updateHealthRecord(
   sourceName: string,
   result: HealthCheckResult
 ): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
+  const now = getCurrentTimestamp();
   
   // 获取现有记录
   const existing = await env.DB.prepare(`

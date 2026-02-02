@@ -4,41 +4,14 @@
  */
 
 import { BaseStorageAdapter } from './base';
-import type { ConnectionTestResult } from '../types';
-
-// 七牛区域配置
-const QINIU_ZONES: Record<string, { up: string; rs: string; rsf: string }> = {
-  z0: { // 华东
-    up: 'https://up.qiniup.com',
-    rs: 'https://rs.qbox.me',
-    rsf: 'https://rsf.qbox.me',
-  },
-  z1: { // 华北
-    up: 'https://up-z1.qiniup.com',
-    rs: 'https://rs-z1.qbox.me',
-    rsf: 'https://rsf-z1.qbox.me',
-  },
-  z2: { // 华南
-    up: 'https://up-z2.qiniup.com',
-    rs: 'https://rs-z2.qbox.me',
-    rsf: 'https://rsf-z2.qbox.me',
-  },
-  na0: { // 北美
-    up: 'https://up-na0.qiniup.com',
-    rs: 'https://rs-na0.qbox.me',
-    rsf: 'https://rsf-na0.qbox.me',
-  },
-  as0: { // 东南亚
-    up: 'https://up-as0.qiniup.com',
-    rs: 'https://rs-as0.qbox.me',
-    rsf: 'https://rsf-as0.qbox.me',
-  },
-};
+import type { ConnectionTestResult, ImageStorageConfig } from '../types';
+import { getCurrentTimestamp, TIME_CONSTANTS } from '../../../utils/time';
+import { QINIU_ZONES } from '../../../config';
 
 export class QiniuAdapter extends BaseStorageAdapter {
   private zone: { up: string; rs: string; rsf: string } = QINIU_ZONES.z0;
 
-  async initialize(config: any): Promise<void> {
+  async initialize(config: ImageStorageConfig): Promise<void> {
     await super.initialize(config);
     
     // 设置区域
@@ -49,7 +22,7 @@ export class QiniuAdapter extends BaseStorageAdapter {
   /**
    * 生成七牛上传凭证
    */
-  private generateUploadToken(key: string): string {
+  private async generateUploadToken(key: string): Promise<string> {
     this.ensureInitialized();
     
     const accessKey = this.config!.access_key!;
@@ -59,11 +32,11 @@ export class QiniuAdapter extends BaseStorageAdapter {
     // 上传策略
     const putPolicy = {
       scope: `${bucket}:${key}`,
-      deadline: Math.floor(Date.now() / 1000) + 3600, // 1小时有效
+      deadline: getCurrentTimestamp() + TIME_CONSTANTS.HOUR,
     };
     
     const encodedPolicy = this.base64UrlSafe(JSON.stringify(putPolicy));
-    const sign = this.hmacSha1(encodedPolicy, secretKey);
+    const sign = await this.hmacSha1(encodedPolicy, secretKey);
     const encodedSign = this.base64UrlSafe(sign);
     
     return `${accessKey}:${encodedSign}:${encodedPolicy}`;
@@ -72,7 +45,7 @@ export class QiniuAdapter extends BaseStorageAdapter {
   /**
    * 生成管理凭证
    */
-  private generateManageToken(url: string, body?: string): string {
+  private async generateManageToken(url: string, body?: string): Promise<string> {
     this.ensureInitialized();
     
     const accessKey = this.config!.access_key!;
@@ -84,7 +57,7 @@ export class QiniuAdapter extends BaseStorageAdapter {
       signingStr += body;
     }
     
-    const sign = this.hmacSha1(signingStr, secretKey);
+    const sign = await this.hmacSha1(signingStr, secretKey);
     const encodedSign = this.base64UrlSafe(sign);
     
     return `QBox ${accessKey}:${encodedSign}`;
@@ -93,7 +66,7 @@ export class QiniuAdapter extends BaseStorageAdapter {
   async upload(key: string, data: ArrayBuffer, contentType: string): Promise<string> {
     this.ensureInitialized();
     
-    const token = this.generateUploadToken(key);
+    const token = await this.generateUploadToken(key);
     
     // 构建 multipart/form-data
     const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
@@ -144,7 +117,7 @@ export class QiniuAdapter extends BaseStorageAdapter {
     const encodedEntry = this.base64UrlSafe(`${bucket}:${key}`);
     const url = `${this.zone.rs}/delete/${encodedEntry}`;
     
-    const token = this.generateManageToken(url);
+    const token = await this.generateManageToken(url);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -167,7 +140,7 @@ export class QiniuAdapter extends BaseStorageAdapter {
     const encodedEntry = this.base64UrlSafe(`${bucket}:${key}`);
     const url = `${this.zone.rs}/stat/${encodedEntry}`;
     
-    const token = this.generateManageToken(url);
+    const token = await this.generateManageToken(url);
     
     const response = await fetch(url, {
       method: 'GET',
@@ -201,7 +174,7 @@ export class QiniuAdapter extends BaseStorageAdapter {
       // 尝试获取存储空间信息
       const bucket = this.config!.bucket_name!;
       const url = `${this.zone.rsf}/list?bucket=${bucket}&limit=1`;
-      const token = this.generateManageToken(url);
+      const token = await this.generateManageToken(url);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -254,23 +227,27 @@ export class QiniuAdapter extends BaseStorageAdapter {
   }
 
   /**
-   * HMAC-SHA1 签名（简化实现，实际应使用 crypto API）
+   * HMAC-SHA1 签名（使用 Web Crypto API）
    */
-  private hmacSha1(data: string, key: string): string {
-    // 注意：这是简化实现，实际生产环境应使用 Web Crypto API
-    // 由于 Workers 环境限制，这里使用简单的字符串处理
-    // 实际部署时需要使用 crypto.subtle.sign
+  private async hmacSha1(data: string, key: string): Promise<string> {
     const encoder = new TextEncoder();
     const keyData = encoder.encode(key);
     const dataBytes = encoder.encode(data);
     
-    // 简化的签名（实际应使用 HMAC-SHA1）
-    let hash = 0;
-    for (let i = 0; i < dataBytes.length; i++) {
-      hash = ((hash << 5) - hash) + dataBytes[i] + (keyData[i % keyData.length] || 0);
-      hash = hash & hash;
-    }
+    // 导入密钥
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-1' },
+      false,
+      ['sign']
+    );
     
-    return Math.abs(hash).toString(36);
+    // 生成签名
+    const signature = await crypto.subtle.sign('HMAC', cryptoKey, dataBytes);
+    
+    // 转换为字符串
+    const signatureArray = Array.from(new Uint8Array(signature));
+    return String.fromCharCode(...signatureArray);
   }
 }

@@ -70,9 +70,13 @@ const TopicManagement: React.FC = () => {
       try {
         const statsData = await getTopicsStats();
         setStats(statsData);
-      } catch { /* 统计可能不可用 */ }
-    } catch (err: any) {
-      error(err.message || '加载专题列表失败');
+      } catch (error) {
+        logger.topic.warn('Failed to load topic stats', error);
+        // 统计可能不可用，不影响主功能
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '加载专题列表失败';
+      error(errorMessage);
     } finally {
       setLoading(false);
     }

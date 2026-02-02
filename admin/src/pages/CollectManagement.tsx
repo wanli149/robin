@@ -76,7 +76,7 @@ const CollectManagement: React.FC = () => {
       const data = await getCollectStatsV1();
       setStats(data as unknown as CollectStats);
     } catch (err) {
-      console.error('Failed to load stats:', err);
+      logger.admin.error('Failed to load stats:', { error: err });
     }
   };
 

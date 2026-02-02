@@ -57,6 +57,25 @@ mixin PlayerPreloadMixin on GetxController {
 
       final state = currentPlayerState;
       final nextEpisodeIndex = state.episodeIndex + 1;
+      
+      // 🚀 检查是否有下一集（需要从控制器获取总集数）
+      // 如果当前是最后一集，不预加载
+      try {
+        if (state.contentId.isNotEmpty && Get.isRegistered<dynamic>(tag: state.contentId)) {
+          final controller = Get.find<dynamic>(tag: state.contentId);
+          if (controller != null && controller.episodes != null) {
+            final episodes = controller.episodes as List;
+            if (nextEpisodeIndex > episodes.length) {
+              Logger.debug('No next episode to preload (current: ${state.episodeIndex}, total: ${episodes.length})');
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        // 找不到控制器，继续尝试预加载
+        Logger.debug('No controller found for preload check: $e');
+      }
+      
       final preloadKey = _getPreloadKey(state.contentId, nextEpisodeIndex);
 
       // 如果已经预加载过，跳过

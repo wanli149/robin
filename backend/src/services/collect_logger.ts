@@ -4,6 +4,8 @@
  */
 
 import { logger as mainLogger } from '../utils/logger';
+import { getCurrentTimestamp, getDaysAgo } from '../utils/time';
+import { castD1Results } from '../utils/type_helpers';
 
 interface Env {
   DB: D1Database;
@@ -27,7 +29,10 @@ export interface LogEntry {
 // 日志缓冲区（批量写入优化）
 const logBuffer: Map<string, LogEntry[]> = new Map();
 const BUFFER_SIZE = 20;
-const FLUSH_INTERVAL = 5000; // 5秒
+const FLUSH_INTERVAL = 5000; // 5秒自动刷新
+
+// 定时刷新定时器（Map<taskId, timeoutId>）
+const flushTimers: Map<string, number> = new Map();
 
 /**
  * 记录日志
@@ -46,33 +51,47 @@ export async function log(
   const buffer = logBuffer.get(taskId)!;
   buffer.push({
     ...entry,
-    createdAt: Math.floor(Date.now() / 1000),
+    createdAt: getCurrentTimestamp(),
   });
   
-  // 控制台输出
+  // 使用统一日志系统输出
   const prefix = `[Collect:${taskId.substring(0, 8)}]`;
   const logMessage = `${prefix} [${entry.level.toUpperCase()}] ${entry.action}: ${entry.message}`;
   
+  // 使用主日志系统（避免循环依赖）
   switch (entry.level) {
     case 'error':
-      console.error(logMessage, entry.details || '');
+      mainLogger.collectLogger.error(logMessage, entry.details);
       break;
     case 'warn':
-      console.warn(logMessage);
+      mainLogger.collectLogger.warn(logMessage, entry.details);
       break;
     case 'debug':
-      // 生产环境可以关闭 debug 日志
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(logMessage);
-      }
+      // Debug logs can be disabled in production if needed
+      mainLogger.collectLogger.debug(logMessage, entry.details);
       break;
     default:
-      console.log(logMessage);
+      mainLogger.collectLogger.info(logMessage, entry.details);
   }
   
-  // 缓冲区满了就刷新
+  // 缓冲区满了就立即刷新
   if (buffer.length >= BUFFER_SIZE) {
+    // 清除定时器
+    const timerId = flushTimers.get(taskId);
+    if (timerId) {
+      clearTimeout(timerId);
+      flushTimers.delete(taskId);
+    }
     await flushLogs(env, taskId);
+  } else {
+    // 设置定时刷新（如果还没有设置）
+    if (!flushTimers.has(taskId)) {
+      const timerId = setTimeout(async () => {
+        flushTimers.delete(taskId);
+        await flushLogs(env, taskId);
+      }, FLUSH_INTERVAL) as unknown as number;
+      flushTimers.set(taskId, timerId);
+    }
   }
 }
 
@@ -85,6 +104,13 @@ export async function flushLogs(env: Env, taskId?: string): Promise<void> {
   for (const tid of taskIds) {
     const buffer = logBuffer.get(tid);
     if (!buffer || buffer.length === 0) continue;
+    
+    // 清除该任务的定时器
+    const timerId = flushTimers.get(tid);
+    if (timerId) {
+      clearTimeout(timerId);
+      flushTimers.delete(tid);
+    }
     
     try {
       // 批量插入
@@ -108,8 +134,11 @@ export async function flushLogs(env: Env, taskId?: string): Promise<void> {
         ).run();
       }
     } catch (error) {
-      // 日志服务本身的错误使用 console.error，避免循环依赖
-      console.error(`[CollectLogger] Failed to flush logs for task ${tid}:`, error);
+      // 日志服务本身的错误使用主日志系统，避免循环依赖
+      mainLogger.collectLogger.error(`Failed to flush logs for task ${tid}`, { 
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
     }
   }
 }
@@ -172,7 +201,7 @@ export async function getTaskLogs(
     LIMIT ? OFFSET ?
   `).bind(...params).all();
   
-  const logs = (result.results as LogDbRow[]).map((row) => ({
+  const logs = castD1Results<LogDbRow>(result.results).map((row) => ({
     id: row.id,
     taskId: row.task_id,
     level: row.level as LogLevel,
@@ -192,7 +221,7 @@ export async function getTaskLogs(
  * 清理旧日志（保留7天）
  */
 export async function cleanupOldLogs(env: Env): Promise<number> {
-  const sevenDaysAgo = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
+  const sevenDaysAgo = getDaysAgo(7);
   
   const result = await env.DB.prepare(`
     DELETE FROM collect_logs WHERE created_at < ?

@@ -83,11 +83,18 @@ class _SharePosterDialogState extends State<_SharePosterDialog> {
       // 关闭对话框
       Get.back();
 
-      // 分享
-      await Share.shareXFiles(
+      // 分享 - 使用 share_plus 的推荐方式
+      final result = await Share.shareXFiles(
         [XFile(file.path)],
         text: '推荐一个超棒的影视APP：${widget.appName}',
       );
+      
+      // 处理分享结果
+      if (result.status == ShareResultStatus.success) {
+        Logger.info('Share poster success');
+      } else if (result.status == ShareResultStatus.dismissed) {
+        Logger.info('Share poster dismissed');
+      }
     } catch (e) {
       Logger.error('Failed to generate share poster: $e');
       Get.snackbar(

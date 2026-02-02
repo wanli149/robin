@@ -25,11 +25,10 @@ import type {
 } from '../types/database';
 import { logger } from '../utils/logger';
 import { CACHE_CONFIG } from '../config';
+import { getCurrentTimestamp, getDaysAgo } from '../utils/time';
+import { castD1Results } from '../utils/type_helpers';
 
-// Helper function to safely cast D1 query results
-function castResults<T>(results: Record<string, unknown>[]): T[] {
-  return results as unknown as T[];
-}
+// 删除重复的 castResults 函数，使用统一的 type_helpers
 
 interface Env {
   DB: D1Database;
@@ -182,7 +181,7 @@ async function getContentBasedRecommendations(
       .bind(...allExcludeIds, ...actorParams)
       .all();
     
-    for (const video of castResults<VodCacheListRow>(actorResults.results)) {
+    for (const video of castD1Results<VodCacheListRow>(actorResults.results)) {
       if (!addedIds.has(video.vod_id)) {
         results.push(video);
         addedIds.add(video.vod_id);
@@ -209,7 +208,7 @@ async function getContentBasedRecommendations(
       .bind(...allExcludeIds, ...Array.from(addedIds), targetTypeId, targetArea, remaining)
       .all();
     
-    for (const video of castResults<VodCacheListRow>(areaResults.results)) {
+    for (const video of castD1Results<VodCacheListRow>(areaResults.results)) {
       if (!addedIds.has(video.vod_id)) {
         results.push(video);
         addedIds.add(video.vod_id);
@@ -235,7 +234,7 @@ async function getContentBasedRecommendations(
       .bind(...allExcludeIds, ...Array.from(addedIds), targetTypeId, remaining)
       .all();
     
-    for (const video of castResults<VodCacheListRow>(fallbackResults.results)) {
+    for (const video of castD1Results<VodCacheListRow>(fallbackResults.results)) {
       if (!addedIds.has(video.vod_id)) {
         results.push(video);
         addedIds.add(video.vod_id);
@@ -336,7 +335,7 @@ async function getCollaborativeRecommendations(
   const recommendations = await env.DB.prepare(recQuery).bind(...queryParams).all();
   
   return {
-    list: castResults<VodCacheListRow>(recommendations.results),
+    list: castD1Results<VodCacheListRow>(recommendations.results),
     strategy: 'collaborative',
     cached: false,
     confidence: 0.7,
@@ -401,7 +400,7 @@ async function getTrendingRecommendations(
   }
   
   return {
-    list: castResults<VodCacheListRow>(result.results),
+    list: castD1Results<VodCacheListRow>(result.results),
     strategy: 'trending',
     cached: false,
     confidence: 0.9,
@@ -468,7 +467,7 @@ async function getPersonalizedRecommendations(
   const result = await env.DB.prepare(query).bind(...params).all();
   
   return {
-    list: castResults<VodCacheListRow>(result.results),
+    list: castD1Results<VodCacheListRow>(result.results),
     strategy: 'personalized',
     cached: false,
     confidence: 0.75,
@@ -536,7 +535,7 @@ async function getShortsSimilarRecommendations(
   const result = await env.DB.prepare(query).bind(...params).all();
   
   // 如果同分类不够，补充其他分类
-  const resultList = castResults<ShortsListRow>(result.results);
+  const resultList = castD1Results<ShortsListRow>(result.results);
   if (resultList.length < limit) {
     const remaining = limit - resultList.length;
     const existingIds = resultList.map(r => r.vod_id);
@@ -553,7 +552,7 @@ async function getShortsSimilarRecommendations(
     `).bind(...allExclude, remaining).all();
     
     return {
-      list: [...resultList, ...castResults<ShortsListRow>(moreResult.results)],
+      list: [...resultList, ...castD1Results<ShortsListRow>(moreResult.results)],
       strategy: 'shorts_similar',
       cached: false,
       confidence: 0.7,
@@ -596,7 +595,7 @@ async function getShortsTrending(
   const result = await env.DB.prepare(query).bind(...params).all();
   
   return {
-    list: castResults<ShortsListRow>(result.results),
+    list: castD1Results<ShortsListRow>(result.results),
     strategy: 'shorts_similar',
     cached: false,
     confidence: 0.6,
@@ -743,7 +742,7 @@ async function fetchVideosByIds(env: Env, ids: string[]): Promise<VodCacheRow[]>
   
   // 按原始顺序排序
   const idOrder = new Map(ids.map((id, i) => [id, i]));
-  return castResults<VodCacheRow>(result.results).sort((a, b) => 
+  return castD1Results<VodCacheRow>(result.results).sort((a, b) => 
     (idOrder.get(a.vod_id) || 0) - (idOrder.get(b.vod_id) || 0)
   );
 }
@@ -768,7 +767,7 @@ export async function batchPrecomputeRecommendations(
       ORDER BY v.vod_hits DESC
       LIMIT ?
     `).bind(
-      Math.floor(Date.now() / 1000) - 86400 * 7,
+      getDaysAgo(7),
       limit
     ).all();
     
@@ -794,7 +793,7 @@ export async function batchPrecomputeRecommendations(
             video.vod_id,
             JSON.stringify(similarIds),
             result.confidence,
-            Math.floor(Date.now() / 1000)
+            getCurrentTimestamp()
           ).run();
           
           success++;

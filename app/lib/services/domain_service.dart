@@ -96,7 +96,7 @@ class DomainService {
         final response = await dio.get('$source/api/domains');
         
         if (response.statusCode == 200 && response.data['code'] == 1) {
-          final List<dynamic> list = response.data['data']['domains'];
+          final List<dynamic> list = response.data['data'];
           _domains = list.map((e) => DomainInfo.fromJson(e)).toList();
           
           // 保存到缓存

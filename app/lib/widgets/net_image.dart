@@ -41,7 +41,7 @@ class NetImage extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
-      alignment: Alignment.center,  // 确保图片居中裁切
+      alignment: Alignment.center,
       // 设置内存缓存尺寸，避免图片被过度压缩
       memCacheWidth: memCacheWidth,
       memCacheHeight: memCacheHeight,

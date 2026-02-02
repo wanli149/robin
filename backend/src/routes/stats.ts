@@ -35,7 +35,8 @@ async function ensurePlayStatsTable(db: D1Database): Promise<void> {
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_play_stats_vod_date ON play_stats(vod_id, date)`).run();
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_play_stats_date ON play_stats(date)`).run();
       await db.prepare(`CREATE INDEX IF NOT EXISTS idx_play_stats_event_type ON play_stats(event_type, date)`).run();
-    } catch (e) {
+    } catch (error) {
+      logger.stats.warn('Index may already exist', { error: error instanceof Error ? error.message : String(error) });
       // 索引可能已存在，忽略
     }
   } catch (e) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../core/global_player_manager.dart';
+import '../../core/player/global_player_manager.dart';
+import '../../core/player/player_enums.dart';
 import '../../core/logger.dart';
 import 'shorts_flow_player.dart';
 import 'long_video_player.dart';

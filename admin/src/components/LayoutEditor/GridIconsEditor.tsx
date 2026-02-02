@@ -61,13 +61,16 @@ const GridIconsEditor: React.FC<GridIconsEditorProps> = ({ value, onChange }) =>
         const [catData, topicData, artCatData] = await Promise.all([
           getCategoriesWithSubs(),
           getTopics(),
-          getArticleCategories().catch(() => []),
+          getArticleCategories().catch((error) => {
+            logger.admin.warn('Article categories not available', error);
+            return [];
+          }),
         ]);
         setCategories(catData.categories || []);
         setTopics(topicData || []);
         setArticleCategories(artCatData || []);
       } catch (error) {
-        console.error('Failed to load categories/topics:', error);
+        logger.admin.error('Failed to load categories/topics:', { error });
       }
     };
     loadData();
@@ -138,7 +141,7 @@ const GridIconsEditor: React.FC<GridIconsEditorProps> = ({ value, onChange }) =>
       form.resetFields();
       success(editingIndex !== null ? '图标已更新' : '图标已添加');
     } catch (error) {
-      console.error('Validation failed:', error);
+      logger.admin.error('Validation failed:', { error });
     }
   };
 

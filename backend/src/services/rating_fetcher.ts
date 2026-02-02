@@ -10,13 +10,14 @@
  */
 
 import { logger } from '../utils/logger';
+import { TMDB_CONFIG } from '../config';
 
 interface Env {
   DB: D1Database;
   TMDB_API_KEY?: string;
 }
 
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+// 使用配置文件中的 TMDB_CONFIG
 
 /**
  * 搜索TMDB获取电影/剧集ID
@@ -35,7 +36,7 @@ async function searchTMDB(
       .trim();
 
     // 搜索电影
-    const searchUrl = `${TMDB_BASE_URL}/search/multi?api_key=${apiKey}&query=${encodeURIComponent(cleanName)}&language=zh-CN`;
+    const searchUrl = `${TMDB_CONFIG.baseUrl}/search/multi?api_key=${apiKey}&query=${encodeURIComponent(cleanName)}&language=zh-CN`;
     
     const response = await fetch(searchUrl, {
       signal: AbortSignal.timeout(5000),
@@ -98,7 +99,7 @@ export async function batchFetchRatings(
     OR (r.fetch_status = 'failed' AND r.updated_at < ?)
     LIMIT ?
   `).bind(
-    Math.floor(Date.now() / 1000) - 86400, // 失败的1天后重试
+    getDaysAgo(1),
     limit
   ).all();
 
@@ -133,7 +134,7 @@ export async function batchFetchRatings(
           rating.score,
           rating.votes,
           String(rating.id),
-          Math.floor(Date.now() / 1000),
+          getCurrentTimestamp(),
           video.vod_id
         ).run();
 
@@ -152,7 +153,7 @@ export async function batchFetchRatings(
           UPDATE vod_ratings
           SET fetch_status = 'failed', updated_at = ?
           WHERE vod_id = ?
-        `).bind(Math.floor(Date.now() / 1000), video.vod_id).run();
+        `).bind(getCurrentTimestamp(), video.vod_id).run();
 
         failedCount++;
       }
@@ -209,7 +210,7 @@ export async function fetchSingleRating(
         rating.score,
         rating.votes,
         String(rating.id),
-        Math.floor(Date.now() / 1000)
+        getCurrentTimestamp()
       ).run();
 
       await env.DB.prepare(`

@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart' as getx;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'logger.dart';
 import 'network/request_cache.dart';
 import 'network/cancel_token_manager.dart';
@@ -91,20 +93,17 @@ class HttpClient {
     });
   }
   
-  // API 签名密钥（需要与后端配置一致）
-  // 生产环境建议使用环境变量或安全存储
+  // ⚠️ API 签名密钥
+  // 注意：此密钥会被编译到 APP 中，可以被反编译获取
+  // 但仍能防止普通用户的滥用和简单的爬虫
+  // 必须与后端 DEFAULT_CONFIG.secretKey 保持一致
   static const String _apiSecretKey = 'robin-video-api-secret-2024';
   
-  // APP 包名（必须与 AndroidManifest.xml 一致）
-  static const String _appPackage = 'com.fetch.video';
-  
-  // APP 版本
-  static const String _appVersion = '1.0.0';
-  
-  // 是否启用 API 签名（生产环境应启用）
+  // API 签名开关（默认启用）
   bool _enableApiSign = true;
   
   /// 启用/禁用 API 签名
+  /// ⚠️ 客户端签名不安全，建议禁用
   void setApiSignEnabled(bool enabled) {
     _enableApiSign = enabled;
     Logger.info('[HttpClient] API Sign ${enabled ? "enabled" : "disabled"}');
@@ -131,13 +130,15 @@ class HttpClient {
         // 获取或生成设备 ID
         String? deviceId = prefs.getString('device_id');
         if (deviceId == null || deviceId.isEmpty) {
-          deviceId = _generateDeviceId();
+          deviceId = await _generateDeviceId();
           await prefs.setString('device_id', deviceId);
         }
         options.headers['x-device-id'] = deviceId;
-        // 添加 API 签名（如果启用）
+        
+        // 添加 API 签名
+        // ⚠️ 注意：客户端签名可以被反编译获取密钥，但仍能防止普通用户滥用
         if (_enableApiSign) {
-          _addApiSignature(options);
+          await _addApiSignature(options);
         }
         
         Logger.network('REQUEST', '${options.method} ${options.uri}');
@@ -459,48 +460,56 @@ class HttpClient {
   /// 获取当前 Base URL
   String get baseUrl => dio.options.baseUrl;
   
-  /// 添加 API 签名到请求头
-  void _addApiSignature(RequestOptions options) {
-    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
-    final nonce = _generateNonce();
-    final path = options.uri.path;
-    
-    // 构建签名数据: METHOD&PATH&TIMESTAMP&NONCE (与后端一致)
-    final signData = [
-      options.method.toUpperCase(),
-      path,
-      timestamp,
-      nonce,
-    ].join('&');
-    
-    // 生成 HMAC-SHA256 签名
-    final sign = _generateHmacSha256(signData, _apiSecretKey);
-    
-    // 添加请求头 (使用后端期望的头部名称)
-    options.headers['x-timestamp'] = timestamp;
-    options.headers['x-nonce'] = nonce;
-    options.headers['x-signature'] = sign;
-    options.headers['x-package-name'] = _appPackage;
+  /// 生成持久化设备ID（基于设备硬件信息）
+  Future<String> _generateDeviceId() async {
+    try {
+      final deviceInfo = DeviceInfoPlugin();
+      String identifier = '';
+      
+      if (Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
+        // 使用 Android ID（设备唯一标识符）
+        identifier = androidInfo.id;
+      } else if (Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        // 使用 identifierForVendor（应用供应商唯一标识符）
+        identifier = iosInfo.identifierForVendor ?? '';
+      } else if (Platform.isWindows) {
+        final windowsInfo = await deviceInfo.windowsInfo;
+        // 使用计算机名和用户名组合
+        identifier = '${windowsInfo.computerName}_${windowsInfo.userName}';
+      } else if (Platform.isLinux) {
+        final linuxInfo = await deviceInfo.linuxInfo;
+        // 使用机器ID
+        identifier = linuxInfo.machineId ?? '';
+      } else if (Platform.isMacOS) {
+        final macInfo = await deviceInfo.macOsInfo;
+        // 使用系统GUID
+        identifier = macInfo.systemGUID ?? '';
+      }
+      
+      // 如果无法获取设备标识，生成随机UUID并持久化
+      if (identifier.isEmpty) {
+        Logger.warning('[HttpClient] Could not get device identifier, generating random UUID');
+        identifier = _generateRandomUUID();
+      }
+      
+      // 对标识符进行哈希处理，确保格式统一
+      final bytes = utf8.encode(identifier);
+      final digest = sha256.convert(bytes);
+      final hash = digest.toString();
+      
+      // 格式化为UUID格式
+      return '${hash.substring(0, 8)}-${hash.substring(8, 12)}-${hash.substring(12, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}';
+    } catch (e) {
+      Logger.error('[HttpClient] Failed to generate device ID: $e');
+      // 降级方案：生成随机UUID
+      return _generateRandomUUID();
+    }
   }
   
-  /// 生成随机 Nonce
-  String _generateNonce() {
-    final random = Random.secure();
-    final values = List<int>.generate(16, (i) => random.nextInt(256));
-    return values.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  }
-  
-  /// 生成 HMAC-SHA256 签名
-  String _generateHmacSha256(String data, String key) {
-    final keyBytes = utf8.encode(key);
-    final dataBytes = utf8.encode(data);
-    final hmac = Hmac(sha256, keyBytes);
-    final digest = hmac.convert(dataBytes);
-    return digest.toString();
-  }
-  
-  /// 🚀 生成唯一设备 ID（UUID v4 格式）
-  String _generateDeviceId() {
+  /// 生成随机UUID（降级方案）
+  String _generateRandomUUID() {
     final random = Random.secure();
     final values = List<int>.generate(16, (i) => random.nextInt(256));
     
@@ -511,6 +520,52 @@ class HttpClient {
     // 格式化为 UUID 字符串
     final hex = values.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  /// 添加 API 签名到请求头
+  /// 
+  /// 签名算法：HMAC-SHA256
+  /// 签名数据：METHOD&PATH&TIMESTAMP&NONCE
+  /// 
+  /// 示例：
+  /// - Method: GET
+  /// - Path: /api/vod/detail
+  /// - Timestamp: 1234567890
+  /// - Nonce: abc123
+  /// - SignData: GET&/api/vod/detail&1234567890&abc123
+  /// - Signature: HMAC-SHA256(SignData, SecretKey)
+  Future<void> _addApiSignature(RequestOptions options) async {
+    try {
+      // 生成时间戳（秒）
+      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).floor().toString();
+      
+      // 生成随机 nonce（16位随机字符串）
+      final random = Random.secure();
+      final nonce = List.generate(16, (_) => random.nextInt(36).toRadixString(36)).join();
+      
+      // 构建签名数据：METHOD&PATH&TIMESTAMP&NONCE
+      final method = options.method.toUpperCase();
+      final path = options.path;
+      final signData = '$method&$path&$timestamp&$nonce';
+      
+      // 生成 HMAC-SHA256 签名
+      final key = utf8.encode(_apiSecretKey);
+      final bytes = utf8.encode(signData);
+      final hmac = Hmac(sha256, key);
+      final digest = hmac.convert(bytes);
+      final signature = digest.toString();
+      
+      // 添加签名相关头部
+      options.headers['x-timestamp'] = timestamp;
+      options.headers['x-nonce'] = nonce;
+      options.headers['x-signature'] = signature;
+      options.headers['x-package-name'] = 'com.fetch.video';
+      
+      Logger.debug('[HttpClient] API Signature added: $signature');
+    } catch (e) {
+      Logger.error('[HttpClient] Failed to add API signature: $e');
+      // 签名失败不影响请求继续
+    }
   }
 
   /// 测试网络连接

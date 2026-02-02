@@ -191,6 +191,7 @@ export async function migrateSubCategories(env: Env): Promise<{
         `).bind(sub.parent_id, sub.name, sub.name_en, sub.keywords, i + 1).run();
         subCategoriesCreated++;
       } catch (error) {
+        logger.migration.debug('Sub-category may already exist', { name: sub.name, error: error instanceof Error ? error.message : String(error) });
         // 可能已存在，忽略
       }
     }

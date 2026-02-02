@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'config/api_config.dart';
 import 'core/logger.dart';
@@ -47,7 +49,7 @@ import 'modules/home/home_controller.dart';
 void main() {
   // 使用 runZonedGuarded 捕获未处理的异常
   runZonedGuarded(
-    () {
+    () async {
       // 确保 Flutter 绑定初始化
       WidgetsFlutterBinding.ensureInitialized();
       
@@ -59,6 +61,9 @@ void main() {
         FlutterError.presentError(details);
         _handleFlutterError(details);
       };
+
+      // 🚀 在 runApp 之前初始化所有核心服务
+      await _initServices();
 
       // 运行应用
       runApp(const MyApp());
@@ -126,17 +131,210 @@ Future<void> _reportCrash({
       'timestamp': DateTime.now().toIso8601String(),
     };
 
-    // 发送到后端
-    await httpClient.post(
-      ApiConfig.crashReport,
-      data: crashReport,
-    );
+    // 先保存到本地（备份）
+    await _saveCrashReportLocally(crashReport);
 
-    // 崩溃报告发送成功
+    // 尝试发送到后端
+    try {
+      await httpClient.post(
+        ApiConfig.crashReport,
+        data: crashReport,
+      ).timeout(const Duration(seconds: 5));
+      
+      // 上报成功，删除本地备份
+      await _deleteCrashReportLocally(crashReport['timestamp'] as String);
+    } catch (uploadError) {
+      Logger.warning('[CrashReport] Failed to upload, saved locally: $uploadError');
+      // 上报失败，保留本地备份，下次启动时重试
+    }
   } catch (e) {
-    // 上报失败也不影响应用运行
-    // 崩溃报告发送失败
+    // 崩溃报告本身失败也不影响应用运行
+    Logger.error('[CrashReport] Failed to process crash report: $e');
   }
+}
+
+/// 保存崩溃报告到本地
+Future<void> _saveCrashReportLocally(Map<String, dynamic> report) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final reports = prefs.getStringList('crash_reports') ?? [];
+    
+    // 限制最多保存10个崩溃报告
+    if (reports.length >= 10) {
+      reports.removeAt(0);
+    }
+    
+    reports.add(jsonEncode(report));
+    await prefs.setStringList('crash_reports', reports);
+  } catch (e) {
+    Logger.error('[CrashReport] Failed to save locally: $e');
+  }
+}
+
+/// 删除本地崩溃报告
+Future<void> _deleteCrashReportLocally(String timestamp) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final reports = prefs.getStringList('crash_reports') ?? [];
+    
+    reports.removeWhere((report) {
+      try {
+        final decoded = jsonDecode(report) as Map<String, dynamic>;
+        return decoded['timestamp'] == timestamp;
+      } catch (_) {
+        return false;
+      }
+    });
+    
+    await prefs.setStringList('crash_reports', reports);
+  } catch (e) {
+    Logger.error('[CrashReport] Failed to delete local report: $e');
+  }
+}
+
+/// 上传本地保存的崩溃报告
+Future<void> _uploadPendingCrashReports() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final reports = prefs.getStringList('crash_reports') ?? [];
+    
+    if (reports.isEmpty) return;
+    
+    final httpClient = HttpClient();
+    final uploadedTimestamps = <String>[];
+    
+    for (final reportJson in reports) {
+      try {
+        final report = jsonDecode(reportJson) as Map<String, dynamic>;
+        
+        await httpClient.post(
+          ApiConfig.crashReport,
+          data: report,
+        ).timeout(const Duration(seconds: 5));
+        
+        uploadedTimestamps.add(report['timestamp'] as String);
+      } catch (e) {
+        Logger.warning('[CrashReport] Failed to upload pending report: $e');
+        // 继续尝试下一个
+      }
+    }
+    
+    // 删除已上传的报告
+    for (final timestamp in uploadedTimestamps) {
+      await _deleteCrashReportLocally(timestamp);
+    }
+  } catch (e) {
+    Logger.error('[CrashReport] Failed to upload pending reports: $e');
+  }
+}
+
+/// 初始化核心服务（在 main 函数中调用）
+Future<void> _initServices() async {
+  Logger.info('Starting _initServices...', 'Init');
+  
+  // 初始化性能配置
+  PerformanceConfig.initialize();
+  Logger.info('PerformanceConfig initialized', 'Init');
+  
+  // 🚀 初始化缓存服务（同步初始化，因为其他服务依赖它）
+  final cacheService = CacheService();
+  Logger.info('CacheService instance created', 'Init');
+  
+  await cacheService.init(); // 等待初始化完成
+  Logger.info('CacheService.init() completed', 'Init');
+  
+  Get.put(cacheService, permanent: true);
+  Logger.info('CacheService registered with GetX', 'Init');
+  
+  // 初始化应用信息（版本号等）
+  Get.putAsync(() => AppInfo().init(), permanent: true);
+  
+  // 初始化用户状态管理
+  Get.put(UserStore());
+
+  // 初始化 HTTP 客户端并设置 Base URL
+  final httpClient = HttpClient();
+  final baseUrl = ApiConfig.baseUrl;
+  Logger.network('GET', 'Using base URL: $baseUrl');
+  Logger.info('forceDevMode: ${ApiConfig.forceDevMode}', 'Init');
+  Logger.info('isProduction: ${ApiConfig.isProduction}', 'Init');
+  Logger.info('Platform: ${Platform.operatingSystem}', 'Init');
+  Logger.info('Is Physical Device: ${!kIsWeb && (Platform.isAndroid || Platform.isIOS)}', 'Init');
+  httpClient.setBaseUrl(baseUrl);
+  
+  // 初始化同步服务
+  Get.put(SyncService());
+  
+  // 初始化画中画管理器
+  Get.put(PipManager());
+  
+  // 初始化进度同步服务
+  Get.put(ProgressSyncService(), permanent: true);
+  
+  // 初始化全局播放器管理器 (基于 media_kit)
+  Get.put(GlobalPlayerManager(), permanent: true);
+  
+  // 初始化公告服务
+  Get.put(AnnouncementService(), permanent: true);
+  
+  // 初始化收藏服务
+  Get.put(FavoritesService(), permanent: true);
+  
+  // 🚀 初始化播放统计服务
+  Get.putAsync(() => PlayStatsService().init(), permanent: true);
+  
+  // 初始化设置存储（异步初始化）
+  Get.putAsync(() => SettingsStore().init(), permanent: true);
+  
+  // 初始化全局配置服务
+  Get.put(GlobalConfig(), permanent: true);
+  
+  Logger.success('All services initialized successfully', 'Init');
+  
+  // 上传本地保存的崩溃报告
+  _uploadPendingCrashReports();
+  
+  // 检测网络连接（强制启用用于调试）
+  _checkNetworkConnection();
+}
+
+/// 检测网络连接
+void _checkNetworkConnection() {
+  // 🚀 延迟检测，不阻塞启动
+  Future.delayed(const Duration(milliseconds: 500), () async {
+    try {
+      final httpClient = HttpClient();
+      
+      // 🚀 静默测试，不显示错误提示
+      final isConnected = await httpClient.testConnection();
+      
+      if (!isConnected) {
+        Logger.warning('Default connection failed, trying to find working URL...');
+        
+        // 🚀 静默查找可用服务器
+        final workingUrl = await httpClient.findWorkingBaseUrl(silent: true);
+        httpClient.setBaseUrl(workingUrl);
+        
+        // 更新API配置
+        ApiConfig.setCustomBaseUrl(workingUrl);
+        
+        Logger.success('Switched to working URL: $workingUrl');
+        
+        // 通知首页重新加载
+        try {
+          final homeController = Get.find<HomeController>();
+          homeController.refreshCurrentChannel();
+        } catch (e) {
+          Logger.warning('Home controller not found: $e');
+        }
+      } else {
+        Logger.success('Network connection OK');
+      }
+    } catch (e) {
+      Logger.error('Network check failed: $e');
+      // 🚀 启动时网络检测失败不显示错误，让用户正常进入 App
+    }
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -144,9 +342,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 初始化核心服务
-    _initServices();
-
     return GetMaterialApp(
       title: 'app_name'.tr,
       debugShowCheckedModeBanner: false,
@@ -250,101 +445,5 @@ class MyApp extends StatelessWidget {
         // 其他路由将在后续任务中添加
       ],
     );
-  }
-
-  /// 初始化核心服务
-  void _initServices() {
-    // 初始化性能配置
-    PerformanceConfig.initialize();
-    
-    // 初始化应用信息（版本号等）
-    Get.putAsync(() => AppInfo().init(), permanent: true);
-    
-    // 🚀 初始化缓存服务（优先初始化，其他服务可能依赖）
-    Get.putAsync(() => CacheService().init(), permanent: true);
-    
-    // 初始化用户状态管理
-    Get.put(UserStore());
-
-    // 初始化 HTTP 客户端并设置 Base URL
-    final httpClient = HttpClient();
-    final baseUrl = ApiConfig.baseUrl;
-    Logger.network('GET', 'Using base URL: $baseUrl');
-    Logger.info('forceDevMode: ${ApiConfig.forceDevMode}', 'Init');
-    Logger.info('isProduction: ${ApiConfig.isProduction}', 'Init');
-    Logger.info('Platform: ${Platform.operatingSystem}', 'Init');
-    Logger.info('Is Physical Device: ${!kIsWeb && (Platform.isAndroid || Platform.isIOS)}', 'Init');
-    httpClient.setBaseUrl(baseUrl);
-    
-    // 初始化同步服务
-    Get.put(SyncService());
-    
-    // 初始化画中画管理器
-    Get.put(PipManager());
-    
-    // 初始化进度同步服务
-    Get.put(ProgressSyncService(), permanent: true);
-    
-    // 初始化全局播放器管理器 (基于 media_kit)
-    Get.put(GlobalPlayerManager(), permanent: true);
-    
-    // 初始化公告服务
-    Get.put(AnnouncementService(), permanent: true);
-    
-    // 初始化收藏服务
-    Get.put(FavoritesService(), permanent: true);
-    
-    // 🚀 初始化播放统计服务
-    Get.putAsync(() => PlayStatsService().init(), permanent: true);
-    
-    // 初始化设置存储（异步初始化）
-    Get.putAsync(() => SettingsStore().init(), permanent: true);
-    
-    // 初始化全局配置服务
-    Get.put(GlobalConfig(), permanent: true);
-    
-    // 应用初始化完成
-    
-    // 检测网络连接（强制启用用于调试）
-    _checkNetworkConnection();
-  }
-
-  /// 检测网络连接
-  void _checkNetworkConnection() {
-    // 🚀 延迟检测，不阻塞启动
-    Future.delayed(const Duration(milliseconds: 500), () async {
-      try {
-        final httpClient = HttpClient();
-        
-        // 🚀 静默测试，不显示错误提示
-        final isConnected = await httpClient.testConnection();
-        
-        if (!isConnected) {
-          Logger.warning('Default connection failed, trying to find working URL...');
-          
-          // 🚀 静默查找可用服务器
-          final workingUrl = await httpClient.findWorkingBaseUrl(silent: true);
-          httpClient.setBaseUrl(workingUrl);
-          
-          // 更新API配置
-          ApiConfig.setCustomBaseUrl(workingUrl);
-          
-          Logger.success('Switched to working URL: $workingUrl');
-          
-          // 通知首页重新加载
-          try {
-            final homeController = Get.find<HomeController>();
-            homeController.refreshCurrentChannel();
-          } catch (e) {
-            Logger.warning('Home controller not found: $e');
-          }
-        } else {
-          Logger.success('Network connection OK');
-        }
-      } catch (e) {
-        Logger.error('Network check failed: $e');
-        // 🚀 启动时网络检测失败不显示错误，让用户正常进入 App
-      }
-    });
   }
 }

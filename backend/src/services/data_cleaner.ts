@@ -239,7 +239,8 @@ export function extractFirstUrl(playUrls: unknown): string | null {
     if (Array.isArray(firstSource) && firstSource.length > 0) {
       return (firstSource[0] as Episode).url || null;
     }
-  } catch (e) {
+  } catch (error) {
+    logger.data.warn('JSON parse failed for extractFirstUrl', { error: error instanceof Error ? error.message : String(error) });
     // JSON 解析失败
   }
 

@@ -132,18 +132,18 @@ const SourceManagement: React.FC = () => {
 
   // 测试资源站连接
   const handleTest = async (source: Source) => {
-    console.log('[Test] Starting test for source:', source);
+    logger.admin.info('[Test] Starting test for source:', { source: source.name });
     const hide = showLoading(`正在测试 ${source.name}...`);
     try {
       const { testSource } = await import('../services/adminApi');
-      console.log('[Test] Calling testSource API...');
+      logger.admin.info('[Test] Calling testSource API...');
       const result = await testSource(source.id!);
-      console.log('[Test] Result:', result);
+      logger.admin.info('[Test] Result:', { success: result.success });
       
       hide();
       
       if (result.success) {
-        console.log('[Test] Showing success modal');
+        logger.admin.info('[Test] Showing success modal');
         modal.success({
           title: '连接成功',
           content: `✅ 资源站连接正常\n响应时间: ${result.responseTime || 0}ms${
@@ -153,7 +153,7 @@ const SourceManagement: React.FC = () => {
         // 刷新列表以显示更新后的格式
         loadSources();
       } else {
-        console.log('[Test] Showing error modal');
+        logger.admin.info('[Test] Showing error modal');
         modal.error({
           title: '连接失败',
           content: `❌ ${result.message}${
@@ -162,7 +162,7 @@ const SourceManagement: React.FC = () => {
         });
       }
     } catch (err: any) {
-      console.error('[Test] Error:', err);
+      logger.admin.error('[Test] Error:', { error: err });
       hide();
       error(err.message || '测试失败');
     }

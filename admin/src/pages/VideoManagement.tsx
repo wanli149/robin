@@ -183,7 +183,7 @@ const VideoManagement: React.FC = () => {
       const data = await getCategories();
       setCategories(data);
     } catch (error) {
-      console.error('Failed to load categories:', error);
+      logger.admin.error('Failed to load categories:', { error });
     }
   }, []);
 
@@ -193,7 +193,7 @@ const VideoManagement: React.FC = () => {
       const data = await getCategoryStats();
       setCategoryStats(data);
     } catch (error) {
-      console.error('Failed to load category stats:', error);
+      logger.admin.error('Failed to load category stats:', { error });
     }
   }, []);
 
@@ -203,7 +203,7 @@ const VideoManagement: React.FC = () => {
       const list = await getSubCategories(parentId);
       setSubCategories(list);
     } catch (error) {
-      console.error('Failed to load sub-categories:', error);
+      logger.admin.error('Failed to load sub-categories:', { error });
     }
   }, []);
 

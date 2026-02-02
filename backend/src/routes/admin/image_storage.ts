@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import type { Bindings } from './types';
 import { ImageStorageService } from '../../services/image_storage';
 import { logger } from '../../utils/logger';
+import { getDaysAgo } from '../../utils/time';
 
 const imageStorage = new Hono<{ Bindings: Bindings }>();
 
@@ -24,7 +25,7 @@ imageStorage.get('/admin/image-storage/configs', async (c) => {
     `).all();
 
     // 隐藏敏感信息
-    const configs = result.results.map((config: any) => ({
+    const configs = result.results.map((config: Record<string, unknown>) => ({
       ...config,
       access_key: config.access_key ? '******' : null,
       secret_key: config.secret_key ? '******' : null,
@@ -273,7 +274,7 @@ imageStorage.get('/admin/image-storage/mappings', async (c) => {
     const configId = c.req.query('configId');
 
     let whereClause = '1=1';
-    const params: any[] = [];
+    const params: (string | number)[] = [];
 
     if (status) {
       whereClause += ' AND m.status = ?';
@@ -367,7 +368,7 @@ imageStorage.get('/admin/image-storage/queue', async (c) => {
     const status = c.req.query('status');
 
     let whereClause = '1=1';
-    const params: any[] = [];
+    const params: (string | number)[] = [];
 
     if (status) {
       whereClause += ' AND status = ?';
@@ -504,7 +505,7 @@ imageStorage.get('/admin/image-storage/stats', async (c) => {
     `).all();
 
     // 今日上传统计
-    const today = Math.floor(Date.now() / 1000) - 86400;
+    const today = getDaysAgo(1);
     const todayStats = await c.env.DB.prepare(`
       SELECT COUNT(*) as today_uploads
       FROM image_mappings
@@ -583,7 +584,7 @@ imageStorage.post('/admin/image-storage/sync-video/:vodId', async (c) => {
     }
 
     const service = new ImageStorageService(c.env);
-    const results: any[] = [];
+    const results: Array<{ url: string; success: boolean; error?: string }> = [];
 
     // 同步封面图
     if (video.vod_pic) {

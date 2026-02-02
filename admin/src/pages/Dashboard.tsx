@@ -70,39 +70,58 @@ const Dashboard: React.FC = () => {
       try {
         const collectData = await getCollectStatsV1();
         setCollectStats(collectData);
-      } catch { /* 可能不可用 */ }
+      } catch (error) {
+        logger.dashboard.debug('Collect stats not available', error);
+        // 可能不可用，不影响其他数据
+      }
 
       // 热门视频
       try {
         const hotData = await getHotVideos(10, 'day');
         setHotVideos(hotData);
-      } catch { /* 可能不可用 */ }
+      } catch (error) {
+        logger.dashboard.debug('Hot videos not available', error);
+        // 可能不可用
+      }
 
       // 评分分布
       try {
         const ratingData = await getRatingDistribution();
         setRatingDistribution(ratingData);
-      } catch { /* 可能不可用 */ }
+      } catch (error) {
+        logger.dashboard.debug('Rating distribution not available', error);
+        // 可能不可用
+      }
 
       // 推荐性能
       try {
         const recData = await getRecommendationPerformance();
         setRecPerformance(recData);
-      } catch { /* 可能不可用 */ }
+      } catch (error) {
+        logger.dashboard.debug('Recommendation performance not available', error);
+        // 可能不可用
+      }
 
       // 实时统计
       try {
         const realtime = await getRealtimeStats();
         setRealtimeStats(realtime);
-      } catch { /* 可能不可用 */ }
+      } catch (error) {
+        logger.dashboard.debug('Realtime stats not available', error);
+        // 可能不可用
+      }
 
       // 趋势数据
       try {
         const trendData = await getTrends(30);
         setTrends(trendData);
-      } catch { /* 可能不可用 */ }
-    } catch (err: any) {
-      error(err.message || '获取仪表板数据失败');
+      } catch (error) {
+        logger.dashboard.debug('Trends data not available', error);
+        // 可能不可用
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '获取仪表板数据失败';
+      error(errorMessage);
     } finally {
       setLoading(false);
     }

@@ -89,23 +89,29 @@ class HomeController extends GetxController {
   void onInit() {
     super.onInit();
     
+    Logger.info('[HomeController] onInit called');
+    
     // 🚀 监听用户登录状态变化（保存 Worker 引用以便 onClose 时取消）
     _loginStatusWorker = ever(UserStore.to.isLoggedInRx, (bool isLoggedIn) {
-      Logger.info('User login status changed: $isLoggedIn');
+      Logger.info('[HomeController] User login status changed: $isLoggedIn');
       // 用户登录状态改变时，清除用户相关缓存并重新加载当前频道
       _cache.clearByType(CacheType.userData);
       loadChannelData(currentChannelId, forceRefresh: true);
     });
     
-    // 延迟加载，等待用户状态和缓存服务初始化完成
-    Future.delayed(const Duration(milliseconds: 500), () {
+    // 延迟加载，等待 UI 渲染完成
+    Logger.info('[HomeController] Scheduling delayed load');
+    Future.delayed(const Duration(milliseconds: 300), () async {
+      Logger.info('[HomeController] Delayed load started');
+      
       // 先加载频道列表，再加载频道数据
-      _loadTabs().then((_) {
-        loadChannelData(currentChannelId).then((_) {
-          // 数据加载完成后检查公告
-          _checkAnnouncement();
-        });
-      });
+      await _loadTabs();
+      Logger.info('[HomeController] Tabs loaded, loading channel data');
+      await loadChannelData(currentChannelId);
+      Logger.info('[HomeController] Channel data loaded, checking announcement');
+      // 数据加载完成后检查公告
+      await _checkAnnouncement();
+      Logger.info('[HomeController] Initialization complete');
     });
   }
   
@@ -119,44 +125,60 @@ class HomeController extends GetxController {
 
   /// 从后端加载频道列表
   Future<void> _loadTabs() async {
-    // 🚀 使用缓存服务的 getOrLoad 方法
-    final cachedTabs = await _cache.getOrLoad<List>(
-      CacheKeys.homeTabs,
-      () async {
-        try {
-          final response = await _httpClient.get('/home_tabs');
-          
-          if (response.statusCode == 200 && response.data != null) {
-            final tabs = response.data['tabs'] as List?;
-            if (tabs != null && tabs.isNotEmpty) {
-              return tabs;
+    Logger.info('[HomeController] _loadTabs started');
+    try {
+      // 🚀 使用缓存服务的 getOrLoad 方法
+      Logger.info('[HomeController] Calling cache.getOrLoad for tabs');
+      final cachedTabs = await _cache.getOrLoad<List>(
+        CacheKeys.homeTabs,
+        () async {
+          Logger.info('[HomeController] Cache miss, loading tabs from server');
+          try {
+            final response = await _httpClient.get('/home_tabs');
+            Logger.info('[HomeController] Tabs response: ${response.statusCode}');
+            
+            if (response.statusCode == 200 && response.data != null) {
+              final data = response.data['data'];
+              if (data is List && data.isNotEmpty) {
+                Logger.info('[HomeController] Got ${data.length} tabs from server');
+                return data;
+              }
             }
+          } catch (e) {
+            Logger.warning('[HomeController] Failed to load tabs from server: $e');
           }
-        } catch (e) {
-          Logger.warning('Failed to load tabs from server: $e');
-        }
-        return null;
-      },
-      type: CacheType.homeTabs,
-    );
-    
-    if (cachedTabs != null && cachedTabs.isNotEmpty) {
-      channels.value = cachedTabs.map((tab) => {
-        'id': (tab['id'] as String?) ?? '',
-        'name': (tab['title'] as String?) ?? '',
-      }).toList();
-      Logger.success('Loaded ${channels.length} tabs');
-    } else {
-      // 使用默认频道列表
+          return null;
+        },
+        type: CacheType.homeTabs,
+      );
+      
+      Logger.info('[HomeController] cachedTabs result: ${cachedTabs?.length ?? 0}');
+      
+      if (cachedTabs != null && cachedTabs.isNotEmpty) {
+        channels.value = cachedTabs.map((tab) => {
+          'id': (tab['id'] as String?) ?? '',
+          'name': (tab['title'] as String?) ?? '',
+        }).toList();
+        Logger.success('[HomeController] Loaded ${channels.length} tabs');
+      } else {
+        // 使用默认频道列表
+        channels.value = [
+          {'id': 'featured', 'name': '精选'},
+          {'id': 'movie', 'name': '电影'},
+          {'id': 'series', 'name': '剧集'},
+          {'id': 'shorts', 'name': '短剧'},
+          {'id': 'anime', 'name': '动漫'},
+          {'id': 'variety', 'name': '综艺'},
+        ];
+        Logger.warning('[HomeController] Using default tabs');
+      }
+      Logger.info('[HomeController] _loadTabs completed');
+    } catch (e) {
+      Logger.error('[HomeController] _loadTabs error: $e');
+      // 确保即使出错也有默认频道
       channels.value = [
         {'id': 'featured', 'name': '精选'},
-        {'id': 'movie', 'name': '电影'},
-        {'id': 'series', 'name': '剧集'},
-        {'id': 'shorts', 'name': '短剧'},
-        {'id': 'anime', 'name': '动漫'},
-        {'id': 'variety', 'name': '综艺'},
       ];
-      Logger.warning('Using default tabs');
     }
   }
 
@@ -198,19 +220,28 @@ class HomeController extends GetxController {
       isLoading.value = true;
       error.value = '';
 
+      Logger.info('[HomeController] Loading channel data for: $channelId');
+
       final response = await _httpClient.get(
         '/home_layout',
         queryParameters: {'tab': channelId},
       );
 
+      Logger.info('[HomeController] Response status: ${response.statusCode}');
+      Logger.info('[HomeController] Response data type: ${response.data.runtimeType}');
+
       if (response.statusCode == 200 && response.data != null) {
-        final data = response.data;
+        final data = response.data['data'];
+        Logger.info('[HomeController] Data type: ${data.runtimeType}');
+        Logger.info('[HomeController] Data keys: ${data?.keys?.toList()}');
 
         // 构建缓存数据
         final moduleList = (data['modules'] as List?)
                 ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ??
             [];
+
+        Logger.info('[HomeController] Parsed ${moduleList.length} modules');
 
         // 如果是精选频道且用户已登录，在顶部插入继续观看模块
         if (channelId == 'featured' && UserStore.to.isLoggedIn) {
@@ -227,7 +258,7 @@ class HomeController extends GetxController {
         };
 
         // 🚀 保存到缓存
-        await _cache.set(
+        await _cache.setWithType(
           CacheKeys.homeLayout(channelId),
           cacheData,
           type: CacheType.homeLayout,
@@ -246,7 +277,7 @@ class HomeController extends GetxController {
       // 🚀 网络失败时，尝试使用过期的缓存（离线模式）
       final cachedData = await _cache.get<Map<String, dynamic>>(
         CacheKeys.homeLayout(channelId),
-        ignoreExpiry: true,
+        allowStale: true,
       );
       
       if (cachedData != null) {
@@ -264,9 +295,15 @@ class HomeController extends GetxController {
   
   /// 应用频道数据到 UI
   void _applyChannelData(Map<String, dynamic> data, String channelId) {
+    Logger.info('[HomeController] Applying channel data for: $channelId');
+    Logger.info('[HomeController] Data keys: ${data.keys.toList()}');
+    Logger.info('[HomeController] Modules count: ${(data['modules'] as List?)?.length ?? 0}');
+    
     modules.value = List<Map<String, dynamic>>.from(data['modules'] as List? ?? []);
     marqueeText.value = (data['marquee_text'] ?? '') as String;
     marqueeLink.value = (data['marquee_link'] ?? '') as String;
+    
+    Logger.info('[HomeController] Applied ${modules.length} modules');
   }
   
   /// 后台静默更新频道数据
@@ -278,7 +315,7 @@ class HomeController extends GetxController {
       );
 
       if (response.statusCode == 200 && response.data != null) {
-        final data = response.data;
+        final data = response.data['data'];
         final moduleList = (data['modules'] as List?)
                 ?.map((e) => Map<String, dynamic>.from(e as Map))
                 .toList() ??
@@ -297,7 +334,7 @@ class HomeController extends GetxController {
           'marquee_link': data['marquee_link'] ?? '',
         };
 
-        await _cache.set(
+        await _cache.setWithType(
           CacheKeys.homeLayout(channelId),
           cacheData,
           type: CacheType.homeLayout,

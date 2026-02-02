@@ -35,7 +35,7 @@ const CacheManagement: React.FC = () => {
       const stats = await getCacheStats();
       setCacheStats(stats);
     } catch (err) {
-      console.log('Cache stats not available');
+      logger.admin.info('Cache stats not available');
     } finally {
       setLoadingStats(false);
     }

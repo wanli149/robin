@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono';
-import { validateQuery, ValidationSchemas, getValidatedQuery, sanitizeQueryParams } from '../middleware/input_validator';
+import { validateQuery, ValidationSchemas, getValidatedQuery } from '../middleware/input_validator';
 import { aggregateVideos, shouldIncludeWelfare } from '../services/spider_aggregator';
 import { toPlaySources, ensureCleanedFormat, cleanPlayUrls, cleanImageUrl, normalizeArea, type CleanedPlayUrls } from '../services/data_cleaner';
 import { logger } from '../utils/logger';
@@ -15,6 +15,8 @@ import { getActorDetail, getPopularActors, searchActors } from '../services/acto
 import { getArticles, getArticleDetail } from '../services/article_collector';
 import { CACHE_CONFIG, TIMEOUT_CONFIG } from '../config';
 import { getMergedVideoDetail, getDeduplicatedLibrary } from '../services/language_merger';
+import { getCurrentTimestamp } from '../utils/time';
+import { castD1Results, castD1Result, getKVJson, setKVJson } from '../utils/type_helpers';
 
 type Bindings = {
   DB: D1Database;
@@ -124,12 +126,15 @@ vod.get('/api/vod', validateQuery(ValidationSchemas.vodList), async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      page: result.page,
-      pagecount: result.pagecount,
-      total: result.total,
       data: result.list,
-      sources: result.sources,
-      failed: result.failed,
+      meta: {
+        page: result.page,
+        pageSize: 20,
+        total: result.total,
+        totalPages: result.pagecount,
+        sources: result.sources,
+        failed: result.failed,
+      },
     });
   } catch (error) {
     logger.vod.error('Error', { error: String(error) });
@@ -164,9 +169,9 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
     let video: VodCacheData | null = null;
     
     try {
-      const kvCached = await c.env.ROBIN_CACHE.get(cacheKey, 'json');
+      const kvCached = await getKVJson<VodCacheData>(c.env.ROBIN_CACHE, cacheKey, null);
       if (kvCached) {
-        video = kvCached as VodCacheData;
+        video = kvCached;
         // 异步记录访问（不阻塞响应）
         c.executionCtx.waitUntil(trackHit(c.env, ids));
         
@@ -186,11 +191,12 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
           data: {
             ...video,
             play_sources: playSources,
+            recommendations: [], // 前端可以单独请求推荐
           },
-          recommendations: [], // 前端可以单独请求推荐
         });
       }
-    } catch {
+    } catch (error) {
+      logger.vod.warn('KV cache read failed', { error: error instanceof Error ? error.message : String(error) });
       // KV 读取失败，继续
     }
 
@@ -201,11 +207,11 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
       `).bind(ids).first();
 
       if (cached) {
-        video = cached as VodCacheData;
+        video = castD1Result<VodCacheData>(cached);
         
         // 🚀 写入 KV 缓存
         c.executionCtx.waitUntil(
-          c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(cached), { expirationTtl: CACHE_CONFIG.vodDetailTTL })
+          setKVJson(c.env.ROBIN_CACHE, cacheKey, cached, { expirationTtl: CACHE_CONFIG.vodDetailTTL })
         );
         
         // 异步记录访问
@@ -234,7 +240,16 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
         );
       }
 
-      video = result.list[0] as VodCacheData;
+      video = castD1Result<VodCacheData>(result.list[0]);
+      if (!video) {
+        return c.json(
+          {
+            code: 0,
+            msg: 'Video not found',
+          },
+          404
+        );
+      }
       isFromRealtime = true;
       
       // 🆕 实时获取的数据需要清洗并存储到数据库
@@ -269,7 +284,7 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
         vodId: ids,
         limit: 10,
       });
-      recommendations = recResult.list as VodCacheData[];
+      recommendations = castD1Results<VodCacheData>(recResult.list);
     } catch (error) {
       logger.vod.error('Recommendation failed', { error: String(error) });
     }
@@ -284,7 +299,7 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
         includeWelfare: false,
         timeout: TIMEOUT_CONFIG.fastRequest,
       });
-      recommendations = recResult.list.slice(0, 10) as VodCacheData[];
+      recommendations = castD1Results<VodCacheData>(recResult.list.slice(0, 10));
     }
 
     return c.json({
@@ -292,9 +307,9 @@ vod.get('/api/vod/detail', validateQuery(ValidationSchemas.vodDetail), async (c)
       msg: 'success',
       data: {
         ...video,
-        play_sources: playSources,  // 新增：清洗后的播放源
+        play_sources: playSources,
+        recommendations,
       },
-      recommendations,
     });
   } catch (error) {
     logger.vod.error('Detail error', { error: String(error) });
@@ -344,7 +359,7 @@ vod.get('/api/vod/detail/merged', validateQuery(ValidationSchemas.vodDetail), as
         vodId: ids,
         limit: 10,
       });
-      recommendations = recResult.list as VodCacheData[];
+      recommendations = castD1Results<VodCacheData>(recResult.list);
     } catch (error) {
       logger.vod.error('Recommendation failed', { error: String(error) });
     }
@@ -352,8 +367,10 @@ vod.get('/api/vod/detail/merged', validateQuery(ValidationSchemas.vodDetail), as
     return c.json({
       code: 1,
       msg: 'success',
-      data: merged,
-      recommendations,
+      data: {
+        ...merged,
+        recommendations,
+      },
     });
   } catch (error) {
     logger.vod.error('Merged detail error', { error: String(error) });
@@ -400,10 +417,13 @@ vod.get('/api/library', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      page,
-      pagecount: Math.ceil(result.total / limit),
-      total: result.total,
       data: result.list,
+      meta: {
+        page,
+        pageSize: limit,
+        total: result.total,
+        totalPages: Math.ceil(result.total / limit),
+      },
     });
   } catch (error) {
     logger.vod.error('Library error', { error: String(error) });
@@ -438,9 +458,11 @@ vod.get('/api/search_cache', validateQuery(ValidationSchemas.search), async (c) 
       return c.json({
         code: 1,
         msg: 'success',
-        keyword: wd,
-        total: results.length,
         data: results,
+        meta: {
+          keyword: wd,
+          total: results.length,
+        },
       });
     } catch (error) {
       logger.search.error('Error', { error: error instanceof Error ? error.message : String(error) });
@@ -515,13 +537,16 @@ vod.get('/api/search', validateQuery(ValidationSchemas.search), async (c) => {
         return c.json({
           code: 1,
           msg: 'success',
-          keyword: wd,
-          page: 1,
-          pagecount: 1,
-          total: cached.length,
           data: cached,
-          sources: ['cache'],
-          failed: [],
+          meta: {
+            keyword: wd,
+            page: 1,
+            pageSize: 20,
+            total: cached.length,
+            totalPages: 1,
+            sources: ['cache'],
+            failed: [],
+          },
         });
       }
     } catch (error) {
@@ -541,13 +566,16 @@ vod.get('/api/search', validateQuery(ValidationSchemas.search), async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      keyword: wd,
-      page: result.page,
-      pagecount: result.pagecount,
-      total: result.total,
       data: result.list,
-      sources: result.sources,
-      failed: result.failed,
+      meta: {
+        keyword: wd,
+        page: result.page,
+        pageSize: 20,
+        total: result.total,
+        totalPages: result.pagecount,
+        sources: result.sources,
+        failed: result.failed,
+      },
     });
   } catch (error) {
     logger.search.error('Error', { error: error instanceof Error ? error.message : String(error) });
@@ -587,7 +615,9 @@ vod.get('/api/hot_search', async (c) => {
       WHERE key IN ('hot_search_enabled', 'hot_search_limit')
     `).all();
     
-    const configMap = new Map((configResult.results as { key: string; value: string }[]).map(r => [r.key, r.value]));
+    const configMap = new Map(
+      castD1Results<{ key: string; value: string }>(configResult.results).map(r => [r.key, r.value])
+    );
     
     // 如果开关关闭，返回空数组并缓存
     if (configMap.get('hot_search_enabled') !== 'true') {
@@ -610,8 +640,9 @@ vod.get('/api/hot_search', async (c) => {
         ORDER BY is_pinned DESC, search_count DESC
         LIMIT ?
       `).bind(limit).all();
-      keywords = (result.results || []).map((r: { keyword: string }) => r.keyword);
-    } catch {
+      keywords = castD1Results<{ keyword: string }>(result.results).map((r) => r.keyword);
+    } catch (error) {
+      logger.vod.warn('hot_search_stats table not found, falling back to system_config', { error: error instanceof Error ? error.message : String(error) });
       // 表不存在，回退到旧的 system_config 方式
       const result = await c.env.DB.prepare(
         'SELECT value FROM system_config WHERE key = ?'
@@ -833,7 +864,9 @@ vod.get('/api/ranking', async (c) => {
           code: 1,
           msg: 'success',
           data: cached,
-          period,
+          meta: {
+            period,
+          },
         });
       }
     } catch {
@@ -886,7 +919,7 @@ vod.get('/api/ranking', async (c) => {
     }
 
     // 添加排名和热度信息
-    const list = (result.results || []).map((video: RankingVideoRow, index: number) => {
+    const list = castD1Results<RankingVideoRow>(result.results).map((video, index) => {
       let heat = video.vod_hits_day || 0;
       if (period === 'week') {
         heat = video.vod_hits_week || video.vod_hits_day * 7 || 0;
@@ -903,7 +936,7 @@ vod.get('/api/ranking', async (c) => {
 
     // 🚀 写入缓存
     try {
-      await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(list), { expirationTtl: CACHE_CONFIG.rankingTTL });
+      await setKVJson(c.env.ROBIN_CACHE, cacheKey, list, { expirationTtl: CACHE_CONFIG.rankingTTL });
     } catch (e) {
       // 缓存写入失败不影响主流程，仅记录警告
       logger.vod.warn('Ranking cache write failed', { error: e instanceof Error ? e.message : 'Unknown' });
@@ -913,7 +946,9 @@ vod.get('/api/ranking', async (c) => {
       code: 1,
       msg: 'success',
       data: list,
-      period,
+      meta: {
+        period,
+      },
     });
   } catch (error) {
     logger.vod.error('Ranking error', { error: error instanceof Error ? error.message : String(error) });
@@ -978,9 +1013,12 @@ vod.get('/api/articles', async (c) => {
       code: 1,
       msg: 'success',
       data: result.list,
-      total: result.total,
-      page,
-      limit,
+      meta: {
+        page,
+        pageSize: limit,
+        total: result.total,
+        totalPages: Math.ceil(result.total / limit),
+      },
     });
   } catch (error) {
     logger.vod.error('Get articles error', { error: error instanceof Error ? error.message : String(error) });
@@ -1093,7 +1131,7 @@ async function saveRealtimeVideo(
     // 清洗图片地址
     const cleanedPic = cleanImageUrl(video.vod_pic || '');
     
-    const now = Math.floor(Date.now() / 1000);
+    const now = getCurrentTimestamp();
     
     await env.DB.prepare(`
       INSERT INTO vod_cache (

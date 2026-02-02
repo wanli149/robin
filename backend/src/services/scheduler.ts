@@ -235,7 +235,7 @@ async function runWeeklyTasks(env: Env): Promise<void> {
   
   // 3. 清理失效视频（超过30天未更新且失效）
   try {
-    const thirtyDaysAgo = Math.floor(Date.now() / 1000) - 2592000;
+    const thirtyDaysAgo = getDaysAgo(30);
     
     await env.DB.prepare(`
       DELETE FROM vod_cache 

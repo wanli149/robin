@@ -10,6 +10,7 @@
 
 import { logger } from '../utils/logger';
 import type { CleanedPlayUrls, Episode } from './data_cleaner';
+import { castD1Results } from '../utils/type_helpers';
 
 interface Env {
   DB: D1Database;
@@ -175,7 +176,7 @@ export async function findAllVersions(
   ).all();
 
   // 4. 过滤：只保留真正相关的版本
-  const filtered = (versions.results as unknown as VodCacheRow[]).filter(v => {
+  const filtered = castD1Results<VodCacheRow>(versions.results).filter(v => {
     const { baseName: vBaseName } = extractVideoMeta(v.vod_name);
     return vBaseName === baseName;
   });
@@ -392,7 +393,7 @@ export async function getDeduplicatedLibrary(
   `;
 
   const allResult = await env.DB.prepare(allSql).bind(...params).all();
-  const allVideos = allResult.results as unknown as VodCacheRow[];
+  const allVideos = castD1Results<VodCacheRow>(allResult.results);
 
   // 在应用层进行去重（按基础名称+年份分组）
   const groupedMap = new Map<string, VodCacheRow>();

@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import { adminGuard } from '../middleware/admin_guard';
 import { logger } from '../utils/logger';
+import { getCurrentTimestamp } from '../utils/time';
 
 type Bindings = {
   DB: D1Database;
@@ -85,7 +86,7 @@ storage.post('/api/progress/sync', async (c) => {
       return c.json({ code: 0, msg: 'Cloud sync is disabled' }, 400);
     }
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = getCurrentTimestamp();
     let syncedCount = 0;
 
     // 批量插入/更新进度
@@ -186,7 +187,7 @@ storage.get('/api/progress/pull', async (c) => {
       msg: 'success',
       data: {
         progress_list: result.results,
-        server_time: Math.floor(Date.now() / 1000),
+        server_time: getCurrentTimestamp(),
       },
     });
   } catch (error) {
@@ -305,7 +306,7 @@ storage.post('/admin/storage/config', adminGuard, async (c) => {
     const body = await c.req.json();
     const { storage_type, connection_url, api_key, is_enabled, sync_strategy, sync_interval } = body;
 
-    const now = Math.floor(Date.now() / 1000);
+    const now = getCurrentTimestamp();
 
     // 如果api_key是******，表示不更新
     let updateApiKey = api_key && api_key !== '******';

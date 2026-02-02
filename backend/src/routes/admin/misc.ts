@@ -126,12 +126,23 @@ misc.post('/admin/feedback/batch', async (c) => {
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) return c.json({ code: 0, msg: 'ids is required' }, 400);
 
-    const placeholders = ids.map(() => '?').join(',');
+    // 安全地生成 placeholders（确保数量匹配）
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return c.json({ code: 0, msg: 'Invalid IDs' }, 400);
+    }
+    
+    // 验证所有ID都是数字
+    const validIds = ids.filter((id: unknown) => Number.isInteger(Number(id)));
+    if (validIds.length !== ids.length) {
+      return c.json({ code: 0, msg: 'All IDs must be integers' }, 400);
+    }
+    
+    const placeholders = generatePlaceholders(validIds.length);
 
     if (action === 'process') {
-      await c.env.DB.prepare(`UPDATE feedback SET status = 'processed' WHERE id IN (${placeholders})`).bind(...ids).run();
+      await c.env.DB.prepare(`UPDATE feedback SET status = 'processed' WHERE id IN (${placeholders})`).bind(...validIds).run();
     } else if (action === 'delete') {
-      await c.env.DB.prepare(`DELETE FROM feedback WHERE id IN (${placeholders})`).bind(...ids).run();
+      await c.env.DB.prepare(`DELETE FROM feedback WHERE id IN (${placeholders})`).bind(...validIds).run();
     }
 
     return c.json({ code: 1, msg: 'success' });

@@ -6,16 +6,12 @@
 import type { SystemConfigRow } from '../types/database';
 import { logger } from './logger';
 import { CACHE_CONFIG } from '../config';
+import { castD1Results } from './type_helpers';
 
 type Bindings = {
   DB: D1Database;
   ROBIN_CACHE: KVNamespace;
 };
-
-// Helper function to safely cast D1 query results
-function castResults<T>(results: Record<string, unknown>[]): T[] {
-  return results as unknown as T[];
-}
 
 /**
  * Batch get system configurations
@@ -34,7 +30,7 @@ export async function getSystemConfigs(
   `).bind(...keys).all();
   
   const configs: Record<string, string> = {};
-  for (const row of castResults<SystemConfigRow>(result.results)) {
+  for (const row of castD1Results<SystemConfigRow>(result.results)) {
     configs[row.key] = row.value || '';
   }
   
@@ -158,7 +154,8 @@ export async function getCachedConfig(
     if (cached !== null) {
       return cached;
     }
-  } catch (e) {
+  } catch (error) {
+    logger.admin.debug('Cache read failed, will query database', { error: error instanceof Error ? error.message : String(error) });
     // Ignore cache errors
   }
   
@@ -171,7 +168,8 @@ export async function getCachedConfig(
   // Cache for 30 minutes
   try {
     await env.ROBIN_CACHE.put(cacheKey, value, { expirationTtl: CACHE_CONFIG.configTTL });
-  } catch (e) {
+  } catch (error) {
+    logger.admin.debug('Cache write failed', { error: error instanceof Error ? error.message : String(error) });
     // Ignore cache errors
   }
   

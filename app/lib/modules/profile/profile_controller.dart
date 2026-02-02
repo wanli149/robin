@@ -36,7 +36,7 @@ class ProfileController extends GetxController {
       final response = await _httpClient.get('/api/config');
       
       if (response.data['code'] == 1) {
-        final data = response.data['data'] ?? response.data;
+        final data = response.data['data'];
         systemConfig.value = SystemConfig.fromJson(data);
       }
     } catch (e) {
@@ -150,7 +150,7 @@ class ProfileController extends GetxController {
                 
                 // 🚀 3. 清除 CacheService 数据缓存（首页、短剧流等）
                 if (Get.isRegistered<CacheService>()) {
-                  await CacheService.to.clearAll();
+                  await CacheService.to.clear();
                   Logger.info('CacheService cache cleared');
                 }
                 
@@ -324,7 +324,7 @@ class ProfileController extends GetxController {
       final response = await _httpClient.get('/api/version');
       
       if (response.data['code'] == 1) {
-        final data = response.data['data'] ?? response.data;
+        final data = response.data['data'];
         final version = data['version'] ?? '1.0.0';
         final force = data['force'] ?? false;
         final url = data['url'] ?? '';

@@ -36,7 +36,7 @@ class GlobalConfig extends GetxService {
       final response = await _httpClient.get('/api/config');
       
       if (response.data['code'] == 1) {
-        final data = response.data['data'] ?? response.data;
+        final data = response.data['data'];
         
         adsEnabled.value = data['ads_enabled'] == true;
         welfareEnabled.value = data['welfare_enabled'] == true;

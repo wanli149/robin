@@ -86,7 +86,7 @@ const StorageSettings: React.FC = () => {
         setStats(response.data.data);
       }
     } catch (error: any) {
-      console.error('Load stats error:', error);
+      logger.admin.error('Load stats error:', { error });
     }
   };
 

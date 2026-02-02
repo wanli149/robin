@@ -51,7 +51,7 @@ const VersionManagement: React.FC = () => {
       setVersions(list);
     } catch (err: any) {
       // 表可能不存在，静默处理
-      console.log('No version history yet');
+      logger.admin.info('No version history yet');
     } finally {
       setLoadingVersions(false);
     }

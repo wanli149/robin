@@ -120,7 +120,7 @@ const CategoryManagement: React.FC = () => {
       const data = await getCategories();
       setCategories(data as Category[]);
     } catch (error) {
-      console.error('Failed to load categories:', error);
+      logger.admin.error('Failed to load categories:', { error });
     }
   }, []);
 
@@ -130,7 +130,7 @@ const CategoryManagement: React.FC = () => {
       const data = await getCategoryStats();
       setStats(data);
     } catch (error) {
-      console.error('Failed to load stats:', error);
+      logger.admin.error('Failed to load stats:', { error });
     }
   }, []);
 
@@ -140,7 +140,7 @@ const CategoryManagement: React.FC = () => {
       const data = await getSources();
       setSources(data);
     } catch (error) {
-      console.error('Failed to load sources:', error);
+      logger.admin.error('Failed to load sources:', { error });
     }
   }, []);
 
@@ -150,7 +150,7 @@ const CategoryManagement: React.FC = () => {
       const data = await getCategoryMappings();
       setMappings(data as SourceTypeMapping[]);
     } catch (error) {
-      console.error('Failed to load mappings:', error);
+      logger.admin.error('Failed to load mappings:', { error });
     }
   }, []);
 
@@ -160,7 +160,7 @@ const CategoryManagement: React.FC = () => {
       const list = await getSubCategories();
       setSubCategories(list);
     } catch (error) {
-      console.error('Failed to load sub-categories:', error);
+      logger.admin.error('Failed to load sub-categories:', { error });
     }
   }, []);
 

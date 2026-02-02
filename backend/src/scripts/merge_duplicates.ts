@@ -11,6 +11,7 @@
 
 import type { MergeVideoRow } from '../types/database';
 import { logger } from '../utils/logger';
+import { getCurrentTimestamp } from '../utils/time';
 
 interface Env {
   DB: D1Database;
@@ -260,7 +261,7 @@ async function mergeGroup(
     Array.from(sources).join(','),
     Math.max(...videos.map(v => v.source_priority || 0)),
     mergedQualityScore,
-    Math.floor(Date.now() / 1000),
+    getCurrentTimestamp(),
     primary.vod_id
   ).run();
 

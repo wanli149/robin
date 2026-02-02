@@ -5,29 +5,36 @@ class ApiConfig {
   ApiConfig._();
   
   // 开发环境 API 地址（本地测试）
-  // 模拟器使用 10.0.2.2（Android 模拟器访问宿主机的特殊地址）
   static const String devBaseUrlEmulator = 'http://10.0.2.2:8787';
-  // 真机使用 localhost + adb 端口转发（USB连接方式）
   static const String devBaseUrlDevice = 'http://localhost:8787';
   
-  // 生产环境 API 地址（部署后使用）
-  // 🔥 部署后改为你的 Cloudflare Workers 域名
-  static const String prodBaseUrl = 'https://robin-backend.your-name.workers.dev';  // TODO: 部署后修改为实际域名
+  // 生产环境 API 地址（从环境变量读取，或使用默认值）
+  static const String prodBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://robin-backend.your-name.workers.dev',
+  );
   
-  // 备用 API 地址列表（硬编码，作为最后的备选）
-  // 🔥 部署后添加你的备用域名
-  static const List<String> fallbackUrls = [
-    'https://api1.example.com',  // TODO: 替换为实际备用域名
-    'https://api2.example.com',  // TODO: 替换为实际备用域名
-    'https://api3.example.com',  // TODO: 替换为实际备用域名
-  ];
+  // 备用 API 地址列表（从环境变量读取，或使用默认值）
+  static const String _fallbackUrlsEnv = String.fromEnvironment(
+    'API_FALLBACK_URLS',
+    defaultValue: '',
+  );
+  
+  static List<String> get fallbackUrls {
+    if (_fallbackUrlsEnv.isNotEmpty) {
+      return _fallbackUrlsEnv.split(',').map((e) => e.trim()).toList();
+    }
+    return [];
+  }
   
   // 域名列表 API 端点（用于动态获取域名）
   static const String domainsEndpoint = '/api/domains';
   
-  // 🔥 本地测试开关：true = 强制使用开发地址，false = 根据编译模式自动切换
-  // ⚠️ 部署前务必改为 false！
-  static const bool forceDevMode = true;  // 🚀 本地测试时设为 true
+  // 本地测试开关（从环境变量读取，默认false）
+  static const bool forceDevMode = bool.fromEnvironment(
+    'FORCE_DEV_MODE',
+    defaultValue: false,
+  );
   
   // 当前环境（根据编译模式自动切换）
   static const bool isProduction = bool.fromEnvironment('dart.vm.product');
@@ -52,9 +59,8 @@ class ApiConfig {
       return prodBaseUrl;
     }
     
-    // 开发环境：优先尝试真机地址，然后是模拟器地址
-    // 真机使用localhost（通过ADB端口转发），模拟器使用10.0.2.2
-    return devBaseUrlDevice; // 优先使用真机地址
+    // 开发环境：使用真机地址（通过ADB端口转发）
+    return devBaseUrlDevice;
   }
   
   /// 获取真机测试地址（用于真机测试时手动切换）

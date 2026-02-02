@@ -23,6 +23,7 @@ import {
   Typography,
   Alert,
 } from 'antd';
+import DOMPurify from 'dompurify';
 import { useNotification } from '../components/providers';
 import {
   SearchOutlined,
@@ -90,7 +91,7 @@ const ArticleManagement: React.FC = () => {
       const list = await getArticleCategories();
       setCategories(list);
     } catch (err) {
-      console.error('Failed to load categories:', err);
+      logger.admin.error('Failed to load categories:', { error: err });
     }
   }, []);
 
@@ -373,7 +374,7 @@ const ArticleManagement: React.FC = () => {
             
             {currentArticle.content && (
               <div 
-                dangerouslySetInnerHTML={{ __html: currentArticle.content }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(currentArticle.content) }}
                 style={{ lineHeight: 1.8 }}
               />
             )}

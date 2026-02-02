@@ -10,6 +10,7 @@
  */
 
 import type { ResourceSite } from '../config';
+import { getCurrentTimestamp } from '../utils/time';
 
 interface Env {
   DB: D1Database;
@@ -350,7 +351,7 @@ export async function saveVideoWithMerge(
   
   if (updateFields.length > 0) {
     updateFields.push('updated_at = ?');
-    updateValues.push(Math.floor(Date.now() / 1000));
+    updateValues.push(getCurrentTimestamp());
     updateValues.push(similar.vod_id);
     
     await env.DB.prepare(`

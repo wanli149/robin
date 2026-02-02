@@ -57,7 +57,7 @@ const TopicModal: React.FC<TopicModalProps> = ({
         const data = await getCategoriesWithSubs();
         setCategories(data.categories || []);
       } catch (e) {
-        console.error('Failed to load categories:', e);
+        logger.admin.error('Failed to load categories:', { error: e });
       }
     };
     loadCategories();

@@ -3,6 +3,8 @@
  * 定义缓存、超时、健康检查等配置常量
  */
 
+import { TIME_CONSTANTS } from './utils/time';
+
 /**
  * 资源站配置接口
  * 注意：资源站数据从数据库 video_sources 表获取，不再硬编码
@@ -32,6 +34,37 @@ export const DOUBAN_CONFIG = {
 };
 
 /**
+ * 七牛云存储区域配置
+ */
+export const QINIU_ZONES: Record<string, { up: string; rs: string; rsf: string }> = {
+  z0: { // 华东
+    up: 'https://up.qiniup.com',
+    rs: 'https://rs.qbox.me',
+    rsf: 'https://rsf.qbox.me',
+  },
+  z1: { // 华北
+    up: 'https://up-z1.qiniup.com',
+    rs: 'https://rs-z1.qbox.me',
+    rsf: 'https://rsf-z1.qbox.me',
+  },
+  z2: { // 华南
+    up: 'https://up-z2.qiniup.com',
+    rs: 'https://rs-z2.qbox.me',
+    rsf: 'https://rsf-z2.qbox.me',
+  },
+  na0: { // 北美
+    up: 'https://up-na0.qiniup.com',
+    rs: 'https://rs-na0.qbox.me',
+    rsf: 'https://rsf-na0.qbox.me',
+  },
+  as0: { // 东南亚
+    up: 'https://up-as0.qiniup.com',
+    rs: 'https://rs-as0.qbox.me',
+    rsf: 'https://rsf-as0.qbox.me',
+  },
+};
+
+/**
  * 缓存配置
  * 🚀 优化：分层缓存策略，减少 D1/KV 消耗
  * 
@@ -47,40 +80,40 @@ export const DOUBAN_CONFIG = {
  */
 export const CACHE_CONFIG = {
   // 布局相关（变化不频繁，延长缓存时间）
-  layoutTTL: 600,       // 布局缓存 10 分钟（原5分钟）
-  tabsTTL: 3600,        // 频道列表 1 小时（原30分钟）
-  marqueeTTL: 1800,     // 跑马灯 30 分钟（原10分钟）
+  layoutTTL: 600,                      // 布局缓存 10 分钟
+  tabsTTL: TIME_CONSTANTS.HOUR,       // 频道列表 1 小时
+  marqueeTTL: 1800,                    // 跑马灯 30 分钟
   
   // 视频数据
-  vodListTTL: 300,      // 视频列表 5 分钟（原3分钟）
-  vodDetailTTL: 7200,   // 视频详情 2 小时（原1小时）
-  metadataTTL: 86400,   // 元数据缓存 24 小时
+  vodListTTL: 300,                     // 视频列表 5 分钟
+  vodDetailTTL: 7200,                  // 视频详情 2 小时
+  metadataTTL: TIME_CONSTANTS.DAY,    // 元数据缓存 24 小时
   
   // 短剧专用
-  shortsTTL: 3600,      // 短剧缓存 1 小时（原30分钟）
-  shortsDetailTTL: 1800,// 短剧详情缓存 30 分钟（原10分钟）
-  shortsRandomTTL: 300, // 随机短剧缓存 5 分钟（原3分钟）
+  shortsTTL: TIME_CONSTANTS.HOUR,     // 短剧缓存 1 小时
+  shortsDetailTTL: 1800,               // 短剧详情缓存 30 分钟
+  shortsRandomTTL: 300,                // 随机短剧缓存 5 分钟
   
   // 搜索相关
-  hotSearchTTL: 1800,   // 热搜 30 分钟（原10分钟）
-  searchResultTTL: 600, // 搜索结果 10 分钟（原5分钟）
+  hotSearchTTL: 1800,                  // 热搜 30 分钟
+  searchResultTTL: 600,                // 搜索结果 10 分钟
   
   // 系统配置
-  configTTL: 3600,      // 系统配置 1 小时（原30分钟）
+  configTTL: TIME_CONSTANTS.HOUR,     // 系统配置 1 小时
   
   // 安全/统计相关
-  securityConfigTTL: 3600,    // 安全配置 1 小时
-  securityEventTTL: 259200,   // 安全事件 3 天（原7天，减少存储）
-  statsRetentionTTL: 86400,   // 统计数据保留 1 天（原2天）
-  hitsTrackerTTL: 86400,      // 点击统计 24 小时
-  rankingTTL: 1800,           // 排行榜 30 分钟（原10分钟）
+  securityConfigTTL: TIME_CONSTANTS.HOUR,        // 安全配置 1 小时
+  securityEventTTL: 3 * TIME_CONSTANTS.DAY,      // 安全事件 3 天
+  statsRetentionTTL: TIME_CONSTANTS.DAY,         // 统计数据保留 1 天
+  hitsTrackerTTL: TIME_CONSTANTS.DAY,            // 点击统计 24 小时
+  rankingTTL: 1800,                              // 排行榜 30 分钟
   
-  // 性能监控（减少存储时间）
-  performanceDataTTL: 43200,  // 性能数据 12 小时（原24小时）
+  // 性能监控
+  performanceDataTTL: 12 * TIME_CONSTANTS.HOUR,  // 性能数据 12 小时
   
   // 其他
-  domainsTTL: 600,            // 域名列表 10 分钟（原5分钟）
-  announcementTTL: 300,       // 公告 5 分钟（原2分钟）
+  domainsTTL: 600,                     // 域名列表 10 分钟
+  announcementTTL: 300,                // 公告 5 分钟
 };
 
 /**

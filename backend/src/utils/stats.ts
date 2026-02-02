@@ -3,7 +3,8 @@
  * Records API access statistics and user activity
  */
 
-import { logger } from './logger';
+import { logger } from '../utils/logger';
+import { generatePlaceholders } from '../utils/sql';
 
 interface Env {
   DB: D1Database;

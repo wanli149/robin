@@ -93,7 +93,7 @@ const CollectManagementV2: React.FC = () => {
         setPollingTaskId(null);
       }
     } catch (err: any) {
-      console.error('Failed to load stats:', err);
+      logger.admin.error('Failed to load stats:', { error: err });
     }
   }, []);
 
@@ -116,7 +116,7 @@ const CollectManagementV2: React.FC = () => {
       const list = await getSourcesHealth();
       setHealthList(list);
     } catch (err: any) {
-      console.error('Failed to load health:', err);
+      logger.admin.error('Failed to load health:', { error: err });
     }
   }, []);
 
@@ -130,7 +130,7 @@ const CollectManagementV2: React.FC = () => {
       setCategories(cats);
       setSources(srcs);
     } catch (error) {
-      console.error('Failed to load options:', error);
+      logger.admin.error('Failed to load options:', { error });
     }
   }, []);
 
@@ -169,7 +169,7 @@ const CollectManagementV2: React.FC = () => {
           loadStats();
         }
       } catch (error) {
-        console.error('Polling error:', error);
+        logger.admin.error('Polling error:', { error });
       }
     }, 2000);
     
@@ -217,7 +217,7 @@ const CollectManagementV2: React.FC = () => {
       const result = await getCollectTaskLogs(task.id, { limit: 50 });
       setTaskLogs(result.logs);
     } catch (error) {
-      console.error('Failed to load logs:', error);
+      logger.admin.error('Failed to load logs:', { error });
     }
   };
 

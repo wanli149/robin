@@ -4,7 +4,8 @@ import '../home/home_page.dart';
 import '../library/library_page.dart';
 import '../profile/profile_page.dart';
 import '../shorts/shorts_page.dart';
-import '../../core/global_player_manager.dart';
+import '../../core/player/global_player_manager.dart';
+import '../../core/player/player_enums.dart';
 import '../../core/logger.dart';
 
 /// 根容器控制器

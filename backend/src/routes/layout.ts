@@ -10,6 +10,7 @@ import { aggregateVideos } from '../services/spider_aggregator';
 import { getRecommendationsV2, RecommendStrategy } from '../services/recommendation_engine_v2';
 import { logger } from '../utils/logger';
 import { extractVideoMeta } from '../services/language_merger';
+import { castD1Results } from '../utils/type_helpers';
 
 type Bindings = {
   DB: D1Database;
@@ -56,7 +57,7 @@ interface TopicItem {
 }
 
 // 模块数据类型（可以是视频列表、专题列表、时间线等）
-type ModuleData = VideoItem[] | TopicItem[] | Record<string, VideoItem[]> | { items: VideoItem[]; tabs?: any[] } | null;
+type ModuleData = VideoItem[] | TopicItem[] | Record<string, VideoItem[]> | { items: VideoItem[]; tabs?: unknown[] } | null;
 
 // API 参数类型
 interface ApiParams {
@@ -330,7 +331,7 @@ async function fetchModuleData(
           }
         });
       });
-      return Array.from(actorMap.values()).slice(0, apiParams.limit || 10) as unknown as VideoItem[];
+      return castD1Results<VideoItem>(Array.from(actorMap.values()).slice(0, apiParams.limit || 10));
     }
 
     // 特殊处理：topic_list 专题列表
@@ -464,7 +465,7 @@ layout.get('/home_layout', async (c) => {
       ORDER BY sort_order ASC
     `).bind(tab).all();
 
-    const modules = result.results as unknown as PageModule[];
+    const modules = castD1Results<PageModule>(result.results);
 
     // 3. 解析 JSON 字段并填充数据（并发优化）
     const parsedModules = await Promise.all(modules.map(async (module) => {
@@ -473,7 +474,7 @@ layout.get('/home_layout', async (c) => {
         const adConfig = module.ad_config ? JSON.parse(module.ad_config) : null;
         
         // 根据模块类型和 API 参数获取数据
-        let data: any = null;
+        let data: ModuleData = null;
         if (apiParams && shouldFetchData(module.module_type)) {
           data = await fetchModuleData(c.env, module.module_type, apiParams);
           
@@ -492,7 +493,7 @@ layout.get('/home_layout', async (c) => {
               ORDER BY sort_order ASC
             `).bind(apiParams.t).all();
             
-            const tabs = (subCatsResult.results as unknown as SubCategoryRow[]).map(sub => ({
+            const tabs = castD1Results<SubCategoryRow>(subCatsResult.results).map(sub => ({
               id: sub.id,
               name: sub.name,
               name_en: sub.name_en,
@@ -549,7 +550,7 @@ layout.get('/home_layout', async (c) => {
       `).all();
       
       const configMap = new Map(
-        (marqueeConfigs.results as unknown as SystemConfigRow[]).map(r => [r.key, r.value])
+        castD1Results<SystemConfigRow>(marqueeConfigs.results).map(r => [r.key, r.value])
       );
       
       const marqueeEnabled = configMap.get('marquee_enabled') === 'true';
@@ -565,12 +566,20 @@ layout.get('/home_layout', async (c) => {
     }
 
     // 5. 构造响应
-    const response = {
+    const responseData = {
       tab_id: tab,
       modules: validModules,
       marquee_text: marqueeText,
       marquee_link: marqueeLink,
-      timestamp: Date.now(),
+    };
+
+    const response = {
+      code: 1,
+      msg: 'success',
+      data: responseData,
+      meta: {
+        timestamp: Date.now(),
+      },
     };
 
     // 6. 缓存到 KV（5 分钟）
@@ -590,8 +599,9 @@ layout.get('/home_layout', async (c) => {
     logger.admin.error('Error', { error: String(error) });
     return c.json(
       {
-        error: 'Failed to fetch layout',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        code: 0,
+        msg: 'Failed to fetch layout',
+        error: error instanceof Error ? error.message : 'Unknown error',
       },
       500
     );
@@ -621,8 +631,12 @@ layout.get('/home_tabs', async (c) => {
     `).all();
 
     const response = {
-      tabs: result.results,
-      timestamp: Date.now(),
+      code: 1,
+      msg: 'success',
+      data: result.results,
+      meta: {
+        timestamp: Date.now(),
+      },
     };
 
     // 缓存（tabs 配置变化不频繁）
@@ -637,8 +651,9 @@ layout.get('/home_tabs', async (c) => {
     logger.admin.error('Error fetching tabs', { error: String(error) });
     return c.json(
       {
-        error: 'Failed to fetch tabs',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        code: 0,
+        msg: 'Failed to fetch tabs',
+        error: error instanceof Error ? error.message : 'Unknown error',
       },
       500
     );
@@ -699,8 +714,9 @@ layout.post('/admin/tabs', async (c) => {
     await c.env.ROBIN_CACHE.delete('home_tabs');
     
     return c.json({ code: 1, msg: '创建成功' });
-  } catch (error: any) {
-    if (error.message?.includes('UNIQUE constraint')) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('UNIQUE constraint')) {
       return c.json({ code: 0, msg: '频道ID已存在' }, 400);
     }
     return c.json({ code: 0, msg: '创建失败' }, 500);

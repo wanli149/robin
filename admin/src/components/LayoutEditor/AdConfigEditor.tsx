@@ -36,7 +36,7 @@ const AdConfigEditor: React.FC<AdConfigEditorProps> = ({ value, onChange }) => {
         const data = await getAdsSimple('insert_grid');
         setAdList(data);
       } catch (error) {
-        console.error('Failed to load ads:', error);
+        logger.admin.error('Failed to load ads:', { error });
       } finally {
         setLoadingAds(false);
       }

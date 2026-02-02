@@ -4,6 +4,7 @@
  */
 
 import { logger } from '../utils/logger';
+import { getCurrentTimestamp } from '../utils/time';
 
 interface Env {
   DB: D1Database;
@@ -139,7 +140,7 @@ export async function fixVideoCovers(env: Env, limit: number = 100): Promise<{
         detail.vod_director || '',
         detail.vod_writer || '',
         detail.vod_content || '',
-        Math.floor(Date.now() / 1000),
+        getCurrentTimestamp(),
         vodId
       ).run();
 

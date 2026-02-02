@@ -64,7 +64,7 @@ const AdModal: React.FC<AdModalProps> = ({ visible, ad, onCancel, onSave }) => {
       form.resetFields();
       setPreviewImage('');
     } catch (error) {
-      console.error('Validation failed:', error);
+      logger.admin.error('Validation failed:', { error });
     } finally {
       setLoading(false);
     }

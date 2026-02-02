@@ -109,7 +109,7 @@ const AddModuleModal: React.FC<AddModuleModalProps> = ({
       setAdConfig(null);
       success('模块添加成功');
     } catch (error) {
-      console.error('Validation failed:', error);
+      logger.admin.error('Validation failed:', { error });
     } finally {
       setLoading(false);
     }

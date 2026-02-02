@@ -6,6 +6,7 @@
  */
 
 import { logger } from '../utils/logger';
+import { getCurrentTimestamp } from '../utils/time';
 
 interface Env {
   DB: D1Database;
@@ -193,7 +194,7 @@ async function saveActor(
     `).bind(actorName).first();
   }
   
-  const now = Math.floor(Date.now() / 1000);
+  const now = getCurrentTimestamp();
   
   // 处理头像URL（有些是相对路径）
   let avatarUrl = actor.actor_pic || '';

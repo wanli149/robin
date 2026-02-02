@@ -21,8 +21,33 @@ const DEFAULT_CONFIG = {
   timestampTolerance: 300, // 5分钟
   nonceTtl: 600, // 10分钟
   allowedPackages: ['com.fetch.video'] as string[], // 允许的 APP 包名
-  protectedPaths: ['/api/vod', '/api/search', '/api/shorts', '/api/user', '/home_layout', '/home_tabs', '/api/ads'],
-  whitelistPaths: ['/api/version', '/api/config', '/api/domains', '/api/announcement', '/api/ads/splash', '/admin/', '/auth/', '/api.php/'],
+  // 🚀 只保护用户相关接口，公开内容（视频、搜索等）不需要签名
+  protectedPaths: ['/api/user/profile', '/api/user/favorites', '/api/user/history', '/api/user/settings'],
+  // 🚀 公开访问路径：视频浏览、搜索、首页等不需要签名
+  whitelistPaths: [
+    '/api/version', 
+    '/api/config', 
+    '/api/domains', 
+    '/api/announcement', 
+    '/api/ads/splash',
+    '/api/vod',           // 视频列表、详情、播放
+    '/api/search',        // 搜索
+    '/api/shorts',        // 短剧
+    '/home_layout',       // 首页布局
+    '/home_tabs',         // 频道列表
+    '/api/ads',           // 广告
+    '/api/types',         // 分类
+    '/api/hot_search',    // 热搜
+    '/api/actor',         // 演员
+    '/api/article',       // 文章
+    '/api/recommend',     // 推荐
+    '/api/stats',         // 统计上报
+    '/api/storage',       // 存储（进度同步等）
+    '/api/progress',      // 播放进度
+    '/admin/',            // 管理后台（有独立的 admin key 验证）
+    '/auth/',             // 认证接口
+    '/api.php/',          // CMS 兼容接口
+  ],
 };
 
 export type SecurityConfig = typeof DEFAULT_CONFIG;

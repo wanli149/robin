@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../core/global_player_manager.dart';
+import '../../../core/player/global_player_manager.dart';
+import '../../../core/player/player_state.dart' show AppPlayerState;
 
 /// 播放器进度条组件
 class PlayerProgressBar extends StatelessWidget {
-  final PlayerState state;
+  final AppPlayerState state;
   final GlobalPlayerManager manager;
   final bool showTime;
   final double height;
@@ -111,7 +112,7 @@ class PlayerProgressBar extends StatelessWidget {
 
 /// 紧凑版进度条（用于全屏模式）
 class CompactProgressBar extends StatelessWidget {
-  final PlayerState state;
+  final AppPlayerState state;
   final GlobalPlayerManager manager;
   final bool isCompactMode;
 

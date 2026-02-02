@@ -14,6 +14,7 @@ import type {
   ConnectionTestResult,
 } from './types';
 import { logger } from '../../utils/logger';
+import { getCurrentTimestamp } from '../../utils/time';
 
 // 存储配置数据库行类型
 interface StorageConfigRow {
@@ -263,7 +264,7 @@ export class ImageStorageService {
       );
 
       // 保存映射记录
-      const now = Math.floor(Date.now() / 1000);
+      const now = getCurrentTimestamp();
       await this.env.DB.prepare(`
         INSERT INTO image_mappings (
           original_url, original_hash, storage_key, storage_url,
@@ -342,7 +343,7 @@ export class ImageStorageService {
       }
 
       // 加入队列
-      const now = Math.floor(Date.now() / 1000);
+      const now = getCurrentTimestamp();
       await this.env.DB.prepare(`
         INSERT INTO image_sync_queue (
           original_url, original_hash, image_type, vod_id, priority, status, created_at
@@ -404,7 +405,7 @@ export class ImageStorageService {
               UPDATE image_sync_queue 
               SET status = 'completed', processed_at = ?
               WHERE id = ?
-            `).bind(Math.floor(Date.now() / 1000), item.id).run();
+            `).bind(getCurrentTimestamp(), item.id).run();
             success++;
           } else {
             const newRetryCount = item.retry_count + 1;

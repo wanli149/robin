@@ -536,6 +536,7 @@ async function fetchVideoDetail(source: SourceInfo, video: ParsedVideo): Promise
       return { ...video, ...parsed.list[0] };
     }
   } catch (error) {
+    logger.collector.debug('Failed to fetch detail, using list data', { error: error instanceof Error ? error.message : String(error) });
     // 详情获取失败，使用列表数据
   }
   
@@ -564,7 +565,7 @@ async function saveVideo(
   // 多级查找已存在的视频
   const existing = await findExistingVideoV2(env, vodName, vodYear, vodArea, vodDirector);
   
-  const now = Math.floor(Date.now() / 1000);
+  const now = getCurrentTimestamp();
   
   // 自动分类（V2：优先使用 type_name 智能识别）
   const classification = autoClassify({
@@ -827,7 +828,8 @@ function parsePlayUrls(video: ParsedVideo, sourceName: string): Record<string, s
       }
       return playUrls;
     }
-  } catch (e) {
+  } catch (error) {
+    logger.data.warn('JSON parse failed, trying direct CMS format', { error: error instanceof Error ? error.message : String(error) });
     // JSON 解析失败，尝试直接解析 CMS 格式
   }
   
@@ -1322,7 +1324,7 @@ export async function mergeDuplicateVideos(
       primary.vod_content || '',
       primary.vod_year || '',
       primary.vod_area || '',
-      Math.floor(Date.now() / 1000),
+      getCurrentTimestamp(),
       primary.vod_id
     ).run();
     

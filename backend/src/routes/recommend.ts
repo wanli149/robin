@@ -52,8 +52,8 @@ recommend.get('/api/recommend', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      data: {
-        list: result.list,
+      data: result.list,
+      meta: {
         strategy: result.strategy,
         cached: result.cached,
         confidence: result.confidence,
@@ -92,8 +92,8 @@ recommend.get('/api/recommend/similar/:vodId', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      data: {
-        list: result.list,
+      data: result.list,
+      meta: {
         confidence: result.confidence,
       },
     });
@@ -130,8 +130,8 @@ recommend.get('/api/recommend/shorts/:vodId', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      data: {
-        list: result.list,
+      data: result.list,
+      meta: {
         confidence: result.confidence,
       },
     });
@@ -163,8 +163,8 @@ recommend.get('/api/recommend/trending', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      data: {
-        list: result.list,
+      data: result.list,
+      meta: {
         cached: result.cached,
       },
     });
@@ -199,9 +199,9 @@ recommend.get('/api/recommend/personalized', async (c) => {
       return c.json({
         code: 1,
         msg: 'success',
-        data: {
-          list: result.list,
-          strategy: 'trending', // 标记实际使用的策略
+        data: result.list,
+        meta: {
+          strategy: 'trending',
           fallback: true,
         },
       });
@@ -217,8 +217,8 @@ recommend.get('/api/recommend/personalized', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      data: {
-        list: result.list,
+      data: result.list,
+      meta: {
         strategy: result.strategy,
         confidence: result.confidence,
       },

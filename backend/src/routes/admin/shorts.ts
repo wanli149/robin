@@ -202,7 +202,8 @@ function selectPreviewEpisode(vodPlayUrl: string): { episode: number; url: strin
         return { episode: targetIndex + 1, url: selected.url };
       }
     }
-  } catch (e) {
+  } catch (error) {
+    logger.shorts.warn('Failed to parse preview_url', { error: error instanceof Error ? error.message : String(error) });
     // JSON 解析失败
   }
   

@@ -604,7 +604,7 @@ async function cleanupLogs(env: Bindings, days: number): Promise<void> {
  * 清理失效视频
  */
 async function cleanupInvalidVideos(env: Bindings, days: number): Promise<void> {
-  const cutoffTime = Math.floor(Date.now() / 1000) - (days * 86400);
+  const cutoffTime = getDaysAgo(days);
   await env.DB.prepare(`
     DELETE FROM vod_cache WHERE is_valid = 0 AND updated_at < ?
   `).bind(cutoffTime).run();

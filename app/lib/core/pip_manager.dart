@@ -129,11 +129,6 @@ class PipManager extends GetxController with WidgetsBindingObserver {
             
             // 通知播放器PIP状态变化，但不暂停播放
             _notifyPlayersPipModeChanged(isInPip, keepPlaying);
-          } else {
-            // 兼容旧格式
-            final bool isInPip = call.arguments as bool;
-            isInPipMode.value = isInPip;
-            Logger.info('PIP mode changed (legacy): $isInPip', 'PIP');
           }
           break;
         case 'onAppPaused':

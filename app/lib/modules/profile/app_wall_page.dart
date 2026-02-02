@@ -34,7 +34,7 @@ class _AppWallPageState extends State<AppWallPage> {
       final response = await _httpClient.get('/api/app_wall');
 
       if (response.data['code'] == 1) {
-        final data = response.data['data'] ?? response.data;
+        final data = response.data['data'];
         final List<dynamic> appList = data is List ? data : [];
 
         _apps.value = appList

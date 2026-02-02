@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import { generateToken, verifyToken, extractToken } from '../utils/jwt';
 import { logger } from '../utils/logger';
+import { getCurrentTimestamp } from '../utils/time';
 
 type Bindings = {
   DB: D1Database;
@@ -38,28 +39,24 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 /**
- * 验证密码
- * 支持新格式（salt:hash）和旧格式（纯hash）的兼容
+ * 验证密码（仅支持新格式 salt:hash）
  */
 async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
   const encoder = new TextEncoder();
   
-  // 检查是否为新格式（包含盐值）
-  if (storedHash.includes(':')) {
-    const [salt, hash] = storedHash.split(':');
-    const data = encoder.encode(salt + password);
-    const computedHash = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(computedHash));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    return hashHex === hash;
+  // 只支持新格式（包含盐值）
+  if (!storedHash.includes(':')) {
+    // 旧格式密码不再支持，需要用户重置密码
+    logger.admin.warn('Detected old password format, user needs to reset password');
+    return false;
   }
   
-  // 兼容旧格式（无盐值）
-  const data = encoder.encode(password);
+  const [salt, hash] = storedHash.split(':');
+  const data = encoder.encode(salt + password);
   const computedHash = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(computedHash));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex === storedHash;
+  return hashHex === hash;
 }
 
 /**
@@ -108,7 +105,7 @@ auth.post('/api/auth/register', async (c) => {
     const result = await c.env.DB.prepare(`
       INSERT INTO users (username, password, device_id, is_vip, created_at)
       VALUES (?, ?, ?, 0, ?)
-    `).bind(username, passwordHash, device_id || null, Math.floor(Date.now() / 1000)).run();
+    `).bind(username, passwordHash, device_id || null, getCurrentTimestamp()).run();
 
     // 获取新用户 ID
     const user = await c.env.DB.prepare(
@@ -363,7 +360,7 @@ auth.post('/user/sync', async (c) => {
       vod_pic || null,
       progress || 0,
       duration || 0,
-      Math.floor(Date.now() / 1000)
+      getCurrentTimestamp()
     ).run();
 
     logger.admin.info('Sync progress', { user_id: payload.user_id, vod_id, progress });
@@ -433,9 +430,13 @@ auth.get('/api/user/history', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      page,
-      total,
       data: result.results,
+      meta: {
+        page,
+        pageSize: limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     logger.admin.error('History error', { error: error instanceof Error ? error.message : String(error) });
@@ -538,7 +539,7 @@ auth.post('/api/user/favorite', async (c) => {
       vod_id,
       vod_name || null,
       vod_pic || null,
-      Math.floor(Date.now() / 1000)
+      getCurrentTimestamp()
     ).run();
 
     logger.admin.info('Added favorite', { user_id: payload.user_id, vod_id });
@@ -649,7 +650,7 @@ auth.post('/api/appointment', async (c) => {
       vod_id,
       vod_name || null,
       release_date || null,
-      Math.floor(Date.now() / 1000)
+      getCurrentTimestamp()
     ).run();
 
     logger.admin.info('Added appointment', { user_id: payload.user_id, vod_id });

@@ -206,11 +206,12 @@ types.get('/api/types/:id/videos', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      data: {
-        list: [],
+      data: [],
+      meta: {
         page,
-        limit,
+        pageSize: limit,
         total: 0,
+        totalPages: 0,
       },
     });
   } catch (error) {

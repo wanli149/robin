@@ -42,7 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ errorInfo });
     
     // 记录错误日志
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    logger.admin.error('ErrorBoundary caught an error:', { error: error.message, errorInfo });
     
     // 这里可以上报错误到服务器
     // reportError(error, errorInfo);

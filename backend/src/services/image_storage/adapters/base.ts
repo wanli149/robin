@@ -32,7 +32,7 @@ export abstract class BaseStorageAdapter implements IStorageAdapter {
       try {
         await this.delete(key);
       } catch (error) {
-        console.error(`Failed to delete ${key}:`, error);
+        logger.storage.error(`Failed to delete ${key}:`, { error: error instanceof Error ? error.message : String(error) });
       }
     }
   }

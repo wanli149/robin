@@ -31,7 +31,7 @@ class _AppointmentsPageState extends State<AppointmentsPage> {
       final response = await _httpClient.get('/api/user/appointments');
 
       if (response.data['code'] == 1) {
-        final data = response.data['data'] ?? response.data;
+        final data = response.data['data'];
         final list = data is List ? data : [];
 
         _appointmentsList.value =

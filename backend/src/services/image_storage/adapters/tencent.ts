@@ -4,12 +4,13 @@
  */
 
 import { BaseStorageAdapter } from './base';
-import type { ConnectionTestResult } from '../types';
+import type { ConnectionTestResult, ImageStorageConfig } from '../types';
+import { getCurrentTimestamp, TIME_CONSTANTS } from '../../../utils/time';
 
 export class TencentCOSAdapter extends BaseStorageAdapter {
   private host: string = '';
 
-  async initialize(config: any): Promise<void> {
+  async initialize(config: ImageStorageConfig): Promise<void> {
     await super.initialize(config);
     
     // 设置 host
@@ -31,8 +32,8 @@ export class TencentCOSAdapter extends BaseStorageAdapter {
     const secretId = this.config!.access_key!;
     const secretKey = this.config!.secret_key!;
     
-    const now = Math.floor(Date.now() / 1000);
-    const expireTime = now + 3600; // 1小时有效
+    const now = getCurrentTimestamp();
+    const expireTime = now + TIME_CONSTANTS.HOUR;
     const keyTime = `${now};${expireTime}`;
     
     // 生成 SignKey

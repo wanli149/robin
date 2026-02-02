@@ -98,7 +98,7 @@ export const TaskPollingProvider: React.FC<{ children: React.ReactNode }> = ({ c
           };
         }));
       } catch (error) {
-        console.error(`Failed to poll task ${task.taskId}:`, error);
+        logger.admin.error(`Failed to poll task ${task.taskId}:`, { error });
       }
     }
   }, [tasks]);

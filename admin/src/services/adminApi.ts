@@ -5,21 +5,43 @@
 
 import apiClient, { type ApiResponse } from './api';
 import { logger } from '../utils/logger';
-
-/**
- * Dashboard数据类型
- */
-export interface DashboardStats {
-  stats: Array<{
-    date: string;
-    api_calls: number;
-    unique_users: number;
-  }>;
-  total_users: number;
-  today_active: number;
-  today_api_calls: number;
-  server_status: string;
-}
+import type {
+  DashboardStats,
+  LayoutModule,
+  LayoutData,
+  CollectLog,
+  CollectTaskProgress,
+  SourceHealthCheck,
+  CollectStats,
+  Category,
+  SubCategory,
+  CategoryMapping,
+  ModuleStats,
+  CrashReport,
+  Feedback,
+  FeedbackStats,
+  VideoExportOptions,
+  VideoSourceInfo,
+  TopicStats,
+  RealtimeStats,
+  TrendData,
+  CacheStats,
+  DedupResult,
+  VideoRepairResult,
+  BatchRepairResult,
+  DomainCheckResult,
+  BatchDomainCheckResult,
+  MigrationResult,
+  CollectResult,
+  ActorEnrichResult,
+  ActorStats,
+  DetectedCategory,
+  CategoryDetectionResult,
+  ClassifyTestInput,
+  ClassifyTestResult,
+  CategoryWithSubs,
+  PaginatedResponse,
+} from '../types/api';
 
 /**
  * 获取仪表板数据
@@ -72,25 +94,6 @@ export const releaseVersion = async (data: ReleaseVersion): Promise<void> => {
 };
 
 /**
- * 布局数据类型
- */
-export interface LayoutModule {
-  id?: number;
-  tab_id: string;
-  module_type: string;
-  title: string | null;
-  api_params: any;
-  ad_config: any;
-  sort_order: number;
-  is_enabled?: boolean; // 模块开关
-}
-
-export interface LayoutData {
-  tab_id: string;
-  modules: LayoutModule[];
-}
-
-/**
  * 获取布局配置
  */
 export const getLayout = async (tabId: string): Promise<LayoutData> => {
@@ -98,6 +101,10 @@ export const getLayout = async (tabId: string): Promise<LayoutData> => {
     `/admin/layout?tab=${tabId}`
   );
   if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
+  }
+  throw new Error(response.data.msg || '获取布局配置失败');
+};
     return response.data.data;
   }
   throw new Error(response.data.msg || '获取布局失败');
@@ -129,7 +136,7 @@ export interface ValidationResult {
   status: 'success' | 'warning' | 'error';
   message: string;
   data_count?: number;
-  details?: any;
+  details?: Record<string, unknown>;
 }
 
 /**
@@ -139,7 +146,7 @@ export const validateLayout = async (
   tabId: string,
   modules: LayoutModule[]
 ): Promise<ValidationResult[]> => {
-  const response = await apiClient.post<ApiResponse & { results?: ValidationResult[] }>(
+  const response = await apiClient.post<ApiResponse<{ results: ValidationResult[] }>>(
     '/admin/layout/validate',
     {
       tab_id: tabId,
@@ -592,7 +599,16 @@ export const getSystemConfig = async (): Promise<{
   customer_service?: string;
   official_group?: string;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>('/api/config');
+  const response = await apiClient.get<ApiResponse<{
+    marquee_enabled?: boolean;
+    marquee_text?: string;
+    marquee_link?: string;
+    hot_search_enabled?: boolean;
+    welfare_enabled?: boolean;
+    ads_enabled?: boolean;
+    customer_service?: string;
+    official_group?: string;
+  }>>('/api/config');
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -755,7 +771,11 @@ export const getShareConfig = async (): Promise<{
   share_title: string;
   share_description: string;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>('/api/share/config');
+  const response = await apiClient.get<ApiResponse<{
+    download_url: string;
+    share_title: string;
+    share_description: string;
+  }>>('/api/share/config');
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -857,32 +877,39 @@ export const testSource = async (id: number): Promise<{
 }> => {
   try {
     logger.api.debug('Sending test request for source:', id);
-    const response = await apiClient.post<ApiResponse & { details?: any }>(`/admin/sources/${id}/test`);
+    const response = await apiClient.post<ApiResponse<{
+      responseTime?: number;
+      videoCount?: number;
+      status?: string;
+      format?: string;
+    }>>(`/admin/sources/${id}/test`);
     logger.api.debug('Test response:', response.data);
     return {
       success: response.data.code === 1,
       message: response.data.msg || '',
-      responseTime: response.data.details?.responseTime,
-      videoCount: response.data.details?.videoCount,
-      status: response.data.details?.status,
-      format: response.data.details?.format,
+      responseTime: response.data.data?.responseTime,
+      videoCount: response.data.data?.videoCount,
+      status: response.data.data?.status,
+      format: response.data.data?.format,
     };
-  } catch (error: any) {
+  } catch (error) {
     logger.api.error('Test request error:', error);
     // 处理网络错误或服务器错误
-    if (error.response?.data) {
-      const data = error.response.data;
+    if (error && typeof error === 'object' && 'response' in error) {
+      const errorResponse = error.response as { data?: { msg?: string; data?: { responseTime?: number; status?: string } } };
+      const data = errorResponse.data;
       return {
         success: false,
-        message: data.msg || '测试失败',
-        responseTime: data.details?.responseTime,
-        status: data.details?.status || 'error',
+        message: data?.msg || '测试失败',
+        responseTime: data?.data?.responseTime,
+        status: data?.data?.status || 'error',
       };
     }
     // 网络错误
+    const errorMessage = error instanceof Error ? error.message : '网络错误';
     return {
       success: false,
-      message: error.message || '网络错误',
+      message: errorMessage,
       status: 'network_error',
     };
   }
@@ -907,7 +934,19 @@ export const syncSourceCategories = async (id: number): Promise<{
     }>;
   };
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(`/admin/sources/${id}/sync-categories`);
+  const response = await apiClient.post<ApiResponse<{
+    sourceName: string;
+    totalCategories: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    mappings: Array<{
+      sourceTypeId: string;
+      sourceTypeName: string;
+      targetCategoryId: number;
+      targetCategoryName: string;
+    }>;
+  }>>(`/admin/sources/${id}/sync-categories`);
   if (response.data.code !== 1) {
     throw new Error(response.data.msg || '同步分类映射失败');
   }
@@ -929,7 +968,15 @@ export const syncAllSourceCategories = async (): Promise<{
     }>;
   };
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>('/admin/sources/sync-all-categories');
+  const response = await apiClient.post<ApiResponse<{
+    results: Array<{
+      sourceName: string;
+      success: boolean;
+      created: number;
+      updated: number;
+      error?: string;
+    }>;
+  }>>('/admin/sources/sync-all-categories');
   if (response.data.code !== 1) {
     throw new Error(response.data.msg || '同步分类映射失败');
   }
@@ -963,7 +1010,10 @@ export const getModuleStats = async (
   if (tabId) params.append('tab_id', tabId);
   params.append('days', days.toString());
 
-  const response = await apiClient.get<ApiResponse & { data?: any }>(
+  const response = await apiClient.get<ApiResponse<{
+    stats: ModuleStats[];
+    date_range: { start: string; end: string; days: number };
+  }>>(
     `/admin/module-stats?${params.toString()}`
   );
   
@@ -995,10 +1045,13 @@ export const testDingTalk = async (): Promise<void> => {
 
 // 获取崩溃日志列表
 export const getCrashReports = async (limit = 50, offset = 0): Promise<{
-  list: any[];
+  list: CrashReport[];
   total: number;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>(
+  const response = await apiClient.get<ApiResponse<{
+    list: CrashReport[];
+    total: number;
+  }>>(
     `/admin/crash-reports?limit=${limit}&offset=${offset}`
   );
   if (response.data.code === 1 && response.data.data) {
@@ -1013,7 +1066,15 @@ export const getInvalidUrls = async (
   offset = 0,
   isFixed?: boolean
 ): Promise<{
-  list: any[];
+  list: Array<{
+    id: number;
+    vod_id: string;
+    vod_name: string;
+    episode_url: string;
+    user_id: number;
+    is_fixed: boolean;
+    created_at: number;
+  }>;
   total: number;
 }> => {
   let url = `/admin/invalid-urls?limit=${limit}&offset=${offset}`;
@@ -1021,7 +1082,18 @@ export const getInvalidUrls = async (
     url += `&is_fixed=${isFixed}`;
   }
   
-  const response = await apiClient.get<ApiResponse & { data?: any }>(url);
+  const response = await apiClient.get<ApiResponse<{
+    list: Array<{
+      id: number;
+      vod_id: string;
+      vod_name: string;
+      episode_url: string;
+      user_id: number;
+      is_fixed: boolean;
+      created_at: number;
+    }>;
+    total: number;
+  }>>(url);
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -1132,7 +1204,12 @@ export const getCollectTaskProgress = async (taskId: string): Promise<{
   startedAt?: number;
   lastError?: string;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>(
+  const response = await apiClient.get<ApiResponse<{
+    status: string;
+    progress: CollectTaskV2['progress'];
+    startedAt?: number;
+    lastError?: string;
+  }>>(
     `/admin/collect/v2/task/${taskId}/progress`
   );
   if (response.data.code === 1 && response.data.data) {
@@ -1222,13 +1299,13 @@ export const resumeCollectTask = async (taskId: string): Promise<void> => {
 export const getCollectTaskLogs = async (
   taskId: string,
   options?: { level?: string; limit?: number; offset?: number }
-): Promise<{ logs: any[]; total: number }> => {
+): Promise<{ logs: CollectLog[]; total: number }> => {
   const params = new URLSearchParams();
   if (options?.level) params.append('level', options.level);
   if (options?.limit) params.append('limit', String(options.limit));
   if (options?.offset) params.append('offset', String(options.offset));
   
-  const response = await apiClient.get<ApiResponse & { data?: { list?: any[]; total?: number } }>(
+  const response = await apiClient.get<ApiResponse<{ list: CollectLog[]; total: number }>>(
     `/admin/collect/v2/task/${taskId}/logs?${params.toString()}`
   );
   if (response.data.code === 1 && response.data.data) {
@@ -1335,7 +1412,13 @@ export const checkSourceHealthStatus = async (sourceId: number): Promise<{
   videoCount?: number;
   error?: string;
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<{
+    success: boolean;
+    status: string;
+    responseTime: number;
+    videoCount?: number;
+    error?: string;
+  }>>(
     `/admin/collect/v2/sources/${sourceId}/health-check`
   );
   if (response.data.code === 1 && response.data.data) {
@@ -1367,8 +1450,8 @@ export const getCollectStatsV2 = async (): Promise<{
     weekNew: number;
   };
   tasks: {
-    running: any | null;
-    recent: any[];
+    running: CollectTaskV2 | null;
+    recent: CollectTaskV2[];
   };
   sources: {
     total: number;
@@ -1377,7 +1460,24 @@ export const getCollectStatsV2 = async (): Promise<{
     error: number;
   };
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>(
+  const response = await apiClient.get<ApiResponse<{
+    videos: {
+      total: number;
+      valid: number;
+      todayNew: number;
+      weekNew: number;
+    };
+    tasks: {
+      running: CollectTaskV2 | null;
+      recent: CollectTaskV2[];
+    };
+    sources: {
+      total: number;
+      healthy: number;
+      slow: number;
+      error: number;
+    };
+  }>>(
     '/admin/collect/v2/stats'
   );
   if (response.data.code === 1 && response.data.data) {
@@ -1394,7 +1494,11 @@ export const getCollectCategories = async (): Promise<Array<{
   name: string;
   name_en: string;
 }>> => {
-  const response = await apiClient.get<ApiResponse & { data?: any[] }>(
+  const response = await apiClient.get<ApiResponse<Array<{
+    id: number;
+    name: string;
+    name_en: string;
+  }>>>(
     '/admin/collect/v2/categories'
   );
   if (response.data.code === 1 && response.data.data) {
@@ -1410,7 +1514,10 @@ export const cleanupCollectData = async (): Promise<{
   tasksDeleted: number;
   logsDeleted: number;
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<{
+    tasksDeleted: number;
+    logsDeleted: number;
+  }>>(
     '/admin/collect/v2/cleanup'
   );
   if (response.data.code === 1 && response.data.data) {
@@ -1428,7 +1535,11 @@ export const migrateCollectV2 = async (): Promise<{
   tables: string[];
   errors: string[];
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<{
+    success: boolean;
+    tables: string[];
+    errors: string[];
+  }>>(
     '/admin/collect/v2/migrate'
   );
   if (response.data.data) {
@@ -1499,7 +1610,9 @@ export const migrateSubCategories = async (): Promise<{
   message: string;
   subCategoriesCreated: number;
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<{
+    subCategoriesCreated: number;
+  }>>(
     '/admin/sub-categories/migrate'
   );
   return {
@@ -1584,7 +1697,10 @@ export const migrateArticlesActors = async (): Promise<{
   tables: string[];
   columns: string[];
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<{
+    tables: string[];
+    columns: string[];
+  }>>(
     '/admin/articles-actors/migrate'
   );
   return {
@@ -1610,7 +1726,12 @@ export const collectArticles = async (options: {
   updateCount: number;
   errors: number;
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<{
+    total: number;
+    newCount: number;
+    updateCount: number;
+    errors: number;
+  }>>(
     '/admin/collect/articles',
     options
   );
@@ -1698,7 +1819,13 @@ export const collectActors = async (options: {
   matchedCount: number;
   errors: number;
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<{
+    total: number;
+    newCount: number;
+    updateCount: number;
+    matchedCount: number;
+    errors: number;
+  }>>(
     '/admin/collect/actors',
     options
   );
@@ -1716,7 +1843,7 @@ export const enrichActors = async (options: {
   sourceName?: string;
   limit?: number;
 }): Promise<{ enriched: number; notFound: number }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<ActorEnrichResult>>(
     '/admin/collect/actors/enrich',
     options
   );
@@ -1774,7 +1901,11 @@ export const getCollectStats = async (): Promise<{
   articles: { total: number };
   actors: { total: number; withAvatar: number; withWorks: number };
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>(
+  const response = await apiClient.get<ApiResponse<{
+    videos: { total: number; valid: number };
+    articles: { total: number };
+    actors: { total: number; withAvatar: number; withWorks: number };
+  }>>(
     '/admin/collect/stats'
   );
   if (response.data.code === 1 && response.data.data) {
@@ -1811,7 +1942,7 @@ export const detectSourceCategories = async (sourceId: number): Promise<{
   totalCategories: number;
   categories: DetectedCategory[];
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<CategoryDetectionResult>>(
     `/admin/sources/${sourceId}/detect-categories`
   );
   if (response.data.code === 1 && response.data.data) {
@@ -1830,7 +1961,7 @@ export const testClassify = async (input: {
   vod_remarks?: string;
   vod_content?: string;
 }): Promise<{
-  input: any;
+  input: ClassifyTestInput;
   result: {
     typeId: number;
     typeName: string;
@@ -1840,7 +1971,7 @@ export const testClassify = async (input: {
     method: string;
   };
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<ClassifyTestResult>>(
     '/admin/sources/test-classify',
     input
   );
@@ -1883,7 +2014,11 @@ export const getCategoriesWithSubs = async (): Promise<{
   flatCategories: Array<{ id: number; name: string; name_en: string }>;
   flatSubCategories: Array<{ id: number; parent_id: number; name: string; name_en: string }>;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>(
+  const response = await apiClient.get<ApiResponse<{
+    categories: CategoryWithSubs[];
+    flatCategories: Array<{ id: number; name: string; name_en: string }>;
+    flatSubCategories: Array<{ id: number; parent_id: number; name: string; name_en: string }>;
+  }>>(
     '/admin/categories/with-subs'
   );
   if (response.data.code === 1 && response.data.data) {
@@ -2034,7 +2169,7 @@ export const getFeedbackStats = async (): Promise<{
   replied: number;
   byCategory: Array<{ category: string; count: number }>;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>('/admin/feedback/stats');
+  const response = await apiClient.get<ApiResponse<FeedbackStats>>('/admin/feedback/stats');
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -2048,8 +2183,8 @@ export const getFeedbackStats = async (): Promise<{
 /**
  * 获取所有系统配置
  */
-export const getAllConfig = async (): Promise<Record<string, any>> => {
-  const response = await apiClient.get<ApiResponse & { data?: Record<string, any> }>('/admin/config/all');
+export const getAllConfig = async (): Promise<Record<string, unknown>> => {
+  const response = await apiClient.get<ApiResponse<Record<string, unknown>>>('/admin/config/all');
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -2059,7 +2194,7 @@ export const getAllConfig = async (): Promise<Record<string, any>> => {
 /**
  * 批量更新系统配置
  */
-export const batchUpdateConfig = async (configs: Record<string, any>): Promise<void> => {
+export const batchUpdateConfig = async (configs: Record<string, unknown>): Promise<void> => {
   const response = await apiClient.post<ApiResponse>('/admin/config/batch', { configs });
   if (response.data.code !== 1) {
     throw new Error(response.data.msg || '更新配置失败');
@@ -2106,20 +2241,17 @@ export const exportVideos = async (options?: {
   type_id?: number;
   is_valid?: string;
   limit?: number;
-}): Promise<{ list: any[]; total: number }> => {
+}): Promise<{ list: VideoExportOptions[]; total: number }> => {
   const params = new URLSearchParams();
   if (options?.type_id) params.append('type_id', String(options.type_id));
   if (options?.is_valid) params.append('is_valid', options.is_valid);
   if (options?.limit) params.append('limit', String(options.limit));
 
-  const response = await apiClient.get<ApiResponse & { list?: any[]; total?: number }>(
+  const response = await apiClient.get<ApiResponse<{ list: VideoExportOptions[]; total: number }>>(
     `/admin/videos/export?${params.toString()}`
   );
-  if (response.data.code === 1) {
-    return {
-      list: response.data.list || [],
-      total: response.data.total || 0,
-    };
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data;
   }
   throw new Error(response.data.msg || '导出失败');
 };
@@ -2133,7 +2265,7 @@ export const getVideoSources = async (vodId: string): Promise<{
     episodes: Array<{ title: string; url: string }>;
   }>;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>(`/admin/video/${vodId}/sources`);
+  const response = await apiClient.get<ApiResponse<VideoSourceInfo>>(`/admin/video/${vodId}/sources`);
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -2172,9 +2304,9 @@ export const getTopicsStats = async (): Promise<Array<{
   title: string;
   video_count: number;
 }>> => {
-  const response = await apiClient.get<ApiResponse & { list?: any[] }>('/admin/topics/stats');
-  if (response.data.code === 1) {
-    return response.data.list || [];
+  const response = await apiClient.get<ApiResponse<{ list: TopicStats[] }>>('/admin/topics/stats');
+  if (response.data.code === 1 && response.data.data) {
+    return response.data.data.list;
   }
   throw new Error(response.data.msg || '获取统计失败');
 };
@@ -2235,7 +2367,7 @@ export const getRealtimeStats = async (): Promise<{
   pending_feedback: number;
   timestamp: number;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>('/admin/dashboard/realtime');
+  const response = await apiClient.get<ApiResponse<RealtimeStats>>('/admin/dashboard/realtime');
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -2250,7 +2382,7 @@ export const getTrends = async (days?: number): Promise<Array<{
   new_videos: number;
 }>> => {
   const params = days ? `?days=${days}` : '';
-  const response = await apiClient.get<ApiResponse & { data?: any[] }>(`/admin/dashboard/trends${params}`);
+  const response = await apiClient.get<ApiResponse<TrendData[]>>(`/admin/dashboard/trends${params}`);
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -2268,7 +2400,7 @@ export const getCacheStats = async (): Promise<{
   caches: Array<{ key: string; exists: boolean; size: number }>;
   total_keys: number;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>('/admin/cache/stats');
+  const response = await apiClient.get<ApiResponse<CacheStats>>('/admin/cache/stats');
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -2339,7 +2471,7 @@ export const cleanupDuplicates = async (): Promise<{
   merged: number;
   errors: number;
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>('/admin/dedup/cleanup');
+  const response = await apiClient.post<ApiResponse<DedupResult>>('/admin/dedup/cleanup');
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }
@@ -2358,7 +2490,7 @@ export const repairVideo = async (vodId: string): Promise<{
   foundCount: number;
   sources: string[];
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<VideoRepairResult>>(
     `/admin/video/${vodId}/repair`
   );
   if (response.data.code === 1 && response.data.data) {
@@ -2379,7 +2511,7 @@ export const repairInvalidVideos = async (options?: {
   repaired: number;
   failed: number;
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<BatchRepairResult>>(
     '/admin/videos/repair-invalid',
     options || {}
   );
@@ -2681,7 +2813,7 @@ export const checkDomain = async (id: number): Promise<{
   msg: string;
   data?: { healthy: boolean; responseTime: number; error?: string };
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<DomainCheckResult>>(
     `/admin/domains/${id}/check`
   );
   return {
@@ -2695,9 +2827,9 @@ export const checkDomain = async (id: number): Promise<{
  */
 export const checkAllDomains = async (): Promise<{
   msg: string;
-  data?: { results: any[]; healthy: number; unhealthy: number };
+  data?: { results: DomainCheckResult[]; healthy: number; unhealthy: number };
 }> => {
-  const response = await apiClient.post<ApiResponse & { data?: any }>(
+  const response = await apiClient.post<ApiResponse<BatchDomainCheckResult>>(
     '/admin/domains/check-all'
   );
   return {
@@ -2827,7 +2959,12 @@ export const getAnnouncementStats = async (id: number): Promise<{
   unique_reads: number;
   click_rate: string;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>(
+  const response = await apiClient.get<ApiResponse<{
+    view_count: number;
+    click_count: number;
+    unique_reads: number;
+    click_rate: string;
+  }>>(
     `/admin/announcements/${id}/stats`
   );
   if (response.data.code === 1 && response.data.data) {
@@ -2907,7 +3044,9 @@ export const generateSecurityKey = async (): Promise<{ key: string }> => {
 export const getSecurityStats = async (): Promise<{
   today: { blocked: number; valid: number };
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>(
+  const response = await apiClient.get<ApiResponse<{
+    today: { blocked: number; valid: number };
+  }>>(
     '/admin/security/stats'
   );
   if (response.data.code === 1 && response.data.data) {
@@ -3160,7 +3299,12 @@ export const getCollectStatsV1 = async (): Promise<{
   today_new: number;
   last_task?: CollectTask;
 }> => {
-  const response = await apiClient.get<ApiResponse & { data?: any }>('/admin/collect/stats');
+  const response = await apiClient.get<ApiResponse<{
+    total_videos: number;
+    valid_videos: number;
+    today_new: number;
+    last_task?: CollectTask;
+  }>>('/admin/collect/stats');
   if (response.data.code === 1 && response.data.data) {
     return response.data.data;
   }

@@ -125,7 +125,7 @@ class _RecommendListState extends State<RecommendList> {
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
         if (data['code'] == 1 && data['data'] != null) {
-          final list = (data['data']['list'] as List?)
+          final list = (data['data'] as List?)
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ?? [];
           

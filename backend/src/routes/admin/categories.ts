@@ -70,9 +70,9 @@ categories.get('/admin/categories', async (c) => {
  */
 categories.get('/admin/categories/stats', async (c) => {
   try {
-    const now = Math.floor(Date.now() / 1000);
-    const oneDayAgo = now - 86400;
-    const oneWeekAgo = now - 604800;
+    const now = getCurrentTimestamp();
+    const oneDayAgo = getDaysAgo(1);
+    const oneWeekAgo = getDaysAgo(7);
 
     let cats: { id: number; name: string }[] = [];
     try {

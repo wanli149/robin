@@ -5,6 +5,7 @@
 
 import type { CollectTaskDbRow } from '../types/task';
 import { logger } from '../utils/logger';
+import { getCurrentTimestamp } from '../utils/time';
 
 // ============================================
 // 类型定义
@@ -91,7 +92,7 @@ export async function createTask(
   options: CreateTaskOptions
 ): Promise<CollectTask> {
   const taskId = generateUUID();
-  const now = Math.floor(Date.now() / 1000);
+  const now = getCurrentTimestamp();
   
   const config: TaskConfig = {
     pageStart: 1,
@@ -222,7 +223,7 @@ export async function updateTaskStatus(
     errorDetails?: string;
   }
 ): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
+  const now = getCurrentTimestamp();
   
   let timeField = '';
   if (status === 'running') timeField = ', started_at = ?';
@@ -395,7 +396,7 @@ export async function resumeTask(env: Env, taskId: string): Promise<boolean> {
  * 清理旧任务（保留最近30天）
  */
 export async function cleanupOldTasks(env: Env): Promise<number> {
-  const thirtyDaysAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+  const thirtyDaysAgo = getDaysAgo(30);
   
   // 先删除相关日志
   await env.DB.prepare(`

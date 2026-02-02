@@ -10,6 +10,7 @@
  */
 
 import { logger } from '../utils/logger';
+import { getCurrentTimestamp, getDaysAgo } from '../utils/time';
 
 interface Env {
   DB: D1Database;
@@ -49,7 +50,7 @@ export async function batchValidateUrls(env: Env, limit: number = 100): Promise<
     ORDER BY last_check ASC NULLS FIRST
     LIMIT ?
   `).bind(
-    Math.floor(Date.now() / 1000) - 86400 * 7, // 7天未检查
+    getDaysAgo(7),
     limit
   ).all();
 
@@ -75,7 +76,7 @@ export async function batchValidateUrls(env: Env, limit: number = 100): Promise<
       }
 
       const isValid = await validatePlayUrl(playUrl);
-      const now = Math.floor(Date.now() / 1000);
+      const now = getCurrentTimestamp();
 
       if (!isValid) {
         // 标记为失效
@@ -167,6 +168,7 @@ function extractFirstPlayUrl(playUrlStr: string): string | null {
       return (firstSource[0] as { name: string; url: string }).url || null;
     }
   } catch (error) {
+    logger.data.warn('JSON parse failed for play URL', { error: error instanceof Error ? error.message : String(error) });
     // JSON 解析失败
   }
 

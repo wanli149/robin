@@ -6,6 +6,7 @@
 import axios, { AxiosError } from 'axios';
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { logger } from '../utils/logger';
+import type { ApiResponse } from '../types/api';
 
 // API基础URL
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
@@ -70,28 +71,25 @@ apiClient.interceptors.response.use(
 
 export default apiClient;
 
-/**
- * API响应类型
- */
-export interface ApiResponse<T = any> {
-  code: number;
-  msg: string;
-  data?: T;
-  list?: T[];
-  page?: number;
-  total?: number;
-}
+// 导出 ApiResponse 类型供其他模块使用
+export type { ApiResponse } from '../types/api';
 
 /**
  * 通用API错误处理
  */
-export const handleApiError = (error: any): string => {
-  if (error.response) {
-    const data = error.response.data as ApiResponse;
-    return data.msg || '请求失败';
-  } else if (error.request) {
-    return '网络错误，请检查连接';
-  } else {
-    return error.message || '未知错误';
+export const handleApiError = (error: unknown): string => {
+  if (error instanceof AxiosError) {
+    if (error.response) {
+      const data = error.response.data as ApiResponse;
+      return data.msg || '请求失败';
+    } else if (error.request) {
+      return '网络错误，请检查连接';
+    }
   }
+  
+  if (error instanceof Error) {
+    return error.message;
+  }
+  
+  return '未知错误';
 };

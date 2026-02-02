@@ -215,10 +215,13 @@ collectV2.get('/admin/collect/v2/tasks', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      page,
-      total: result.total,
-      pagecount: Math.ceil(result.total / limit),
-      data: { list: result.tasks, total: result.total },
+      data: result.tasks,
+      meta: {
+        page,
+        pageSize: limit,
+        total: result.total,
+        totalPages: Math.ceil(result.total / limit),
+      },
     });
   } catch (error) {
     logger.collectorV2.error('Get tasks error', { error: error instanceof Error ? error.message : String(error) });
@@ -246,8 +249,12 @@ collectV2.get('/admin/collect/v2/task/:id/logs', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      total: result.total,
-      data: { list: result.logs, total: result.total },
+      data: result.logs,
+      meta: {
+        total: result.total,
+        limit,
+        offset,
+      },
     });
   } catch (error) {
     return c.json({ code: 0, msg: 'Failed to get logs' }, 500);
@@ -264,7 +271,10 @@ collectV2.get('/admin/collect/v2/task/:id/logs', async (c) => {
  */
 collectV2.post('/admin/collect/v2/quick/incremental', async (c) => {
   try {
-    const body = await c.req.json().catch(() => ({}));
+    const body = await c.req.json().catch((err) => {
+      logger.collect.warn('Failed to parse request body', { error: err.message });
+      return {};
+    });
     const { maxPages, maxVideos, sync } = body;
     
     // 创建任务
@@ -317,7 +327,10 @@ collectV2.post('/admin/collect/v2/quick/incremental', async (c) => {
  */
 collectV2.post('/admin/collect/v2/quick/full', async (c) => {
   try {
-    const body = await c.req.json().catch(() => ({}));
+    const body = await c.req.json().catch((err) => {
+      logger.collect.warn('Failed to parse request body', { error: err.message });
+      return {};
+    });
     const { sync, maxPages, categoryIds, sourceIds } = body;
     
     const task = await createTask(c.env, {
@@ -354,7 +367,10 @@ collectV2.post('/admin/collect/v2/quick/full', async (c) => {
 collectV2.post('/admin/collect/v2/quick/category/:id', async (c) => {
   try {
     const categoryId = parseInt(c.req.param('id'));
-    const body = await c.req.json().catch(() => ({}));
+    const body = await c.req.json().catch((err) => {
+      logger.collect.warn('Failed to parse request body', { error: err.message });
+      return {};
+    });
     const { maxPages, sync } = body;
     
     const task = await createTask(c.env, {
@@ -390,7 +406,10 @@ collectV2.post('/admin/collect/v2/quick/category/:id', async (c) => {
 collectV2.post('/admin/collect/v2/quick/source/:id', async (c) => {
   try {
     const sourceId = parseInt(c.req.param('id'));
-    const body = await c.req.json().catch(() => ({}));
+    const body = await c.req.json().catch((err) => {
+      logger.collect.warn('Failed to parse request body', { error: err.message });
+      return {};
+    });
     const { maxPages } = body;
     
     const task = await createTask(c.env, {
@@ -502,9 +521,9 @@ collectV2.post('/admin/collect/v2/sources/health-check-all', async (c) => {
  */
 collectV2.get('/admin/collect/v2/stats', async (c) => {
   try {
-    const now = Math.floor(Date.now() / 1000);
-    const oneDayAgo = now - 86400;
-    const oneWeekAgo = now - 604800;
+    const now = getCurrentTimestamp();
+    const oneDayAgo = getDaysAgo(1);
+    const oneWeekAgo = getDaysAgo(7);
     
     // 总视频数
     const totalResult = await c.env.DB.prepare(`

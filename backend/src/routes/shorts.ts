@@ -64,7 +64,6 @@ shorts.get('/api/shorts/random', async (c) => {
           return c.json({
             code: 1,
             msg: 'success',
-            total: (cached as ShortsListItem[]).length,
             data: cached,
           });
         }
@@ -128,8 +127,10 @@ shorts.get('/api/shorts/random', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      total: list.length,
       data: list,
+      meta: {
+        total: list.length,
+      },
     });
   } catch (error) {
     logger.shorts.error('Random error', { error: String(error) });
@@ -324,7 +325,7 @@ shorts.get('/api/shorts/categories', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      categories: result.results,
+      data: result.results,
     });
   } catch (error) {
     logger.shorts.error('Categories error', { error: String(error) });
@@ -388,10 +389,13 @@ shorts.get('/api/shorts/list', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      page,
-      pagecount,
-      total,
       data: result.results,
+      meta: {
+        page,
+        pageSize: limit,
+        total,
+        totalPages: pagecount,
+      },
     });
   } catch (error) {
     logger.shorts.error('List error', { error: String(error) });
@@ -433,7 +437,8 @@ function parseEpisodes(vodPlayUrl: string): EpisodeItem[] {
         return (firstSource as EpisodeItem[]).filter((ep) => ep.url && ep.url.startsWith('http'));
       }
     }
-  } catch {
+  } catch (error) {
+    logger.shorts.warn('JSON parse failed for preview', { error: error instanceof Error ? error.message : String(error) });
     // JSON 解析失败
   }
   

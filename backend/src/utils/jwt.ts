@@ -4,6 +4,7 @@
  */
 
 import { logger } from './logger';
+import { getCurrentTimestamp, TIME_CONSTANTS } from './time';
 
 interface JWTPayload {
   user_id: number;
@@ -71,9 +72,9 @@ async function sign(data: string, secret: string): Promise<string> {
 export async function generateToken(
   payload: Omit<JWTPayload, 'iat' | 'exp'>,
   secret: string,
-  expiresIn: number = 7 * 24 * 60 * 60 // 7 days
+  expiresIn: number = 7 * TIME_CONSTANTS.DAY
 ): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
+  const now = getCurrentTimestamp();
   
   const fullPayload: JWTPayload = {
     ...payload,
@@ -130,7 +131,7 @@ export async function verifyToken(
     const payload = JSON.parse(decoder.decode(payloadBytes)) as JWTPayload;
 
     // Check expiration time
-    const now = Math.floor(Date.now() / 1000);
+    const now = getCurrentTimestamp();
     if (payload.exp < now) {
       logger.admin.error('JWT Token expired');
       return null;

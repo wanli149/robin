@@ -179,7 +179,10 @@ dashboard.get('/admin/stats/recommendation-performance', async (c) => {
  */
 dashboard.post('/admin/recommend/precompute', async (c) => {
   try {
-    const body = await c.req.json().catch(() => ({}));
+    const body = await c.req.json().catch((err) => {
+      logger.admin.warn('Failed to parse request body', { error: err.message });
+      return {};
+    });
     const limit = body.limit || 100;
 
     const { batchPrecomputeRecommendations } = await import('../../services/recommendation_engine_v2');
@@ -227,9 +230,9 @@ dashboard.get('/admin/stats/api-performance', async (c) => {
  */
 dashboard.get('/admin/dashboard/realtime', async (c) => {
   try {
-    const now = Math.floor(Date.now() / 1000);
+    const now = getCurrentTimestamp();
     const oneHourAgo = now - 3600;
-    const oneDayAgo = now - 86400;
+    const oneDayAgo = getDaysAgo(1);
 
     let hourlyActive = 0;
     try {
@@ -281,7 +284,7 @@ dashboard.get('/admin/dashboard/trends', async (c) => {
       date.setDate(date.getDate() - i);
       const dateStr = date.toISOString().split('T')[0];
       const startTs = Math.floor(new Date(dateStr).getTime() / 1000);
-      const endTs = startTs + 86400;
+      const endTs = startTs + TIME_CONSTANTS.DAY;
 
       const result = await c.env.DB.prepare(`SELECT COUNT(*) as new_videos FROM vod_cache WHERE created_at >= ? AND created_at < ?`).bind(startTs, endTs).first();
       trends.push({ date: dateStr, new_videos: (result?.new_videos as number) || 0 });

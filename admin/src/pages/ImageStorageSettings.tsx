@@ -134,7 +134,7 @@ const ImageStorageSettings: React.FC = () => {
         setStats(response.data.data);
       }
     } catch (err: any) {
-      console.error('Load stats error:', err);
+      logger.admin.error('Load stats error:', { error: err });
     }
   };
 
@@ -149,7 +149,7 @@ const ImageStorageSettings: React.FC = () => {
         setMappingTotal(response.data.data.total);
       }
     } catch (err: any) {
-      console.error('Load mappings error:', err);
+      logger.admin.error('Load mappings error:', { error: err });
     }
   };
 
@@ -164,7 +164,7 @@ const ImageStorageSettings: React.FC = () => {
         setQueueTotal(response.data.data.total);
       }
     } catch (err: any) {
-      console.error('Load queue error:', err);
+      logger.admin.error('Load queue error:', { error: err });
     }
   };
 

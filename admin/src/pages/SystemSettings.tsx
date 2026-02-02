@@ -29,6 +29,7 @@ import {
   DeleteOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
+import { getErrorMessage, isFormValidationError } from '../utils/errorHandler';
 import { Popconfirm } from 'antd';
 import {
   getHotSearch,
@@ -127,9 +128,9 @@ const SystemSettings: React.FC = () => {
       setLoading(true);
       await updateContactConfig(values.customer_service, values.official_group);
       success('联系方式配置保存成功');
-    } catch (err: any) {
-      if (err.errorFields) return;
-      error(err.message || '保存失败');
+    } catch (err) {
+      if (isFormValidationError(err)) return;
+      error(getErrorMessage(err, '保存失败'));
     } finally {
       setLoading(false);
     }
@@ -142,9 +143,9 @@ const SystemSettings: React.FC = () => {
       setLoading(true);
       await updateMarqueeConfig(values.marquee_text, values.marquee_link);
       success('滚动通告配置保存成功');
-    } catch (err: any) {
-      if (err.errorFields) return;
-      error(err.message || '保存失败');
+    } catch (err) {
+      if (isFormValidationError(err)) return;
+      error(getErrorMessage(err, '保存失败'));
     } finally {
       setLoading(false);
     }
@@ -173,8 +174,8 @@ const SystemSettings: React.FC = () => {
       }
       setSwitches(prev => ({ ...prev, [key]: enabled }));
       success(`${enabled ? '已开启' : '已关闭'}`);
-    } catch (err: any) {
-      error(err.message || '操作失败');
+    } catch (err) {
+      error(getErrorMessage(err, '操作失败'));
     } finally {
       setLoading(false);
     }
@@ -259,7 +260,7 @@ const SystemSettings: React.FC = () => {
         share_description: config.share_description || '',
       });
     } catch (error: any) {
-      console.error('加载分享配置失败:', error);
+      logger.admin.error('加载分享配置失败:', { error });
     }
   };
 
@@ -321,9 +322,13 @@ const SystemSettings: React.FC = () => {
           app_logo: allConfig.app_logo || '',
           app_slogan: allConfig.app_slogan || '',
         });
-      } catch { /* 新配置可能不存在 */ }
-    } catch (err: any) {
-      error(err.message || '加载系统配置失败');
+      } catch (error) {
+        logger.system.warn('New config fields may not exist', error);
+        // 新配置可能不存在，使用默认值
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '加载系统配置失败';
+      error(errorMessage);
     }
   };
 

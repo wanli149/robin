@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import { sendDingTalk, formatCrashReport } from '../utils/notify';
 import { logger } from '../utils/logger';
+import { castD1Results, castD1Result } from '../utils/type_helpers';
 import { CACHE_CONFIG } from '../config';
 
 type Bindings = {
@@ -214,7 +215,7 @@ system.post('/api/feedback', async (c) => {
       user_id || null,
       content,
       contact || null,
-      Math.floor(Date.now() / 1000)
+      getCurrentTimestamp()
     ).run();
 
     // 异步发送钉钉通知
@@ -314,7 +315,8 @@ system.post('/api/system/crash_report', async (c) => {
         if (payload) {
           userId = payload.user_id;
         }
-      } catch (e) {
+      } catch (error) {
+        logger.auth.debug('Invalid token', { error: error instanceof Error ? error.message : String(error) });
         // Token无效，忽略
       }
     }
@@ -335,7 +337,7 @@ system.post('/api/system/crash_report', async (c) => {
       context || '',
       JSON.stringify(device_info || {}),
       appVersion,
-      Math.floor(Date.now() / 1000)
+      getCurrentTimestamp()
     ).run();
 
     // 发送钉钉通知（如果配置了）
@@ -408,7 +410,7 @@ system.post('/api/report_invalid', async (c) => {
       vod_name || '',
       play_url,
       error_type || 'playback_failed',
-      Math.floor(Date.now() / 1000)
+      getCurrentTimestamp()
     ).run();
 
     // 标记视频为无效（可选）
@@ -416,7 +418,7 @@ system.post('/api/report_invalid', async (c) => {
       UPDATE vod_cache
       SET is_valid = 0, last_check = ?
       WHERE vod_id = ?
-    `).bind(Math.floor(Date.now() / 1000), vod_id).run();
+    `).bind(getCurrentTimestamp(), vod_id).run();
 
     logger.admin.info('Invalid URL reported', { vod_id, vod_name, error_type });
 
@@ -630,7 +632,7 @@ system.get('/api/domains', async (c) => {
       response_time: number | null;
     }
     
-    const domains = ((result.results || []) as unknown as DomainDbRow[]).map((d) => ({
+    const domains = castD1Results<DomainDbRow>(result.results).map((d) => ({
       url: d.domain,
       name: d.name || '',
       primary: d.is_primary === 1,
@@ -652,8 +654,9 @@ system.get('/api/domains', async (c) => {
     
     const response = {
       code: 1,
-      data: {
-        domains,
+      msg: 'success',
+      data: domains,
+      meta: {
         updated_at: new Date().toISOString(),
       },
     };
@@ -671,14 +674,15 @@ system.get('/api/domains', async (c) => {
     const currentUrl = new URL(c.req.url);
     return c.json({
       code: 1,
-      data: {
-        domains: [{
-          url: `${currentUrl.protocol}//${currentUrl.host}`,
-          name: '默认',
-          primary: true,
-          healthy: true,
-          responseTime: 0,
-        }],
+      msg: 'success',
+      data: [{
+        url: `${currentUrl.protocol}//${currentUrl.host}`,
+        name: '默认',
+        primary: true,
+        healthy: true,
+        responseTime: 0,
+      }],
+      meta: {
         updated_at: new Date().toISOString(),
       },
     });
@@ -699,7 +703,7 @@ system.get('/api/announcement', async (c) => {
     const deviceId = c.req.query('device_id') || '';
     const version = c.req.query('version') || '';
     const platform = c.req.query('platform') || 'all';
-    const now = Math.floor(Date.now() / 1000);
+    const now = getCurrentTimestamp();
 
     // 尝试从缓存获取
     const cacheKey = `announcement:${platform}:${version}`;
@@ -740,7 +744,7 @@ system.get('/api/announcement', async (c) => {
       `).bind(now, now, platform).first();
 
       if (result) {
-        announcement = result as unknown as AnnouncementData;
+        announcement = castD1Result<AnnouncementData>(result);
         // 缓存
         await c.env.ROBIN_CACHE.put(cacheKey, JSON.stringify(announcement), {
           expirationTtl: CACHE_CONFIG.announcementTTL,
@@ -825,7 +829,7 @@ system.post('/api/announcement/read', async (c) => {
     await c.env.DB.prepare(`
       INSERT OR IGNORE INTO announcement_reads (announcement_id, device_id, read_at)
       VALUES (?, ?, ?)
-    `).bind(announcement_id, device_id, Math.floor(Date.now() / 1000)).run();
+    `).bind(announcement_id, device_id, getCurrentTimestamp()).run();
 
     return c.json({ code: 1, msg: 'ok' });
   } catch (error) {

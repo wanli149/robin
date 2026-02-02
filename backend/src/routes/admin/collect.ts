@@ -6,6 +6,7 @@
 import { Hono } from 'hono';
 import type { Bindings } from './types';
 import { logger } from '../../utils/logger';
+import { generatePlaceholders } from '../../utils/sql';
 
 const collect = new Hono<{ Bindings: Bindings }>();
 
@@ -250,9 +251,20 @@ collect.post('/admin/actors/merge', async (c) => {
       return c.json({ code: 0, msg: 'source_ids and target_id are required' }, 400);
     }
 
-    const placeholders = source_ids.map(() => '?').join(',');
-    await c.env.DB.prepare(`UPDATE vod_actor_relation SET actor_id = ? WHERE actor_id IN (${placeholders})`).bind(target_id, ...source_ids).run();
-    await c.env.DB.prepare(`DELETE FROM actors WHERE id IN (${placeholders})`).bind(...source_ids).run();
+    // 安全地生成 placeholders
+    if (!Array.isArray(source_ids) || source_ids.length === 0) {
+      return c.json({ code: 0, msg: 'Invalid source IDs' }, 400);
+    }
+    
+    // 验证所有ID都是数字
+    const validIds = source_ids.filter((id: unknown) => Number.isInteger(Number(id)));
+    if (validIds.length !== source_ids.length) {
+      return c.json({ code: 0, msg: 'All IDs must be integers' }, 400);
+    }
+    
+    const placeholders = generatePlaceholders(validIds.length);
+    await c.env.DB.prepare(`UPDATE vod_actor_relation SET actor_id = ? WHERE actor_id IN (${placeholders})`).bind(target_id, ...validIds).run();
+    await c.env.DB.prepare(`DELETE FROM actors WHERE id IN (${placeholders})`).bind(...validIds).run();
 
     const countResult = await c.env.DB.prepare(`SELECT COUNT(DISTINCT vod_id) as count FROM vod_actor_relation WHERE actor_id = ?`).bind(target_id).first();
     await c.env.DB.prepare(`UPDATE actors SET works_count = ? WHERE id = ?`).bind(countResult?.count || 0, target_id).run();

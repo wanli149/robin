@@ -46,7 +46,7 @@ const SchedulerManagement: React.FC = () => {
       const data = await getSchedulerTaskTypes();
       setTaskTypes(data.types);
     } catch (error) {
-      console.error('Load task types error:', error);
+      logger.admin.error('Load task types error:', { error });
     }
   }, []);
 

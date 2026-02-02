@@ -83,7 +83,7 @@ const FeedbackInbox: React.FC = () => {
       const data = await getFeedbackStats();
       setStats(data);
     } catch (err) {
-      console.log('Stats not available');
+      logger.admin.info('Stats not available');
     }
   };
 

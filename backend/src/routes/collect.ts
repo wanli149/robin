@@ -88,10 +88,13 @@ collect.get('/admin/collect/tasks', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      page,
-      total,
-      pagecount: Math.ceil(total / limit),
       data: result.results,
+      meta: {
+        page,
+        pageSize: limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     logger.collector.error('Get tasks error', { error: error instanceof Error ? error.message : String(error) });
@@ -127,7 +130,7 @@ collect.get('/admin/collect/stats', async (c) => {
       SELECT COUNT(*) as count
       FROM vod_cache
       WHERE created_at > ?
-    `).bind(Math.floor(Date.now() / 1000) - 86400).first();
+    `).bind(getDaysAgo(1)).first();
 
     // 最近任务
     const lastTaskResult = await c.env.DB.prepare(`
@@ -385,9 +388,11 @@ collect.get('/api/search_cache', async (c) => {
     return c.json({
       code: 1,
       msg: 'success',
-      keyword,
-      total: results.length,
       data: results,
+      meta: {
+        keyword,
+        total: results.length,
+      },
     });
   } catch (error) {
     logger.collector.error('Search error', { error: error instanceof Error ? error.message : String(error) });

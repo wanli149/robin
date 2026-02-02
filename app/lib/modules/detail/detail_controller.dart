@@ -1,7 +1,9 @@
 import 'package:get/get.dart';
 import '../../core/http_client.dart';
 import '../../core/user_store.dart';
-import '../../core/global_player_manager.dart';
+import '../../core/player/global_player_manager.dart';
+import '../../core/player/player_enums.dart';
+import '../../core/player/player_config.dart';
 import '../../core/progress_sync_service.dart';
 import '../../core/logger.dart';
 
@@ -88,8 +90,8 @@ class DetailController extends GetxController {
           // 加载保存的播放进度
           await loadSavedPosition();
 
-          // 加载推荐视频
-          final recs = data['recommendations'] as List?;
+          // 加载推荐视频（新格式：recommendations在data内）
+          final recs = vod['recommendations'] as List?;
           if (recs != null && recs.isNotEmpty) {
             // 限制为9个（3x3网格）
             recommendations.value = recs

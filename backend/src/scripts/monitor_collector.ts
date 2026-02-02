@@ -46,9 +46,9 @@ interface CollectorMetrics {
  * 获取采集引擎性能指标
  */
 export async function getCollectorMetrics(env: Env): Promise<CollectorMetrics> {
-  const now = Math.floor(Date.now() / 1000);
-  const oneDayAgo = now - 86400;
-  const oneWeekAgo = now - 604800;
+  const now = getCurrentTimestamp();
+  const oneDayAgo = getDaysAgo(1);
+  const oneWeekAgo = getDaysAgo(7);
   
   // 1. 基础统计
   const totalResult = await env.DB.prepare(`

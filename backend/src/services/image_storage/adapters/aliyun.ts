@@ -4,12 +4,12 @@
  */
 
 import { BaseStorageAdapter } from './base';
-import type { ConnectionTestResult } from '../types';
+import type { ConnectionTestResult, ImageStorageConfig } from '../types';
 
 export class AliyunOSSAdapter extends BaseStorageAdapter {
   private endpoint: string = '';
 
-  async initialize(config: any): Promise<void> {
+  async initialize(config: ImageStorageConfig): Promise<void> {
     await super.initialize(config);
     
     // 设置 endpoint

@@ -1,5 +1,13 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
+
+# 自动检测可用的 Visual Studio 版本，而不是硬编码 VS 2019
+# 如果设置了生成器，CMake 会自动查找最新的 Visual Studio
+if(NOT DEFINED CMAKE_GENERATOR)
+  # 让 CMake 自动选择生成器
+  set(CMAKE_GENERATOR_PLATFORM x64)
+endif()
+
 project(robin_video LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change

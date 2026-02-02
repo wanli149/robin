@@ -274,7 +274,10 @@ export function validateBody(schema: ValidationSchema) {
   return async function bodyValidator(c: Context, next: Next): Promise<Response | void> {
     try {
       // 获取请求体
-      const body = await c.req.json().catch(() => ({}));
+      const body = await c.req.json().catch((err) => {
+        logger.warn('Failed to parse JSON body', { error: err.message });
+        return {};
+      });
 
       // 验证请求体
       const result = schema.safeParse(body);

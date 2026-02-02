@@ -44,11 +44,29 @@ export type Bindings = {
 // Create Hono app
 const app = new Hono<{ Bindings: Bindings }>();
 
-// CORS middleware
+// CORS middleware with strict origin control
 app.use('/*', cors({
-  origin: '*',
+  origin: (origin) => {
+    // 允许的域名列表（从环境变量读取，支持多个域名）
+    const allowedOrigins = [
+      'http://localhost:5173',  // 管理后台开发环境
+      'http://localhost:3000',  // 备用开发端口
+      // 生产环境域名将从环境变量 ALLOWED_ORIGINS 读取
+    ];
+    
+    // 从环境变量添加生产域名（逗号分隔）
+    if (typeof process !== 'undefined' && process.env?.ALLOWED_ORIGINS) {
+      allowedOrigins.push(...process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()));
+    }
+    
+    // 移动应用不发送 Origin 头，允许无 Origin 的请求（移动端）
+    if (!origin) return true;
+    
+    // 检查是否在白名单中
+    return allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-timestamp', 'x-nonce', 'x-signature', 'x-package-name'],
+  allowHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-timestamp', 'x-nonce', 'x-signature', 'x-package-name', 'x-user-id', 'x-device-id'],
   exposeHeaders: ['Content-Length'],
   maxAge: 600,
   credentials: true,
@@ -63,6 +81,7 @@ app.use('/api/*', apiSecurity());
 // Rate limiting middleware for different API endpoints
 app.use('/api/search*', createRateLimiter(RateLimitPresets.search));
 app.use('/api/vod/detail*', createRateLimiter(RateLimitPresets.detail));
+app.use('/api/shorts/series*', createRateLimiter(RateLimitPresets.detail)); // 🚀 短剧详情使用更高限制
 app.use('/api/vod*', createRateLimiter(RateLimitPresets.moderate));
 app.use('/api/shorts*', createRateLimiter(RateLimitPresets.moderate));
 app.use('/api/*', createRateLimiter(RateLimitPresets.lenient));

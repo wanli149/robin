@@ -1,6 +1,8 @@
 import 'package:get/get.dart';
 import '../../core/http_client.dart';
-import '../../core/global_player_manager.dart';
+import '../../core/player/global_player_manager.dart';
+import '../../core/player/player_enums.dart';
+import '../../core/player/player_config.dart';
 import '../../core/url_parser.dart';
 import '../../core/logger.dart';
 import '../../core/cache_service.dart';
@@ -14,6 +16,7 @@ import '../../core/cache_service.dart';
 /// - 无限滚动（自动预加载）
 /// - 与全局播放器集成
 /// - 播放状态管理
+/// - 🚀 临时播放进度管理（会话级别）
 /// 
 /// ## 使用方式
 /// ```dart
@@ -86,6 +89,10 @@ class ShortsController extends GetxController {
   /// 为 false 时停止加载更多
   final RxBool hasMore = true.obs;
 
+  /// 🚀 临时播放进度缓存（会话级别，内存存储）
+  /// Key: vodId, Value: 播放进度（秒）
+  final Map<String, int> _tempProgressCache = {};
+
   /// 🚀 缓存服务引用
   CacheService? _cacheService;
   CacheService get _cache {
@@ -106,9 +113,30 @@ class ShortsController extends GetxController {
 
   @override
   void onClose() {
+    // 🚀 页面销毁时清除临时进度缓存
+    _tempProgressCache.clear();
+    Logger.debug('[ShortsController] Temp progress cache cleared');
+    
     // 🚀 保存状态
     _saveState();
     super.onClose();
+  }
+
+  /// 🚀 保存当前视频的临时播放进度
+  void saveTempProgress(String vodId, int positionSeconds) {
+    _tempProgressCache[vodId] = positionSeconds;
+    Logger.debug('[ShortsController] Temp progress saved: $vodId @ ${positionSeconds}s');
+  }
+
+  /// 🚀 获取视频的临时播放进度
+  int? getTempProgress(String vodId) {
+    return _tempProgressCache[vodId];
+  }
+
+  /// 🚀 清除所有临时播放进度
+  void clearTempProgress() {
+    _tempProgressCache.clear();
+    Logger.debug('[ShortsController] All temp progress cleared');
   }
 
   /// 🚀 保存短剧流状态
@@ -121,7 +149,7 @@ class ShortsController extends GetxController {
       'hasMore': hasMore.value,
     };
     
-    await _cache.set(
+    await _cache.setWithType(
       CacheKeys.shortsFlowState,
       state,
       type: CacheType.shortsFlowState,
@@ -218,14 +246,28 @@ class ShortsController extends GetxController {
   /// [index] 目标索引（对应 shortsList 中的位置）
   /// 
   /// ## 执行流程
-  /// 1. 更新 currentIndex
-  /// 2. 获取对应短剧的播放 URL
-  /// 3. 调用 GlobalPlayerManager.switchContent() 切换视频
-  /// 4. 检查是否需要预加载更多数据
+  /// 1. 🚀 保存当前视频的临时播放进度
+  /// 2. 更新 currentIndex
+  /// 3. 获取对应短剧的播放 URL
+  /// 4. 🚀 恢复目标视频的临时播放进度
+  /// 5. 调用 GlobalPlayerManager.switchContent() 切换视频
+  /// 6. 检查是否需要预加载更多数据
   /// 
   /// ## 预加载策略
   /// 当 index >= shortsList.length - 3 时，自动触发加载更多
   void switchToIndex(int index) {
+    // 🚀 保存当前视频的播放进度
+    if (currentIndex.value < shortsList.length) {
+      final currentShort = shortsList[currentIndex.value];
+      final currentVodId = currentShort['vod_id']?.toString() ?? '';
+      if (currentVodId.isNotEmpty) {
+        final currentPosition = GlobalPlayerManager.to.currentState.value.position.inSeconds;
+        if (currentPosition > 0) {
+          saveTempProgress(currentVodId, currentPosition);
+        }
+      }
+    }
+    
     currentIndex.value = index;
 
     // 切换全局播放器到新视频
@@ -240,6 +282,9 @@ class ShortsController extends GetxController {
         // 解析视频URL
         String videoUrl = _parseVideoUrl(playUrl);
         
+        // 🚀 获取临时播放进度
+        final savedProgress = getTempProgress(vodId);
+        
         GlobalPlayerManager.to.switchContent(
           contentType: ContentType.shortsFlow,
           contentId: vodId,
@@ -249,6 +294,14 @@ class ShortsController extends GetxController {
           coverUrl: coverUrl,
           autoPlay: true,
         );
+        
+        // 🚀 恢复播放进度
+        if (savedProgress != null && savedProgress > 0) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            GlobalPlayerManager.to.seekTo(Duration(seconds: savedProgress));
+            Logger.success('[ShortsController] Restored temp progress: $vodId @ ${savedProgress}s');
+          });
+        }
       }
     }
 
@@ -299,6 +352,7 @@ class ShortsController extends GetxController {
         // 解析视频URL
         String videoUrl = _parseVideoUrl(playUrl);
         
+        // 🚀 总是重新初始化播放器，确保状态一致
         GlobalPlayerManager.to.switchContent(
           contentType: ContentType.shortsFlow,
           contentId: vodId,
@@ -308,6 +362,15 @@ class ShortsController extends GetxController {
           coverUrl: coverUrl,
           autoPlay: true,
         );
+        
+        // 🚀 恢复临时播放进度
+        final savedProgress = getTempProgress(vodId);
+        if (savedProgress != null && savedProgress > 0) {
+          Future.delayed(const Duration(milliseconds: 800), () {
+            GlobalPlayerManager.to.seekTo(Duration(seconds: savedProgress));
+            Logger.success('[ShortsController] Restored temp progress: $vodId @ ${savedProgress}s');
+          });
+        }
       } catch (e) {
         Logger.error('Failed to resume global player: $e');
       }

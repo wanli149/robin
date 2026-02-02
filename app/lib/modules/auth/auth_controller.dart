@@ -102,7 +102,7 @@ class AuthController extends GetxController {
       
       // 解析响应
       if (response.data['code'] == 1) {
-        final data = response.data['data'] ?? response.data;
+        final data = response.data['data'];
         final token = data['token'];
         final userInfo = UserInfo.fromJson(data['user'] ?? data);
         

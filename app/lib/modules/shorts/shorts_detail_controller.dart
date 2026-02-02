@@ -1,6 +1,8 @@
 import 'package:get/get.dart';
 import '../../core/http_client.dart';
-import '../../core/global_player_manager.dart';
+import '../../core/player/global_player_manager.dart';
+import '../../core/player/player_enums.dart';
+import '../../core/player/player_config.dart';
 import '../../core/url_parser.dart';
 import '../../core/logger.dart';
 
@@ -200,7 +202,7 @@ class ShortsDetailController extends GetxController {
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
         if (data['code'] == 1 && data['data'] != null) {
-          final list = (data['data']['list'] as List?)
+          final list = (data['data'] as List?)
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ?? [];
           

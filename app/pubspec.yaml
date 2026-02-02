@@ -92,6 +92,9 @@ dependencies:
   
   # 获取应用版本信息
   package_info_plus: ^9.0.0
+  
+  # 设备唯一标识符
+  device_info_plus: ^11.2.0
 
 # 依赖版本覆盖
 dependency_overrides:

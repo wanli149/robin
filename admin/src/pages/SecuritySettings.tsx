@@ -59,7 +59,7 @@ const SecuritySettings: React.FC = () => {
       const result = await getSecurityStats();
       setStats(result.today);
     } catch (error) {
-      console.error('获取统计失败:', error);
+      logger.admin.error('获取统计失败:', { error });
     }
   };
 
