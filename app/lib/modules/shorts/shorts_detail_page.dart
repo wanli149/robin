@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import '../../widgets/net_image.dart';
 import '../../widgets/player/global_video_player.dart';
-import '../../widgets/expandable_text.dart';
-import '../../core/global_player_manager.dart';
+import '../../core/player/global_player_manager.dart';
+import '../../core/player/player_enums.dart';
+import '../../core/player/player_config.dart';
 import '../../core/url_parser.dart';
 
 import 'shorts_detail_controller.dart';
@@ -148,31 +148,6 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
   }
 
   /// 构建播放器覆盖层（窗口模式下显示全屏按钮）
-  Widget _buildPlayerOverlay(ShortsDetailController controller) {
-    return Positioned(
-      right: 8,
-      top: 8,
-      child: GestureDetector(
-        onTap: () {
-          // 进入全屏模式
-          GlobalPlayerManager.to.enterFullscreen();
-        },
-        child: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: const Icon(
-            Icons.fullscreen,
-            color: Colors.white,
-            size: 24,
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -274,8 +249,6 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
 
   /// 构建集数占位符（非当前播放集数）
   Widget _buildEpisodePlaceholder(int index) {
-    final episodes = controller.episodes;
-    final episode = episodes[index];
     final coverUrl = controller.shortDetail.value?['cover'] as String? ?? '';
     
     return Stack(
@@ -607,355 +580,6 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
 
     return _buildFixedPlayerLayout(controller, detail);
   }
-
-  /// 构建播放器
-  Widget _buildPlayer(ShortsDetailController controller, Map<String, dynamic> detail) {
-    final coverUrl = detail['cover'] as String? ?? '';
-    final episodes = controller.episodes;
-    
-    return SafeArea(
-      child: Stack(
-        children: [
-          // 播放器区域（16:9）
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Container(
-              color: Colors.black,
-              child: episodes.isNotEmpty 
-                  ? _buildGlobalPlayer(controller, detail)
-                  : _buildCoverPlayer(controller, detail, coverUrl),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 构建全局播放器
-  Widget _buildGlobalPlayer(ShortsDetailController controller, Map<String, dynamic> detail) {
-    // 🚀 在下一帧初始化播放器（只执行一次）
-    if (!_playerInitialized && controller.episodes.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _initializeGlobalPlayer(controller);
-      });
-    }
-
-    return Obx(() {
-      final contentType = GlobalPlayerManager.to.currentState.value.contentType;
-      final isInitialized = GlobalPlayerManager.to.player != null;
-      
-      // 🚀 只有当播放器类型是 shorts 且已初始化时才显示播放器
-      if (contentType == ContentType.shorts && isInitialized) {
-        return GlobalVideoPlayer(
-          showControls: true,
-          overlay: _buildPlayerOverlay(controller),
-          onTap: () {
-            // 短剧详情页点击播放器切换播放/暂停
-            GlobalPlayerManager.to.togglePlayPause();
-          },
-        );
-      } else {
-        // 🚀 播放器未就绪时显示封面和加载指示器
-        // 封面是竖屏的(9:16)，在横屏播放器(16:9)中需要居中显示，两侧留黑边
-        final coverUrl = detail['cover'] as String? ?? '';
-        return Container(
-          color: Colors.black,
-          child: Stack(
-            children: [
-              // 封面 - 居中显示竖屏封面，保持比例
-              Center(
-                child: AspectRatio(
-                  aspectRatio: 9 / 16, // 竖屏封面比例
-                  child: NetImage(
-                    url: coverUrl,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-              // 加载指示器
-              const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFC107)),
-                  strokeWidth: 3,
-                ),
-              ),
-            ],
-          ),
-        );
-      }
-    });
-  }
-
-  /// 构建封面播放器
-  Widget _buildCoverPlayer(ShortsDetailController controller, Map<String, dynamic> detail, String coverUrl) {
-    return Stack(
-      children: [
-        // 封面图
-        Positioned.fill(
-          child: NetImage(
-            url: coverUrl,
-            fit: BoxFit.cover,
-          ),
-        ),
-
-        // 播放按钮
-        Center(
-          child: GestureDetector(
-            onTap: () {
-              // 使用全局播放器进入全屏模式
-              if (controller.episodes.isNotEmpty) {
-                // 先初始化播放器（如果还没有初始化）
-                _initializeGlobalPlayer(controller);
-                // 然后进入全屏模式
-                GlobalPlayerManager.to.enterFullscreen();
-              } else {
-                Get.snackbar(
-                  '提示',
-                  '暂无可播放的集数',
-                  snackPosition: SnackPosition.BOTTOM,
-                );
-              }
-            },
-            child: Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFC107),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFFC107).withValues(alpha: 0.5),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.play_arrow,
-                color: Colors.black,
-                size: 40,
-              ),
-            ),
-          ),
-        ),
-
-        // 全屏按钮
-        Positioned(
-          right: 12,
-          bottom: 12,
-          child: GestureDetector(
-            onTap: () {
-              // 进入全屏模式
-              if (controller.episodes.isNotEmpty) {
-                _initializeGlobalPlayer(controller);
-                GlobalPlayerManager.to.enterFullscreen();
-              } else {
-                Get.snackbar(
-                  '提示',
-                  '暂无可播放的集数',
-                  snackPosition: SnackPosition.BOTTOM,
-                );
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Icon(
-                Icons.fullscreen,
-                color: Colors.white,
-                size: 24,
-              ),
-            ),
-          ),
-        ),
-
-        // 返回按钮
-        Positioned(
-          top: 0,
-          left: 0,
-          child: IconButton(
-            onPressed: () => Get.back(),
-            icon: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 构建短剧信息
-  Widget _buildInfo(Map<String, dynamic> detail) {
-    final shortName = detail['name'] as String? ?? '未知短剧';
-    final description = detail['description'] as String? ?? '';
-    final category = detail['category'] as String? ?? '';
-    final episodeCount = detail['episode_count'] as int? ?? 0;
-    final viewCount = detail['view_count'] as int? ?? 0;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 短剧名称
-          Text(
-            shortName,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // 标签行
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (category.isNotEmpty)
-                _buildTag(category, const Color(0xFFFFC107)),
-              _buildTag('共$episodeCount集', Colors.white24),
-              _buildTag('${_formatViewCount(viewCount)}次播放', Colors.white24),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // 简介（可折叠）
-          if (description.isNotEmpty) ...[
-            const Text(
-              '剧情简介',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ExpandableText(
-              text: description,
-              maxLines: 3,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.white70,
-                height: 1.5,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// 构建标签
-  Widget _buildTag(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 12,
-          color: color == const Color(0xFFFFC107) ? Colors.black : Colors.white70,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-
-  /// 构建选集列表
-  Widget _buildEpisodeList(ShortsDetailController controller, Map<String, dynamic> detail) {
-    final episodes = controller.episodes;
-
-    if (episodes.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text(
-                '选集',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '共${episodes.length}集',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.white54,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // 选集网格
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: episodes.asMap().entries.map((entry) {
-              final index = entry.key;
-              final isSelected = controller.currentEpisodeIndex.value == index;
-
-              return GestureDetector(
-                onTap: () => controller.selectEpisode(index),
-                child: Container(
-                  width: 60,
-                  height: 36,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? const Color(0xFFFFC107)
-                        : const Color(0xFF1E1E1E),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: isSelected
-                          ? const Color(0xFFFFC107)
-                          : const Color(0xFF2E2E2E),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    '第${index + 1}集',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isSelected ? Colors.black : Colors.white70,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// 构建推荐项
   Widget _buildRecommendItem(Map<String, dynamic> recommend) {
     // 兼容新旧字段名
@@ -968,6 +592,8 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
     final category = recommend['category'] as String? ?? '';
 
     return GestureDetector(
+      // 🚀 确保手势可以穿透到子组件
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         // 跳转到短剧详情页
         Get.toNamed('/shorts/detail', arguments: {'shortId': shortId});
@@ -979,11 +605,14 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
           Expanded(
             child: Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: NetImage(
-                    url: coverUrl,
-                    fit: BoxFit.cover,
+                // 🚀 使用 Positioned.fill 确保图片填充整个区域
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: NetImage(
+                      url: coverUrl,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
                 // 分类标签
@@ -1354,6 +983,25 @@ class _ShortsDetailPageState extends State<ShortsDetailPage> with WidgetsBinding
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// 构建标签
+  Widget _buildTag(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          color: color == const Color(0xFFFFC107) ? Colors.black : Colors.white70,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }

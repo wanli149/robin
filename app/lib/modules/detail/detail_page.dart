@@ -6,7 +6,9 @@ import '../../widgets/net_image.dart';
 import '../../widgets/episode_selector.dart';
 import '../../widgets/expandable_text.dart';
 import '../../core/router.dart';
-import '../../core/global_player_manager.dart';
+import '../../core/player/global_player_manager.dart';
+import '../../core/player/player_enums.dart';
+import '../../core/player/player_config.dart';
 import '../../services/share_service.dart';
 import '../../core/logger.dart';
 
@@ -621,37 +623,9 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
-  /// 构建信息行（支持演员点击）- 保留用于非折叠场景
-  Widget _buildInfoRow(String label, String value, {bool clickable = false}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '$label：',
-          style: const TextStyle(
-            fontSize: 14,
-            color: Colors.white54,
-          ),
-        ),
-        Expanded(
-          child: clickable && (label == '主演' || label == '导演')
-              ? _buildClickableActors(value)
-              : Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.white70,
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-  
   /// 构建可折叠的信息行（演员/导演/编剧）
   Widget _buildCollapsibleInfoRow(String label, String value, {bool clickable = false, int maxItems = 4}) {
     final items = value.split(RegExp(r'[,，、/\s]+')).where((a) => a.trim().isNotEmpty).toList();
-    final needsCollapse = items.length > maxItems;
     
     return StatefulBuilder(
       builder: (context, setState) {
@@ -682,48 +656,6 @@ class _DetailPageState extends State<DetailPage> {
   }
 
   /// 构建可点击的演员列表
-  Widget _buildClickableActors(String actorsStr) {
-    final actors = actorsStr.split(RegExp(r'[,，、/\s]+')).where((a) => a.isNotEmpty).toList();
-    
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: actors.map((actor) {
-        return GestureDetector(
-          onTap: () async {
-            // 搜索演员并跳转
-            try {
-              final response = await Get.find<DetailController>(tag: widget.videoId).searchActor(actor);
-              if (response != null && response['id'] != null) {
-                UniversalRouter.toActor(response['id'], actor);
-              } else {
-                Get.snackbar(
-                  '提示',
-                  '未找到演员信息',
-                  snackPosition: SnackPosition.BOTTOM,
-                );
-              }
-            } catch (e) {
-              Get.snackbar(
-                '错误',
-                '搜索演员失败',
-                snackPosition: SnackPosition.BOTTOM,
-              );
-            }
-          },
-          child: Text(
-            actor,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFFFFC107),
-              decoration: TextDecoration.underline,
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
   /// 构建选集列表（支持多播放源）
   Widget _buildEpisodeList(DetailController controller) {
     return Obx(() => EpisodeSelector(
