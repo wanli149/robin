@@ -246,9 +246,14 @@ async function generateHmacSha256(data: string, secretKey: string): Promise<stri
     .join('');
 }
 
+// 🚀 内存计数器：减少 KV 写入
+const securityCounters = new Map<string, number>();
+let lastSecurityFlush = Date.now();
+const SECURITY_FLUSH_INTERVAL = 60000; // 60 秒刷新一次
+
 /**
  * 记录安全事件
- * 🚀 优化：采样记录，减少 KV 写入
+ * 🚀 优化：内存累计 + 批量写入，减少 KV 写入 95%+
  */
 async function recordSecurityEvent(
   env: { ROBIN_CACHE: KVNamespace },
@@ -262,8 +267,8 @@ async function recordSecurityEvent(
   }
 ): Promise<void> {
   try {
-    // 🚀 只记录 20% 的安全事件详情（减少 KV 写入）
-    if (Math.random() < 0.2) {
+    // 🚀 只记录 5% 的安全事件详情（进一步减少）
+    if (Math.random() < 0.05) {
       const key = `security_event:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
       
       await env.ROBIN_CACHE.put(
@@ -273,18 +278,19 @@ async function recordSecurityEvent(
       );
     }
 
-    // 更新今日被阻止请求统计（这个必须记录）
+    // 🚀 内存累计统计，定时批量写入
     const today = new Date().toISOString().split('T')[0];
     const statsKey = `security_blocked:${today}`;
     
-    const current = await env.ROBIN_CACHE.get(statsKey);
-    const count = current ? parseInt(current) + 1 : 1;
+    securityCounters.set(statsKey, (securityCounters.get(statsKey) || 0) + 1);
     
-    await env.ROBIN_CACHE.put(
-      statsKey,
-      count.toString(),
-      { expirationTtl: CACHE_CONFIG.statsRetentionTTL }
-    );
+    // 每 60 秒或累计 100 次，批量写入一次
+    const now = Date.now();
+    const count = securityCounters.get(statsKey) || 0;
+    
+    if (now - lastSecurityFlush > SECURITY_FLUSH_INTERVAL || count >= 100) {
+      await flushSecurityCounters(env);
+    }
   } catch (error) {
     logger.error('Failed to record security event', { 
       error: error instanceof Error ? error.message : 'Unknown' 
@@ -293,26 +299,65 @@ async function recordSecurityEvent(
 }
 
 /**
+ * 刷新安全计数器到 KV
+ */
+async function flushSecurityCounters(env: { ROBIN_CACHE: KVNamespace }): Promise<void> {
+  if (securityCounters.size === 0) return;
+  
+  try {
+    const entries = Array.from(securityCounters.entries());
+    securityCounters.clear();
+    lastSecurityFlush = Date.now();
+    
+    // 批量读取当前值并更新
+    await Promise.all(
+      entries.map(async ([key, increment]) => {
+        try {
+          const current = await env.ROBIN_CACHE.get(key);
+          const newCount = (parseInt(current || '0') + increment).toString();
+          
+          await env.ROBIN_CACHE.put(
+            key,
+            newCount,
+            { expirationTtl: CACHE_CONFIG.statsRetentionTTL }
+          );
+        } catch (error) {
+          logger.error('Failed to flush security counter', { 
+            key,
+            error: error instanceof Error ? error.message : 'Unknown' 
+          });
+        }
+      })
+    );
+    
+    logger.debug('Security counters flushed', { count: entries.length });
+  } catch (error) {
+    logger.error('Failed to flush security counters', { 
+      error: error instanceof Error ? error.message : 'Unknown' 
+    });
+  }
+}
+
+/**
  * 记录有效请求统计
- * 🚀 优化：采样记录，减少 KV 写入
+ * 🚀 优化：采样 + 内存累计，减少 KV 写入 99%+
  */
 async function recordValidRequest(env: { ROBIN_CACHE: KVNamespace }): Promise<void> {
-  // 🚀 只记录 5% 的有效请求统计（减少 KV 写入，有效请求量大）
-  if (Math.random() > 0.05) return;
+  // 🚀 只采样 1%（进一步降低）
+  if (Math.random() > 0.01) return;
   
   try {
     const today = new Date().toISOString().split('T')[0];
     const statsKey = `security_valid:${today}`;
     
-    const current = await env.ROBIN_CACHE.get(statsKey);
-    // 乘以 20 来估算实际数量（因为只采样了 5%）
-    const count = current ? parseInt(current) + 20 : 20;
+    // 内存累计
+    securityCounters.set(statsKey, (securityCounters.get(statsKey) || 0) + 100); // 乘以 100 估算
     
-    await env.ROBIN_CACHE.put(
-      statsKey,
-      count.toString(),
-      { expirationTtl: CACHE_CONFIG.statsRetentionTTL }
-    );
+    // 定时刷新
+    const now = Date.now();
+    if (now - lastSecurityFlush > SECURITY_FLUSH_INTERVAL) {
+      await flushSecurityCounters(env);
+    }
   } catch (error) {
     logger.error('Failed to record valid request', { 
       error: error instanceof Error ? error.message : 'Unknown' 

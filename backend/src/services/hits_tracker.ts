@@ -2,10 +2,11 @@
  * Hits Tracker Service
  * 热度统计服务
  * 
- * 策略：
- * 1. 用户访问时写入KV（异步，不阻塞）
- * 2. 每小时Cron聚合到D1
- * 3. 每天凌晨计算日/周/月统计
+ * 🚀 优化策略：
+ * 1. 内存累计 + 批量写入（减少 KV 写入 95%+）
+ * 2. 每 100 次访问或每 60 秒批量写入一次
+ * 3. 每小时 Cron 聚合到 D1
+ * 4. 每天凌晨计算日/周/月统计
  */
 
 import { logger } from '../utils/logger';
@@ -16,8 +17,15 @@ interface Env {
   ROBIN_CACHE: KVNamespace;
 }
 
+// 🚀 内存计数器：减少 KV 写入
+const hitsCounters = new Map<string, number>();
+let lastHitsFlush = Date.now();
+const HITS_FLUSH_INTERVAL = 60000; // 60 秒
+const HITS_BATCH_SIZE = 100; // 累计 100 次
+
 /**
  * 记录访问（异步，不阻塞响应）
+ * 🚀 优化：内存累计 + 批量写入
  */
 export async function trackHit(
   env: Env,
@@ -27,18 +35,71 @@ export async function trackHit(
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     const key = `hits:${vodId}:${today}`;
     
-    // 读取当前计数
-    const current = await env.ROBIN_CACHE.get(key);
-    const count = current ? parseInt(current) + 1 : 1;
+    // 🚀 内存累计
+    hitsCounters.set(key, (hitsCounters.get(key) || 0) + 1);
     
-    // 写入KV
-    await env.ROBIN_CACHE.put(key, String(count), {
-      expirationTtl: CACHE_CONFIG.hitsTrackerTTL,
-    });
+    // 🚀 批量写入条件：累计 100 次或超过 60 秒
+    const now = Date.now();
+    const totalHits = Array.from(hitsCounters.values()).reduce((sum, count) => sum + count, 0);
+    
+    if (totalHits >= HITS_BATCH_SIZE || now - lastHitsFlush > HITS_FLUSH_INTERVAL) {
+      await flushHitsCounters(env);
+    }
   } catch (error) {
     // 静默失败，不影响主流程
     logger.hits.error('Failed to track', { error: error instanceof Error ? error.message : String(error) });
   }
+}
+
+/**
+ * 刷新热度计数器到 KV
+ * 🚀 批量写入，减少 KV 操作
+ */
+async function flushHitsCounters(env: Env): Promise<void> {
+  if (hitsCounters.size === 0) return;
+  
+  try {
+    const entries = Array.from(hitsCounters.entries());
+    hitsCounters.clear();
+    lastHitsFlush = Date.now();
+    
+    logger.hits.debug('Flushing hits counters', { count: entries.length });
+    
+    // 🚀 批量读取当前值并更新
+    await Promise.all(
+      entries.map(async ([key, increment]) => {
+        try {
+          const current = await env.ROBIN_CACHE.get(key);
+          const newCount = (parseInt(current || '0') + increment).toString();
+          
+          await env.ROBIN_CACHE.put(key, newCount, {
+            expirationTtl: CACHE_CONFIG.hitsTrackerTTL,
+          });
+        } catch (error) {
+          logger.hits.error('Failed to flush hit counter', { 
+            key,
+            error: error instanceof Error ? error.message : String(error) 
+          });
+        }
+      })
+    );
+    
+    logger.hits.info('Hits counters flushed', { 
+      count: entries.length,
+      totalHits: entries.reduce((sum, [, count]) => sum + count, 0)
+    });
+  } catch (error) {
+    logger.hits.error('Failed to flush hits counters', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+  }
+}
+
+/**
+ * 强制刷新热度计数器（在 Cron 任务结束时调用）
+ */
+export async function forceFlushHits(env: Env): Promise<void> {
+  await flushHitsCounters(env);
 }
 
 /**

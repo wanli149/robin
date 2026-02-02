@@ -99,8 +99,8 @@ export function createRateLimiter(config: RateLimitConfig) {
       // 执行请求
       await next();
       
-      // 🚀 只在接近限制时才同步到 KV（减少写入）
-      if (memEntry.count >= config.maxRequests * 0.8) {
+      // 🚀 只在接近限制时才同步到 KV（从 80% 提高到 90%，进一步减少写入）
+      if (memEntry.count >= config.maxRequests * 0.9) {
         c.executionCtx.waitUntil(
           syncToKV(c.env, key, memEntry, config.windowMs)
         );
@@ -119,6 +119,7 @@ export function createRateLimiter(config: RateLimitConfig) {
 
 /**
  * 同步计数到 KV（异步，不阻塞响应）
+ * 🚀 优化：只在达到 90% 限制时才同步，进一步减少写入
  */
 async function syncToKV(
   env: { ROBIN_CACHE: KVNamespace },

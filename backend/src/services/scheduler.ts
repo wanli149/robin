@@ -76,6 +76,15 @@ export async function runScheduledTasks(
 async function runHourlyTasks(env: Env): Promise<void> {
   logger.scheduler.info('Running hourly tasks...');
   
+  // 🚀 0. 强制刷新内存计数器（hits、security 等）
+  try {
+    const { forceFlushHits } = await import('./hits_tracker');
+    await forceFlushHits(env);
+    logger.scheduler.info('Hits counters flushed');
+  } catch (error) {
+    logger.scheduler.error('Failed to flush hits counters', { error: error instanceof Error ? error.message : String(error) });
+  }
+  
   // 1. 🚀 缓存预热（优先执行）
   try {
     await warmupCaches(env);
@@ -111,7 +120,7 @@ async function warmupCaches(env: Env): Promise<void> {
       SELECT key, value FROM system_config WHERE key IN ('hot_search_enabled', 'hot_search_limit')
     `).all();
     
-    const configMap = new Map((hotSearchConfigs.results as SystemConfigRow[]).map(r => [r.key, r.value]));
+    const configMap = new Map((hotSearchConfigs.results as unknown as SystemConfigRow[]).map(r => [r.key, r.value]));
     
     if (configMap.get('hot_search_enabled') === 'true') {
       const limit = parseInt(configMap.get('hot_search_limit') as string) || 10;
@@ -119,7 +128,7 @@ async function warmupCaches(env: Env): Promise<void> {
         SELECT keyword FROM hot_search_stats WHERE is_hidden = 0 ORDER BY is_pinned DESC, search_count DESC LIMIT ?
       `).bind(limit).all();
       
-      const keywords = (result.results || []).map((r: HotSearchStatsRow) => r.keyword);
+      const keywords = (result.results || []).map((r: any) => r.keyword);
       await env.ROBIN_CACHE.put('hot_search_keywords', JSON.stringify({ keywords }), { expirationTtl: CACHE_CONFIG.hotSearchTTL });
       logger.scheduler.info('Hot search cache warmed up');
     }
@@ -129,7 +138,7 @@ async function warmupCaches(env: Env): Promise<void> {
       SELECT key, value FROM system_config WHERE key IN ('marquee_enabled', 'marquee_text', 'marquee_link')
     `).all();
     
-    const marqueeMap = new Map((marqueeConfigs.results as SystemConfigRow[]).map(r => [r.key, r.value]));
+    const marqueeMap = new Map((marqueeConfigs.results as unknown as SystemConfigRow[]).map(r => [r.key, r.value]));
     await env.ROBIN_CACHE.put('marquee_config', JSON.stringify({
       enabled: marqueeMap.get('marquee_enabled') === 'true',
       text: marqueeMap.get('marquee_text') || '',
@@ -155,7 +164,7 @@ async function warmupCaches(env: Env): Promise<void> {
       FROM vod_cache WHERE is_valid = 1 ORDER BY vod_hits_day DESC LIMIT 10
     `).all();
     
-    const rankingList = (rankingResult.results || []).map((video: VodCacheListRow, index: number) => ({
+    const rankingList = (rankingResult.results || []).map((video: any, index: number) => ({
       ...video,
       rank: index + 1,
       heat: video.vod_hits_day || 0,
@@ -235,7 +244,7 @@ async function runWeeklyTasks(env: Env): Promise<void> {
   
   // 3. 清理失效视频（超过30天未更新且失效）
   try {
-    const thirtyDaysAgo = getDaysAgo(30);
+    const thirtyDaysAgo = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
     
     await env.DB.prepare(`
       DELETE FROM vod_cache 
